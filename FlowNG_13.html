@@ -4033,17 +4033,23 @@ function collapsePlot() {
   if (expandedPlotId === null) return;
 
   const plotId = expandedPlotId;
-  if (!plots.find(p => p.id === plotId)) return;
+  const plot = plots.find(p => p.id === plotId);
+  if (!plot) return;
 
   // Collapse the expanded plot (resets canvas, card, and expandedPlotId)
   collapseExistingExpanded();
+
+  // Clear any zoom state and cached transforms that might have been affected
+  plot.zoomX = null;
+  plot.zoomY = null;
+  plot._tf = null;  // Clear cached transforms to force full recalculation
 
   // Show all hidden plot cards
   document.querySelectorAll('.plot-card.hidden-plot-card').forEach(c => {
     c.classList.remove('hidden-plot-card');
   });
 
-  // Re-render ALL plots to ensure correct sizing after expansion
+  // Re-render ALL plots to ensure correct sizing and data display after expansion
   renderAllPlots();
 }
 
