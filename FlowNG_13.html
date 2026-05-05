@@ -3993,19 +3993,19 @@ function collapseExistingExpanded() {
   const card = document.getElementById(`plot-card-${oldId}`);
   if (!card) return;
 
-  // Reset canvas size FIRST
+  // Reset canvas size FIRST - clear all canvas attributes and styles
   const canvas = document.getElementById(`canvas-${oldId}`);
   if (canvas) {
     canvas.width = 350;
     canvas.height = 350;
-    canvas.style.removeProperty('width');
-    canvas.style.removeProperty('height');
+    canvas.style.width = '';
+    canvas.style.height = '';
   }
 
-  // Reset card styling
+  // Reset card styling - EXPLICITLY set width back to 352px (normal size)
   card.classList.remove('expanded');
+  card.style.width = '352px';  // Explicitly reset to normal width
   card.style.removeProperty('--expanded-size');
-  card.style.removeProperty('width');
 
   // Move card back to canvas area if not already there
   const area = document.getElementById('canvas-area');
