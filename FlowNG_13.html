@@ -4054,6 +4054,7 @@ function collapsePlot() {
   plot.zoomX = null;
   plot.zoomY = null;
   plot._tf = null;  // Clear cached transforms to force full recalculation
+  _sharedGL = null; // Force GL canvas recreation at correct size — it only grows, never shrinks
 
   // Show all hidden plot cards
   document.querySelectorAll('.plot-card.hidden-plot-card').forEach(c => {
