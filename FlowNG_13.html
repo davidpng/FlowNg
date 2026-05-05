@@ -4006,6 +4006,13 @@ function collapseExistingExpanded() {
     canvas.style.height = '';
   }
 
+  // Reset plot-canvas-wrap container size
+  const canvasWrap = card.querySelector('.plot-canvas-wrap');
+  if (canvasWrap) {
+    canvasWrap.style.width = '';
+    canvasWrap.style.height = '';
+  }
+
   // Reset card styling - EXPLICITLY set width back to 352px (normal size)
   card.classList.remove('expanded');
   card.style.width = '352px';  // Explicitly reset to normal width
