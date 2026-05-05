@@ -499,12 +499,12 @@
     box-shadow: 0 8px 32px rgba(0,0,0,0.8);
   }
   .plot-card.expanded .plot-canvas-wrap {
-    width: 1050px;
-    height: 1050px;
+    width: var(--expanded-size, 1050px);
+    height: var(--expanded-size, 1050px);
   }
   .plot-card.expanded canvas {
-    width: 1050px !important;
-    height: 1050px !important;
+    width: var(--expanded-size, 1050px) !important;
+    height: var(--expanded-size, 1050px) !important;
   }
   .hidden-plot-card {
     display: none;
@@ -3944,6 +3944,17 @@ function expandPlot(plotId) {
     overlay.classList.add('active');
   }
 
+  // Calculate available space in overlay and determine responsive scale
+  // Max scale is 3x, but reduce if not enough space
+  const overlayRect = overlay.getBoundingClientRect();
+  const availableWidth = overlayRect.width - 16;  // subtract padding
+  const availableHeight = overlayRect.height - 16;
+  const baseSize = 350;
+  const maxScaleX = availableWidth / baseSize;
+  const maxScaleY = availableHeight / baseSize;
+  const responsiveScale = Math.min(3, Math.min(maxScaleX, maxScaleY));
+  const expandedSize = Math.round(baseSize * responsiveScale);
+
   // Hide all other plot cards
   document.querySelectorAll('.plot-card').forEach(card => {
     if (card.id !== `plot-card-${plotId}`) {
@@ -3955,6 +3966,8 @@ function expandPlot(plotId) {
   const card = document.getElementById(`plot-card-${plotId}`);
   if (card) {
     card.classList.add('expanded');
+    // Set CSS variables for dynamic sizing
+    card.style.setProperty('--expanded-size', `${expandedSize}px`);
     overlay.innerHTML = '';
     overlay.appendChild(card);
   }
@@ -3968,9 +3981,8 @@ function expandPlot(plotId) {
   // Resize canvas and re-render
   const canvas = document.getElementById(`canvas-${plotId}`);
   if (canvas) {
-    // Setting width/height on canvas clears it and resets the context
-    canvas.width = 1050;
-    canvas.height = 1050;
+    canvas.width = expandedSize;
+    canvas.height = expandedSize;
   }
 
   // Re-render the expanded plot at new resolution
@@ -3986,8 +3998,9 @@ function collapseExistingExpanded() {
     const card = document.getElementById(`plot-card-${oldId}`);
 
     if (card && overlay) {
-      // Remove expanded state
+      // Remove expanded state and clean up styles
       card.classList.remove('expanded');
+      card.style.removeProperty('--expanded-size');
 
       // Move card back to canvas area
       const area = document.getElementById('canvas-area');
@@ -4016,19 +4029,21 @@ function collapsePlot() {
   const plot = plots.find(p => p.id === plotId);
   if (!plot) return;
 
+  // CRITICAL: Reset canvas size FIRST before any DOM manipulation
+  // This ensures the canvas is 350x350 even if there are timing issues
+  const canvas = document.getElementById(`canvas-${plotId}`);
+  if (canvas) {
+    canvas.width = 350;
+    canvas.height = 350;
+  }
+
+  // Now collapse the expanded state
   collapseExistingExpanded();
 
   // Show all hidden plot cards
   document.querySelectorAll('.plot-card.hidden-plot-card').forEach(card => {
     card.classList.remove('hidden-plot-card');
   });
-
-  // Restore canvas to original size and re-render
-  const canvas = document.getElementById(`canvas-${plotId}`);
-  if (canvas) {
-    canvas.width = 350;
-    canvas.height = 350;
-  }
 
   // Re-render the plot at normal resolution
   renderPlot(plot);
