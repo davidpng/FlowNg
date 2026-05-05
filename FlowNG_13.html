@@ -4033,8 +4033,7 @@ function collapsePlot() {
   if (expandedPlotId === null) return;
 
   const plotId = expandedPlotId;
-  const plot = plots.find(p => p.id === plotId);
-  if (!plot) return;
+  if (!plots.find(p => p.id === plotId)) return;
 
   // Collapse the expanded plot (resets canvas, card, and expandedPlotId)
   collapseExistingExpanded();
@@ -4044,8 +4043,8 @@ function collapsePlot() {
     c.classList.remove('hidden-plot-card');
   });
 
-  // Re-render the plot at normal resolution
-  renderPlot(plot);
+  // Re-render ALL plots to ensure correct sizing after expansion
+  renderAllPlots();
 }
 
 function toggleZoomMode(id) {
