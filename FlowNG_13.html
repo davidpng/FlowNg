@@ -443,6 +443,73 @@
   }
   .meta-table td { padding: 3px 8px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--text); word-break: break-all; }
   .meta-table tr:hover td { background: var(--surface2); }
+
+  /* ── Plot expansion overlay ─────────────────────────────────────── */
+  .plot-expand-overlay {
+    position: fixed;
+    top: 44px;
+    left: 240px;
+    bottom: 22px;
+    right: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 8px;
+    overflow: auto;
+    cursor: pointer;
+  }
+  .plot-expand-overlay.active {
+    display: flex;
+  }
+  .plot-expand-overlay .plot-card {
+    cursor: default;
+  }
+  .expand-button {
+    position: absolute;
+    bottom: 42px;
+    left: 2px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    font-size: 15px;
+    background: rgba(30,34,54,0.85);
+    color: rgba(255,255,255,0.7);
+    border: 1px solid rgba(255,255,255,0.2);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+    z-index: 11;
+  }
+  .expand-button:hover {
+    background: var(--accent);
+    color: #fff;
+  }
+  .expand-button.active {
+    background: var(--accent2);
+    color: #fff;
+  }
+  .plot-card.expanded {
+    position: relative;
+    width: auto;
+    margin: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+  }
+  .plot-card.expanded .plot-canvas-wrap {
+    width: 1050px;
+    height: 1050px;
+  }
+  .plot-card.expanded canvas {
+    width: 1050px !important;
+    height: 1050px !important;
+  }
+  .hidden-plot-card {
+    display: none;
+  }
+
   .meta-filter {
     background: var(--surface2); border: 1px solid var(--border2); border-radius: 6px;
     padding: 5px 8px; color: var(--text); font-family: var(--font); font-size: 11px;
@@ -1984,6 +2051,9 @@ function renderPlotCard(plot) {
       <canvas id="canvas-${plot.id}" width="350" height="350" style="cursor:crosshair;display:block"></canvas>
       <div id="xaxis-ctrl-${plot.id}" style="position:absolute;bottom:2px;left:64px;right:8px;display:flex;align-items:center;justify-content:center;gap:4px;pointer-events:auto;z-index:10"></div>
       <div id="yaxis-ctrl-${plot.id}" style="position:absolute;top:0;bottom:44px;left:0;width:60px;display:flex;align-items:center;justify-content:center;pointer-events:auto;z-index:10"></div>
+      <button class="expand-button" onclick="togglePlotExpand(${plot.id})" title="Expand plot"
+        onmouseover="if(!this.classList.contains('active')){this.style.background='var(--accent)';this.style.color='#fff'}"
+        onmouseout="if(!this.classList.contains('active')){this.style.background='rgba(30,34,54,0.85)';this.style.color='rgba(255,255,255,0.7)'}">⤢</button>
       <button onclick="swapAxes(${plot.id})" title="Swap X and Y axes"
         style="position:absolute;bottom:2px;left:2px;width:36px;height:36px;border-radius:50%;font-size:15px;
                background:rgba(30,34,54,0.85);color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.2);
@@ -3837,6 +3907,131 @@ function swapAxes(id) {
   renderPopList();
   updateAllPopSelects();
   renderAllPlots();
+}
+
+let expandedPlotId = null;
+
+function togglePlotExpand(plotId) {
+  if (expandedPlotId === plotId) {
+    collapsePlot();
+  } else {
+    if (expandedPlotId !== null) {
+      collapseExistingExpanded();
+    }
+    expandPlot(plotId);
+  }
+}
+
+function expandPlot(plotId) {
+  const plot = plots.find(p => p.id === plotId);
+  if (!plot) return;
+
+  expandedPlotId = plotId;
+
+  // Create overlay container
+  let overlay = document.getElementById('plot-expand-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'plot-expand-overlay';
+    overlay.className = 'plot-expand-overlay active';
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        collapsePlot();
+      }
+    });
+    document.body.appendChild(overlay);
+  } else {
+    overlay.classList.add('active');
+  }
+
+  // Hide all other plot cards
+  document.querySelectorAll('.plot-card').forEach(card => {
+    if (card.id !== `plot-card-${plotId}`) {
+      card.classList.add('hidden-plot-card');
+    }
+  });
+
+  // Get the plot card and move it to overlay
+  const card = document.getElementById(`plot-card-${plotId}`);
+  if (card) {
+    card.classList.add('expanded');
+    overlay.innerHTML = '';
+    overlay.appendChild(card);
+  }
+
+  // Update expand button state
+  const expandBtn = card?.querySelector('.expand-button');
+  if (expandBtn) {
+    expandBtn.classList.add('active');
+  }
+
+  // Resize canvas and re-render
+  const canvas = document.getElementById(`canvas-${plotId}`);
+  if (canvas) {
+    // Setting width/height on canvas clears it and resets the context
+    canvas.width = 1050;
+    canvas.height = 1050;
+  }
+
+  // Re-render the expanded plot at new resolution
+  renderPlot(plot);
+}
+
+function collapseExistingExpanded() {
+  if (expandedPlotId !== null) {
+    const oldId = expandedPlotId;
+    expandedPlotId = null;
+
+    const overlay = document.getElementById('plot-expand-overlay');
+    const card = document.getElementById(`plot-card-${oldId}`);
+
+    if (card && overlay) {
+      // Remove expanded state
+      card.classList.remove('expanded');
+
+      // Move card back to canvas area
+      const area = document.getElementById('canvas-area');
+      if (area) {
+        area.appendChild(card);
+      }
+
+      // Update expand button state
+      const expandBtn = card.querySelector('.expand-button');
+      if (expandBtn) {
+        expandBtn.classList.remove('active');
+      }
+    }
+
+    // Hide overlay
+    if (overlay) {
+      overlay.classList.remove('active');
+    }
+  }
+}
+
+function collapsePlot() {
+  if (expandedPlotId === null) return;
+
+  const plotId = expandedPlotId;
+  const plot = plots.find(p => p.id === plotId);
+  if (!plot) return;
+
+  collapseExistingExpanded();
+
+  // Show all hidden plot cards
+  document.querySelectorAll('.plot-card.hidden-plot-card').forEach(card => {
+    card.classList.remove('hidden-plot-card');
+  });
+
+  // Restore canvas to original size and re-render
+  const canvas = document.getElementById(`canvas-${plotId}`);
+  if (canvas) {
+    canvas.width = 350;
+    canvas.height = 350;
+  }
+
+  // Re-render the plot at normal resolution
+  renderPlot(plot);
 }
 
 function toggleZoomMode(id) {
