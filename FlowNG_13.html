@@ -2835,7 +2835,15 @@ function createGLRenderer(canvas) {
 let _sharedGL = null;
 
 function getGLRenderer(plotId, pw, ph) {
-  // Resize shared canvas if needed (use the largest dimensions requested)
+  // The GL canvas MUST be exactly pw×ph. WebGL renders into the bottom portion of
+  // the canvas (Y-up convention: viewport y=0 = canvas bottom), while ctx.drawImage
+  // reads from the top. When the canvas is larger than pw×ph the two regions don't
+  // overlap — we read cleared white space instead of the rendered dots. Recreating
+  // at the correct size is the simplest fix and GL objects (programs/buffers) survive.
+  if (_sharedGL && (_sharedGL.canvas.width !== pw || _sharedGL.canvas.height !== ph)) {
+    _sharedGL = null;
+    _hmapProg = null; _hmapBuf = null; _hmapTex = null;
+  }
   if (!_sharedGL) {
     let offscreen;
     try { offscreen = new OffscreenCanvas(pw, ph); }
@@ -2844,13 +2852,6 @@ function getGLRenderer(plotId, pw, ph) {
       offscreen.width = pw; offscreen.height = ph;
     }
     _sharedGL = createGLRenderer(offscreen);
-  }
-  if (_sharedGL) {
-    // Ensure canvas is at least as large as requested
-    if (_sharedGL.canvas.width < pw || _sharedGL.canvas.height < ph) {
-      _sharedGL.canvas.width  = Math.max(_sharedGL.canvas.width,  pw);
-      _sharedGL.canvas.height = Math.max(_sharedGL.canvas.height, ph);
-    }
   }
   return _sharedGL;
 }
@@ -4054,7 +4055,8 @@ function collapsePlot() {
   plot.zoomX = null;
   plot.zoomY = null;
   plot._tf = null;  // Clear cached transforms to force full recalculation
-  _sharedGL = null; // Force GL canvas recreation at correct size — it only grows, never shrinks
+  _sharedGL = null; // Force GL canvas recreation at correct size
+  _hmapProg = null; _hmapBuf = null; _hmapTex = null; // heatmap resources are context-bound
 
   // Show all hidden plot cards
   document.querySelectorAll('.plot-card.hidden-plot-card').forEach(c => {
