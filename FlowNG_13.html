@@ -4022,7 +4022,21 @@ function collapseExistingExpanded() {
   // Move card back to canvas area if not already there
   const area = document.getElementById('canvas-area');
   if (area && card.parentElement !== area) {
-    area.appendChild(card);
+    // Find correct position based on plots[] array order
+    const plotIndex = plots.findIndex(p => p.id === oldId);
+    let nextSiblingCard = null;
+    for (let i = plotIndex + 1; i < plots.length; i++) {
+      const nextCard = document.getElementById(`plot-card-${plots[i].id}`);
+      if (nextCard && nextCard.parentElement === area) {
+        nextSiblingCard = nextCard;
+        break;
+      }
+    }
+    if (nextSiblingCard) {
+      area.insertBefore(card, nextSiblingCard);
+    } else {
+      area.appendChild(card);
+    }
   }
 
   // Update expand button state
