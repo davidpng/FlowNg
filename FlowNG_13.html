@@ -1363,6 +1363,11 @@ function recomputeCompensation(newSpillMatrix) {
 
   // Invalidate WebGL VBO caches so all plots rebuild geometry from new data
   plots.forEach(p => { p._vboDirty = true; p._posKey = null; });
+
+  // Invalidate heatmap texture cache so density plots regenerate
+  invalidateHeatmapCache();
+  invalidateSpatialCache();
+
   return true;
 }
 
