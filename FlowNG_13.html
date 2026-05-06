@@ -5672,13 +5672,17 @@ function runOTflowParallel(data, nEvents, nPar, isAsinh, mcIter, sampleN, postPr
   const paramsPerWorker = Math.max(1, Math.ceil(nPar / numWorkers));
   let paramsDone = 0;
 
+  // No-op progress function for internal calls
+  const noOpProgress = () => {};
+
   for (let w = 0; w < numWorkers; w++) {
     const pStart = w * paramsPerWorker;
     const pEnd = Math.min(pStart + paramsPerWorker, nPar);
     if (pStart >= nPar) break;
 
     // Process this chunk of parameters (benefits from Phase 1 KDE caching)
-    const rangeResult = runOTflow(data, nEvents, nPar, isAsinh, mcIter, sampleN, null, pStart, pEnd);
+    // Pass no-op progress to avoid duplicate progress updates
+    const rangeResult = runOTflow(data, nEvents, nPar, isAsinh, mcIter, sampleN, noOpProgress, pStart, pEnd);
     for (let p = pStart; p < pEnd; p++) {
       optCofactors[p] = rangeResult[p];
     }
