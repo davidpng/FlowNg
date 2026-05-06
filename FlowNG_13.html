@@ -733,6 +733,7 @@
     </div>
     <div class="header-actions" style="margin-left:auto;display:flex;gap:6px;align-items:center">
       <button onclick="document.getElementById('file-input').click()">📂 Open FCS File</button>
+      <button onclick="showGlobalSettingsDialog()" id="settings-btn" style="display:none" title="Global settings">⚙️ Settings</button>
       <button onclick="addPlot()" id="add-plot-btn" style="display:none">+ Add Plot</button>
       <button onclick="exportGates()" id="export-btn" style="display:none" title="Export template">↓ Export Template</button>
       <button onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Import template">↑ Import Template</button>
@@ -766,9 +767,11 @@
           <input type="checkbox" id="showgrid" onchange="renderAllPlots()" checked>
           <span>Show grid</span>
         </label>
-        <div style="color:var(--text2);font-size:10px;line-height:1.6;margin-top:4px">
-          Scale (log/lin) is set<br>per plot in the plot header.
-        </div>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;position:relative">
+          <input type="checkbox" id="showdensity" onchange="toggleDensityPlots(this.checked)" checked>
+          <span>Density plot</span>
+          <span style="cursor:help;color:var(--text2);font-weight:bold" title="For large files, turning off density plots can improve performance">ⓘ</span>
+        </label>
       </div>
     </div>
     </div><!-- /sidebar-content -->
@@ -1471,6 +1474,70 @@ function fromDisplay(dispVal, paramIdx, scale) {
   return dispVal;
 }
 
+// Calculate percentile value from data array
+// percentile: 0-100 (0=min, 100=max)
+function calculatePercentile(dataArray, percentileValue) {
+  if (!dataArray || dataArray.length === 0) return 0;
+  const p = Math.max(0, Math.min(100, percentileValue)) / 100; // Convert to 0-1
+  const sorted = Array.from(dataArray).sort((a, b) => a - b);
+  const idx = Math.ceil(p * sorted.length) - 1;
+  return sorted[Math.max(0, Math.min(sorted.length - 1, idx))];
+}
+
+// Check if parameter is fluorescent (vs. scatter/metadata)
+function isFluorescentParameter(paramName) {
+  const upperName = paramName.toUpperCase();
+  return !upperName.startsWith('FSC') &&
+         !upperName.startsWith('SSC') &&
+         !upperName.startsWith('TIME') &&
+         !upperName.startsWith('EVENT') &&
+         paramName.length > 0;
+}
+
+// Global getRawRange function used by rendering code
+function getRawRangeGlobal(paramIdx, scale) {
+  if (!fcsData) return { rawMin: 0, rawMax: 1, asinhCofactor: DEFAULT_ASINH_COFACTOR };
+
+  const pr = _paramRanges.get(paramIdx);
+  const lo = fcsData.colMins[paramIdx];
+  const hi = fcsData.colMaxs[paramIdx];
+  let defLo;
+
+  // Check if there's a percentile-based override (per-axis or global)
+  if (pr && pr.minPercentile != null) {
+    const col = [];
+    for (let e = 0; e < fcsData.nEvents; e++) {
+      col.push(fcsData.data[e * fcsData.nPar + paramIdx]);
+    }
+    defLo = calculatePercentile(col, pr.minPercentile);
+  } else if (pr && pr.rawMin != null) {
+    defLo = pr.rawMin;
+  } else if (_globalMinPercentile > 0 && isFluorescentParameter(fcsData.params[paramIdx].name)) {
+    const col = [];
+    for (let e = 0; e < fcsData.nEvents; e++) {
+      col.push(fcsData.data[e * fcsData.nPar + paramIdx]);
+    }
+    defLo = calculatePercentile(col, _globalMinPercentile);
+  } else if (scale === 'log') {
+    defLo = Math.max(lo, 1);
+  } else if (scale === 'asinh') {
+    defLo = fcsData.colPercentile05 ? fcsData.colPercentile05[paramIdx] : lo;
+  } else {
+    defLo = lo;
+  }
+
+  const defHi = (scale === 'log') ? Math.max(hi, 1) : hi;
+  const defaultCF = (fcsData.otflowCofactors && !isNaN(fcsData.otflowCofactors[paramIdx]))
+    ? fcsData.otflowCofactors[paramIdx]
+    : DEFAULT_ASINH_COFACTOR;
+
+  return {
+    rawMin: defLo,
+    rawMax: (pr && pr.rawMax != null) ? pr.rawMax : defHi,
+    asinhCofactor: (pr && pr.asinhCofactor != null) ? pr.asinhCofactor : defaultCF
+  };
+}
+
 // ─── PER-COLUMN MIN/MAX AXIS RANGES ──────────────────────────────────────────
 // Column min/max are computed once in the parse worker and stored on fcsData.
 // No separate cache needed — fcsData.colMins[p] and fcsData.colMaxs[p] are
@@ -1481,22 +1548,18 @@ function fromDisplay(dispVal, paramIdx, scale) {
 function getAxisRange(paramIdx, scale, zoomRange) {
   if (zoomRange) return zoomRange;
 
-  const pr = _paramRanges.get(paramIdx);
-  const lo = fcsData.colMins[paramIdx];
-  const hi = fcsData.colMaxs[paramIdx];
+  // Use getRawRangeGlobal to get consistent ranges (handles percentiles correctly)
+  const { rawMin, rawMax } = getRawRangeGlobal(paramIdx, scale);
+  const dLo = toDisplay(rawMin, paramIdx, scale);
+  const dHi = toDisplay(rawMax, paramIdx, scale);
 
-  if (pr && (pr.rawMin != null || pr.rawMax != null)) {
-    const rawLo = pr.rawMin != null ? pr.rawMin : lo;
-    const rawHi = pr.rawMax != null ? pr.rawMax : hi;
-    const dLo = toDisplay(rawLo, paramIdx, scale);
-    const dHi = toDisplay(rawHi, paramIdx, scale);
+  // Check if we have custom ranges set (to skip margin in that case)
+  const pr = _paramRanges.get(paramIdx);
+  if (pr && (pr.rawMin != null || pr.rawMax != null || pr.minPercentile != null)) {
     return { min: dLo, max: dHi };
   }
 
-  const rawLo = (scale === 'log') ? Math.max(lo, 1) : lo;
-  const rawHi = (scale === 'log') ? Math.max(hi, 1) : hi;
-  const dLo = toDisplay(rawLo, paramIdx, scale);
-  const dHi = toDisplay(rawHi, paramIdx, scale);
+  // Add margin for default ranges
   const margin = (dHi - dLo) * 0.005 || 0.01;
   return { min: dLo - margin, max: dHi + margin };
 }
@@ -1725,6 +1788,7 @@ function initSession(filename) {
   document.getElementById('drop-zone').style.display = 'none';
   document.getElementById('sidebar').style.display = 'flex';
   document.getElementById('add-plot-btn').style.display = '';
+  document.getElementById('settings-btn').style.display = '';
   document.getElementById('global-toolbar').style.display = 'flex';
   document.getElementById('status-bar').style.display = 'flex';
   document.getElementById('export-btn').style.display = '';
@@ -2655,6 +2719,15 @@ const _pool = {
 // so rare events remain individually visible.
 // Per-plot override: plot._densityThreshold (null = use global)
 let _globalDensityThreshold = 10000;
+let _globalDensityEnabledFlag = true; // toggle density plot on/off
+let _globalMinPercentile = 0.1; // percentile-based min value (0-100 scale)
+
+function toggleDensityPlots(enabled) {
+  _globalDensityEnabledFlag = enabled;
+  invalidateSpatialCache();
+  markAllDirty();
+  renderAllPlots();
+}
 
 const HMAP_RES = 256; // heatmap grid resolution (256×256 pixels → uploaded as texture)
 
@@ -2941,7 +3014,7 @@ function drawDotsWebGL(ctx, plot, tf, pad, pw, ph, pop, renderPop, data, nPar, a
   // threshold=0 means "always use dots" — useHeatmap requires threshold>0 AND n>threshold
   const threshold = plot._densityThreshold != null ? plot._densityThreshold : _globalDensityThreshold;
   const n = popCount(pop);
-  const useHeatmap = threshold > 0 && n > threshold;
+  const useHeatmap = _globalDensityEnabledFlag && threshold > 0 && n > threshold;
 
   // Gated sub-populations always render as individual dots
   const dotGates = orderedGates.filter(p2 => !p2.noColor && p2.indices.length > 0);
@@ -4157,6 +4230,91 @@ function toggleZoomMode(id) {
   // Enter zoom draw mode
   setMode(id, 'zoom');
 }
+
+function showGlobalSettingsDialog() {
+  document.getElementById('global-settings-modal')?.remove();
+
+  const fluorParams = [];
+  for (let i = 0; i < fcsData.nPar; i++) {
+    const p = fcsData.params[i];
+    if (isFluorescentParameter(p.name)) {
+      fluorParams.push(i);
+    }
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'global-settings-modal';
+
+  overlay.innerHTML = `
+    <div class="modal-box" style="width:450px;gap:10px">
+      <h2>Global Settings</h2>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label style="display:flex;flex-direction:column;gap:4px">
+          <span style="font-size:11px;font-weight:600">Min Value Percentile (%)</span>
+          <span style="font-size:10px;color:var(--text2)">Applies to ${fluorParams.length} fluorescent parameter(s)</span>
+          <input id="gs-percentile" type="number" min="0" max="100" step="0.01" value="${_globalMinPercentile}" style="width:100%;padding:6px 8px;border:1px solid var(--border1);border-radius:3px">
+        </label>
+      </div>
+      <div style="font-size:10px;color:var(--text2)">
+        When applied, automatically calculates the minimum display value for each fluorescent parameter based on this percentile of its data distribution.
+      </div>
+      <div class="modal-actions">
+        <button onclick="applyGlobalSettings()" class="primary">Apply</button>
+        <button onclick="document.getElementById('global-settings-modal').remove()">Cancel</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+function applyGlobalSettings() {
+  const overlay = document.getElementById('global-settings-modal');
+  if (!overlay) return;
+
+  const percEl = overlay.querySelector('#gs-percentile');
+  if (!percEl) return;
+
+  const percValue = parseFloat(percEl.value);
+  if (isNaN(percValue) || percValue < 0 || percValue > 100) {
+    showToast('Percentile must be between 0 and 100');
+    return;
+  }
+
+  _globalMinPercentile = percValue;
+
+  // Get fluorescent parameters
+  const fluorParams = [];
+  for (let i = 0; i < fcsData.nPar; i++) {
+    const p = fcsData.params[i];
+    if (isFluorescentParameter(p.name)) {
+      fluorParams.push(i);
+    }
+  }
+
+  // Update min values for all fluorescent parameters
+  let updatedCount = 0;
+  fluorParams.forEach(paramIdx => {
+    const col = [];
+    for (let e = 0; e < fcsData.nEvents; e++) {
+      col.push(fcsData.data[e * fcsData.nPar + paramIdx]);
+    }
+    const newMin = calculatePercentile(col, percValue);
+    const pr = _paramRanges.get(paramIdx) || {};
+    pr.rawMin = newMin;
+    pr.minPercentile = percValue;
+    _paramRanges.set(paramIdx, pr);
+    updatedCount++;
+  });
+
+  overlay.remove();
+  invalidateSpatialCache();
+  markAllDirty();
+  renderAllPlots();
+  showToast(`Applied percentile to ${updatedCount} parameter(s)`);
+}
+
 function showAxisRangeModal(plot, clientX, clientY) {
   document.getElementById('axis-range-modal')?.remove();
 
@@ -4171,24 +4329,46 @@ function showAxisRangeModal(plot, clientX, clientY) {
     const lo = fcsData.colMins[paramIdx];
     const hi = fcsData.colMaxs[paramIdx];
     let defLo;
-    if (scale === 'log') {
+
+    // Check if there's a percentile-based override (per-axis or global)
+    if (pr && pr.minPercentile != null) {
+      // Per-axis percentile override
+      const col = [];
+      for (let e = 0; e < fcsData.nEvents; e++) {
+        col.push(fcsData.data[e * fcsData.nPar + paramIdx]);
+      }
+      defLo = calculatePercentile(col, pr.minPercentile);
+    } else if (pr && pr.rawMin != null) {
+      // Per-axis custom min value
+      defLo = pr.rawMin;
+    } else if (_globalMinPercentile > 0 && isFluorescentParameter(fcsData.params[paramIdx].name)) {
+      // Global percentile (for fluorescent params only)
+      const col = [];
+      for (let e = 0; e < fcsData.nEvents; e++) {
+        col.push(fcsData.data[e * fcsData.nPar + paramIdx]);
+      }
+      defLo = calculatePercentile(col, _globalMinPercentile);
+    } else if (scale === 'log') {
       defLo = Math.max(lo, 1);
     } else if (scale === 'asinh') {
       defLo = fcsData.colPercentile05 ? fcsData.colPercentile05[paramIdx] : lo;
     } else {
       defLo = lo;
     }
+
     const defHi = (scale === 'log') ? Math.max(hi, 1) : hi;
     const defaultCF = (fcsData.otflowCofactors && !isNaN(fcsData.otflowCofactors[paramIdx]))
       ? fcsData.otflowCofactors[paramIdx]
       : DEFAULT_ASINH_COFACTOR;
     return {
-      rawMin: (pr && pr.rawMin != null) ? pr.rawMin : defLo,
+      rawMin: defLo,
       rawMax: (pr && pr.rawMax != null) ? pr.rawMax : defHi,
       asinhCofactor: (pr && pr.asinhCofactor != null) ? pr.asinhCofactor : defaultCF,
       isCustomMin: pr && pr.rawMin != null,
       isCustomMax: pr && pr.rawMax != null,
-      isCustomCF:  pr && pr.asinhCofactor != null
+      isCustomCF:  pr && pr.asinhCofactor != null,
+      minPercentile: pr && pr.minPercentile != null ? pr.minPercentile : null,
+      hasPercentileOverride: pr && pr.minPercentile != null
     };
   }
 
@@ -4209,7 +4389,7 @@ function showAxisRangeModal(plot, clientX, clientY) {
     const scale = axis === 'x'
       ? (plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin')
       : (plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin');
-    const { rawMin, rawMax, asinhCofactor, isCustomMin, isCustomMax, isCustomCF } = getRawRange(paramIdx, scale);
+    const { rawMin, rawMax, asinhCofactor, isCustomMin, isCustomMax, isCustomCF, minPercentile } = getRawRange(paramIdx, scale);
     const showCF = (scale === 'asinh');
 
     rowsHTML += `
@@ -4225,6 +4405,14 @@ function showAxisRangeModal(plot, clientX, clientY) {
         <input class="range-modal-input${isCustomCF?' modified':''}" id="rm-${axis}-cf" type="number" value="${asinhCofactor}" min="1" step="any"
           title="Controls compression around zero.">
       </div>
+      <div class="range-modal-row" style="grid-template-columns:auto 1fr auto;gap:4px">
+        <label style="grid-column:1">Min Percentile (%):</label>
+        <input class="range-modal-input${minPercentile != null?' modified':''}" id="rm-${axis}-perc" type="number" min="0" max="100" step="0.01"
+          value="${minPercentile != null ? minPercentile : ''}" placeholder="(use global)" title="Override with percentile-based min for this axis">
+        <button class="axis-calc-btn" data-axis="${axis}" style="padding:4px 8px;font-size:10px">Calculate</button>
+        <button class="axis-reset-btn" data-axis="${axis}" style="padding:4px 8px;font-size:10px" title="Reset to global setting">Reset</button>
+      </div>
+      <div id="rm-${axis}-perc-result" style="font-size:10px;color:var(--text2);grid-column:1/-1"></div>
       <div style="height:4px"></div>`;
   });
 
@@ -4267,6 +4455,43 @@ function showAxisRangeModal(plot, clientX, clientY) {
     inp.addEventListener('input', () => inp.classList.add('modified'));
   });
 
+  // Wire up calculate and reset buttons for percentile
+  overlay.querySelectorAll('.axis-calc-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const axis = btn.dataset.axis;
+      const percEl = overlay.querySelector(`#rm-${axis}-perc`);
+      if (!percEl) return;
+      const percValue = parseFloat(percEl.value);
+      if (isNaN(percValue) || percValue < 0 || percValue > 100) {
+        showToast('Percentile must be between 0 and 100');
+        return;
+      }
+      const paramIdx = plot[axis === 'x' ? 'xParam' : 'yParam'];
+      const col = [];
+      for (let e = 0; e < fcsData.nEvents; e++) {
+        col.push(fcsData.data[e * fcsData.nPar + paramIdx]);
+      }
+      const calculatedMin = calculatePercentile(col, percValue);
+      const minEl = overlay.querySelector(`#rm-${axis}-min`);
+      minEl.value = fmtN(calculatedMin);
+      minEl.classList.add('modified');
+      const resultDiv = overlay.querySelector(`#rm-${axis}-perc-result`);
+      resultDiv.textContent = `Calculated min: ${fmtN(calculatedMin)}`;
+    });
+  });
+
+  overlay.querySelectorAll('.axis-reset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const axis = btn.dataset.axis;
+      const percEl = overlay.querySelector(`#rm-${axis}-perc`);
+      if (!percEl) return;
+      percEl.value = '';
+      percEl.classList.remove('modified');
+      const resultDiv = overlay.querySelector(`#rm-${axis}-perc-result`);
+      resultDiv.textContent = '';
+    });
+  });
+
   document.body.appendChild(overlay);
   overlay.addEventListener('mousedown', e => { if (e.target === overlay) overlay.remove(); });
 }
@@ -4287,13 +4512,30 @@ function applyAxisRangeModal(plotId) {
     const minEl = overlay.querySelector(`#rm-${axis}-min`);
     const maxEl = overlay.querySelector(`#rm-${axis}-max`);
     const cfEl  = overlay.querySelector(`#rm-${axis}-cf`);
+    const percEl = overlay.querySelector(`#rm-${axis}-perc`);
 
     const rawMin = minEl ? parseFloat(minEl.value) : null;
     const rawMax = maxEl ? parseFloat(maxEl.value) : null;
     const cf     = (cfEl && scale === 'asinh') ? parseFloat(cfEl.value) : null;
+    const perc   = percEl ? percEl.value.trim() : '';
 
     const pr = _paramRanges.get(paramIdx) || {};
-    if (!isNaN(rawMin)) pr.rawMin = rawMin;
+
+    // Handle percentile override (if set, clear rawMin so calculated value is used)
+    if (perc !== '') {
+      const percValue = parseFloat(perc);
+      if (!isNaN(percValue) && percValue >= 0 && percValue <= 100) {
+        pr.minPercentile = percValue;
+        // Don't store rawMin when using percentile
+        delete pr.rawMin;
+      }
+    } else {
+      // Clear percentile override if input is empty
+      delete pr.minPercentile;
+      // If user edited the min field manually, store it
+      if (!isNaN(rawMin)) pr.rawMin = rawMin;
+    }
+
     if (!isNaN(rawMax)) pr.rawMax = rawMax;
     if (cf != null && !isNaN(cf) && cf > 0) pr.asinhCofactor = cf;
     _paramRanges.set(paramIdx, pr);
