@@ -1543,40 +1543,11 @@ function loadFCS(buffer, filename) {
       const msg = e.data;
       if (msg.type === 'progress') {
         showProgress(msg.pct, msg.label);
-      } else if (msg.type === 'done') {
+      } else if (msg.type === 'parsed') {
+        // Parse worker is done — launch the parallel OTflow pool from the main thread
         URL.revokeObjectURL(workerUrl);
-        // Reconstruct fcsData — data.buffer was transferred (zero-copy)
-        fcsData = {
-          params:           msg.params,
-          nEvents:          msg.nEvents,
-          nPar:             msg.nPar,
-          meta:             msg.meta,
-          version:          msg.version,
-          filename:         filename,
-          compensated:      msg.compensated,
-          data:             new Float32Array(msg.dataBuffer),
-          colMins:          new Float32Array(msg.minsBuffer),
-          colMaxs:          new Float32Array(msg.maxsBuffer),
-          otflowCofactors:  msg.cofactorsBuffer ? new Float32Array(msg.cofactorsBuffer) : null
-        };
-
-        // Calculate 0.5 percentile for each column
-        fcsData.colPercentile05 = new Float32Array(fcsData.nPar);
-        for (let paramIdx = 0; paramIdx < fcsData.nPar; paramIdx++) {
-          const samples = [];
-          for (let i = 0; i < fcsData.nEvents; i++) {
-            samples.push(fcsData.data[i * fcsData.nPar + paramIdx]);
-          }
-          samples.sort((a, b) => a - b);
-          const idx = Math.ceil(samples.length * 0.005) - 1;
-          fcsData.colPercentile05[paramIdx] = samples[Math.max(0, idx)];
-        }
-
-        showProgress(99, 'Building plots…');
-        setTimeout(() => {
-          hideProgress();
-          initSession(filename);
-        }, 0);
+        worker.terminate();
+        startOTflowPool(msg);
       } else if (msg.type === 'error') {
         URL.revokeObjectURL(workerUrl);
         hideProgress();
@@ -1592,20 +1563,111 @@ function loadFCS(buffer, filename) {
       showToast('Parser error — see console');
     };
 
-    // Transfer the ArrayBuffer to the worker (zero-copy)
-    // paramGroups: tell worker which params are fluorescent (need OTflow)
-    // We compute this here since we have param name info after parse — but the
-    // worker needs it before parsing. Instead we send a sentinel: worker uses
-    // its own heuristic (all params = true) then we filter on main thread.
-    // Actually we don't have params yet — worker discovers them. So we send
-    // mcIter only; worker treats all params as candidates and we ignore NaN results.
     worker.postMessage({ buffer, filename, mcIter: 7 }, [buffer]);
 
   } catch(e) {
-    // Fallback: parse on main thread if Worker creation fails
     console.warn('Worker failed, parsing on main thread:', e);
     loadFCSFallback(buffer, filename);
   }
+}
+
+// Spawns a pool of OTflow workers (one per CPU core, max 8) to compute cofactors
+// for all fluorescent parameters in parallel from the main thread.
+function startOTflowPool(parsedMsg) {
+  const { dataBuffer, minsBuffer, maxsBuffer, params, nEvents, nPar,
+          meta, version, compensated, isAsinh, filename, mcIter } = parsedMsg;
+
+  const data    = new Float32Array(dataBuffer);
+  const colMins = new Float32Array(minsBuffer);
+  const colMaxs = new Float32Array(maxsBuffer);
+
+  const fluorParams = [];
+  for (let p = 0; p < nPar; p++) { if (isAsinh[p]) fluorParams.push(p); }
+
+  if (fluorParams.length === 0) {
+    finalizeFCSLoad(data, colMins, colMaxs, new Float32Array(nPar).fill(NaN),
+                    params, nEvents, nPar, meta, version, compensated, filename);
+    return;
+  }
+
+  const MAX_CONCURRENT = Math.min(navigator.hardwareConcurrency || 4, 8, fluorParams.length);
+  const cofactors = new Float32Array(nPar);
+  cofactors.fill(NaN);
+  const workerSrc = document.getElementById('parse-worker-src').textContent;
+
+  let queueIdx = 0, doneCount = 0;
+
+  function startNext() {
+    if (queueIdx >= fluorParams.length) return;
+    const p = fluorParams[queueIdx++];
+
+    // Extract this parameter's column (nEvents × 4 bytes) for transfer to worker
+    const col = new Float32Array(nEvents);
+    for (let e = 0; e < nEvents; e++) col[e] = data[e * nPar + p];
+
+    const blobUrl = URL.createObjectURL(new Blob([workerSrc], { type: 'application/javascript' }));
+    const w = new Worker(blobUrl);
+
+    w.onmessage = (ev) => {
+      if (ev.data.type !== 'otflow_result') return;
+      URL.revokeObjectURL(blobUrl);
+      w.terminate();
+      cofactors[ev.data.p] = ev.data.cofactor;
+      doneCount++;
+      showProgress(91 + Math.round(6 * doneCount / fluorParams.length),
+        `OTflow: optimizing cofactors (${doneCount}/${fluorParams.length} channels)…`);
+      if (doneCount === fluorParams.length) {
+        finalizeFCSLoad(data, colMins, colMaxs, cofactors,
+                        params, nEvents, nPar, meta, version, compensated, filename);
+      } else {
+        startNext();
+      }
+    };
+
+    w.onerror = () => {
+      URL.revokeObjectURL(blobUrl);
+      w.terminate();
+      doneCount++;
+      if (doneCount === fluorParams.length) {
+        finalizeFCSLoad(data, colMins, colMaxs, cofactors,
+                        params, nEvents, nPar, meta, version, compensated, filename);
+      } else {
+        startNext();
+      }
+    };
+
+    // Transfer the column buffer zero-copy; worker reconstructs Float32Array from it
+    w.postMessage({ mode: 'otflow', col: col.buffer, p, nEvents, mcIter }, [col.buffer]);
+  }
+
+  // Seed the initial batch of concurrent workers
+  for (let i = 0; i < MAX_CONCURRENT; i++) startNext();
+}
+
+function finalizeFCSLoad(data, colMins, colMaxs, cofactors,
+                          params, nEvents, nPar, meta, version, compensated, filename) {
+  fcsData = {
+    params, nEvents, nPar, meta, version, filename, compensated,
+    data, colMins, colMaxs,
+    otflowCofactors: cofactors
+  };
+
+  fcsData.colPercentile05 = new Float32Array(fcsData.nPar);
+  for (let paramIdx = 0; paramIdx < fcsData.nPar; paramIdx++) {
+    const samples = [];
+    for (let i = 0; i < fcsData.nEvents; i++) {
+      samples.push(fcsData.data[i * fcsData.nPar + paramIdx]);
+    }
+    samples.sort((a, b) => a - b);
+    const idx = Math.ceil(samples.length * 0.005) - 1;
+    fcsData.colPercentile05[paramIdx] = samples[Math.max(0, idx)];
+  }
+
+  showProgress(99, 'Building plots…');
+  setTimeout(() => {
+    hideProgress();
+    initSession(filename);
+  }, 0);
 }
 
 async function loadFCSFallback(buffer, filename) {
@@ -5804,6 +5866,19 @@ function computeColumnMinMax(data, nEvents, nPar) {
 // ─── TRANSFORM (log10) ────────────────────────────────────────────────────────
 
 self.addEventListener('message', async (e) => {
+  // OTflow-only mode: compute cofactor for a single pre-extracted parameter column.
+  // Spawned by the main thread worker pool for parallel cofactor optimization.
+  if (e.data.mode === 'otflow') {
+    const { col, p, nEvents, mcIter } = e.data;
+    const colData = new Float32Array(col);
+    const noOp = () => {};
+    const result = runOTflow(colData, nEvents, 1, [true], mcIter || 7, 1000, noOp, 0, 1);
+    self.postMessage({ type: 'otflow_result', p, cofactor: result[0] });
+    return;
+  }
+
+  // Normal parse mode: parse the file, compute column ranges, then hand off to
+  // the main-thread OTflow worker pool for parallel cofactor optimization.
   const { buffer, filename, mcIter } = e.data;
   try {
     const u8 = new Uint8Array(buffer);
@@ -5813,26 +5888,24 @@ self.addEventListener('message', async (e) => {
     postProgress(90, 'Computing column ranges…');
     const { mins, maxs } = computeColumnMinMax(result.data, result.nEvents, result.nPar);
 
-    // Build isAsinh array from parameter names
     const isAsinh = result.params.map(p => isFluorescentParam(p.name, p.longName || p.name));
-    postProgress(91, 'Computing optimal cofactors (this may take 1-3 minutes for large files)…');
-    // Use optimized OTflow with Phase 1 KDE caching
-    const otflowCofactors = runOTflowParallel(result.data, result.nEvents, result.nPar, isAsinh, mcIter || 7, 1000, postProgress);
-
-    postProgress(98, 'Transferring data…');
+    postProgress(91, 'Starting cofactor optimization…');
+    // Transfer parsed data to main thread; OTflow runs in parallel workers from there
     self.postMessage({
-      type: 'done',
-      params:           result.params,
-      nEvents:          result.nEvents,
-      nPar:             result.nPar,
-      meta:             result.meta,
-      version:          result.version,
-      compensated:      result.compensated,
-      dataBuffer:       result.data.buffer,
-      minsBuffer:       mins.buffer,
-      maxsBuffer:       maxs.buffer,
-      cofactorsBuffer:  otflowCofactors.buffer
-    }, [result.data.buffer, mins.buffer, maxs.buffer, otflowCofactors.buffer]);
+      type: 'parsed',
+      params:      result.params,
+      nEvents:     result.nEvents,
+      nPar:        result.nPar,
+      meta:        result.meta,
+      version:     result.version,
+      filename,
+      compensated: result.compensated,
+      isAsinh,
+      mcIter:      mcIter || 7,
+      dataBuffer:  result.data.buffer,
+      minsBuffer:  mins.buffer,
+      maxsBuffer:  maxs.buffer,
+    }, [result.data.buffer, mins.buffer, maxs.buffer]);
   } catch (err) {
     self.postMessage({ type: 'error', message: err.message, stack: err.stack });
   }
