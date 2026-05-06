@@ -1459,14 +1459,33 @@ async function parseFCS(buffer) {
     const sv = fcsSpill.split(',').map(s => s.trim());
     const sn = parseInt(sv[0]);
     const spillIdx = [];
-    for (let i = 0; i < sn; i++) spillIdx.push(parseInt(sv[1+i]) - 1);
+    // SPILLOVER format: either numeric indices (1-based) or parameter names
+    const firstEntry = sv[1];
+    const isNumeric = !isNaN(parseInt(firstEntry));
+    let validSpill = true;
+    if (isNumeric) {
+      // Indices: parse as 1-based integers
+      for (let i = 0; i < sn; i++) spillIdx.push(parseInt(sv[1+i]) - 1);
+    } else {
+      // Names: map parameter names to their indices
+      const paramMap = {};
+      for (let p = 0; p < nPar; p++) {
+        paramMap[params[p].name.toUpperCase()] = p;
+        paramMap[params[p].longName.toUpperCase()] = p;
+      }
+      for (let i = 0; i < sn; i++) {
+        const pIdx = paramMap[sv[1+i].toUpperCase()];
+        if (pIdx !== undefined) spillIdx.push(pIdx);
+        else { spillIdx.push(-1); validSpill = false; }
+      }
+    }
     const S = [];
     for (let r = 0; r < sn; r++) {
       S.push([]);
       for (let c = 0; c < sn; c++) S[r].push(parseFloat(sv[1+sn+r*sn+c]));
     }
     const Sinv = matInvert(S, sn);
-    if (Sinv) {
+    if (Sinv && validSpill) {
       fcsRawData = new Float32Array(data);
       const tmp = new Float32Array(sn);
       for (let e = 0; e < nEvents; e++) {
@@ -5981,14 +6000,33 @@ async function parseFCS(buffer) {
     const sv = fcsSpill.split(',').map(s => s.trim());
     const sn = parseInt(sv[0]);
     const spillIdx = [];
-    for (let i = 0; i < sn; i++) spillIdx.push(parseInt(sv[1+i]) - 1);
+    // SPILLOVER format: either numeric indices (1-based) or parameter names
+    const firstEntry = sv[1];
+    const isNumeric = !isNaN(parseInt(firstEntry));
+    let validSpill = true;
+    if (isNumeric) {
+      // Indices: parse as 1-based integers
+      for (let i = 0; i < sn; i++) spillIdx.push(parseInt(sv[1+i]) - 1);
+    } else {
+      // Names: map parameter names to their indices
+      const paramMap = {};
+      for (let p = 0; p < nPar; p++) {
+        paramMap[params[p].name.toUpperCase()] = p;
+        paramMap[params[p].longName.toUpperCase()] = p;
+      }
+      for (let i = 0; i < sn; i++) {
+        const pIdx = paramMap[sv[1+i].toUpperCase()];
+        if (pIdx !== undefined) spillIdx.push(pIdx);
+        else { spillIdx.push(-1); validSpill = false; }
+      }
+    }
     const S = [];
     for (let r = 0; r < sn; r++) {
       S.push([]);
       for (let c = 0; c < sn; c++) S[r].push(parseFloat(sv[1+sn+r*sn+c]));
     }
     const Sinv = matInvert(S, sn);
-    if (Sinv) {
+    if (Sinv && validSpill) {
       fcsRawData = new Float32Array(data);
       const tmp = new Float32Array(sn);
       for (let e = 0; e < nEvents; e++) {
