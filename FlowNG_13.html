@@ -723,6 +723,7 @@
       <button class="mode-btn"        id="gbtn-gate"   onclick="setGlobalMode('gate')"   title="Draw Gate (⬡)">⬡</button>
       <button class="mode-btn"        id="gbtn-edit"   onclick="setGlobalMode('edit')"   title="Edit Gates (✎)">✎</button>
       <button class="mode-btn"        id="gbtn-delete" onclick="setGlobalMode('delete')" title="Delete Gate (🗑)">🗑</button>
+      <button class="mode-btn"        id="gbtn-spill"  onclick="setGlobalMode('spill')"  title="Adjust Spillover — drag right/top edge of plot (⇔)">⇔</button>
       <button class="mode-btn"        id="gbtn-zoom"   onclick="setGlobalMode('zoom')"   title="Zoom (⛶)">⛶</button>
     </div>
     <div id="parse-progress" style="display:none;align-items:center;gap:8px;font-size:10px;color:var(--text2)">
@@ -1237,6 +1238,7 @@ async function parseLMD(buffer) {
   // where s_ij = fraction of channel-i signal measured in detector-j
   // Compensated = raw * S^{-1}  (multiply each event's FL vector by inverse spillover)
   const spillStr = kv3['$SPILLOVER'] || kv3['SPILLOVER'] || '';
+  let lmdRawData = null, lmdSpillMatrix = null, lmdSpillParamIdx = null;
   if (spillStr) {
     const sv = spillStr.split(',').map(s => s.trim());
     const sn = parseInt(sv[0]);  // number of FL channels in the matrix
@@ -1256,6 +1258,7 @@ async function parseLMD(buffer) {
     // Invert S using Gauss-Jordan elimination (in-place on augmented matrix)
     const Sinv = matInvert(S, sn);
     if (Sinv) {
+      lmdRawData = new Float32Array(data);
       // Apply compensation: for each event, replace FL values with Sinv * raw_FL
       const tmp = new Float32Array(sn);
       for (let e = 0; e < nEvents; e++) {
@@ -1270,6 +1273,8 @@ async function parseLMD(buffer) {
           data[e * nPar + spillParamIdx[i]] = v;
         }
       }
+      lmdSpillMatrix = S;
+      lmdSpillParamIdx = spillParamIdx;
       console.log('LMD: applied spectral compensation to', sn, 'channels');
     } else {
       console.warn('LMD: spillover matrix not invertible, skipping compensation');
@@ -1281,7 +1286,8 @@ async function parseLMD(buffer) {
   meta['_LMD_FCS3_BASE'] = String(fcs3Base);
   meta['_COMPENSATED'] = spillStr ? 'true' : 'false';
 
-  return { params, nEvents, nPar, data, meta, version: 'LMD/FCS3.0' };
+  return { params, nEvents, nPar, data, meta, version: 'LMD/FCS3.0',
+           rawData: lmdRawData, spillMatrix: lmdSpillMatrix, spillParamIdx: lmdSpillParamIdx };
 }
 
 // Gauss-Jordan matrix inversion — returns inverse of n×n matrix A, or null if singular
@@ -1316,6 +1322,48 @@ function matInvert(A, n) {
   }
   // Extract right half
   return M.map(row => row.slice(n));
+}
+
+// Reapplies compensation from raw data using a (possibly modified) spillover matrix.
+// Updates fcsData.data, fcsData.spillMatrix, and affected colMins/colMaxs in place.
+// Invalidates all plot VBO caches so the next render picks up the new values.
+// Returns true on success, false if data unavailable or matrix is singular.
+function recomputeCompensation(newSpillMatrix) {
+  if (!fcsData || !fcsData.rawData || !fcsData.spillParamIdx) return false;
+  const sn = newSpillMatrix.length;
+  const Sinv = matInvert(newSpillMatrix, sn);
+  if (!Sinv) return false;
+
+  const { rawData, nEvents, nPar, spillParamIdx } = fcsData;
+  const data = new Float32Array(rawData); // start from uncompensated copy
+  const tmp = new Float32Array(sn);
+  for (let e = 0; e < nEvents; e++) {
+    for (let i = 0; i < sn; i++) tmp[i] = data[e * nPar + spillParamIdx[i]];
+    for (let i = 0; i < sn; i++) {
+      let v = 0;
+      for (let j = 0; j < sn; j++) v += tmp[j] * Sinv[j][i];
+      data[e * nPar + spillParamIdx[i]] = v;
+    }
+  }
+
+  fcsData.data = data;
+  fcsData.spillMatrix = newSpillMatrix;
+
+  // Recompute colMins/colMaxs only for the affected FL columns
+  for (const pi of spillParamIdx) {
+    let mn = Infinity, mx = -Infinity;
+    for (let e = 0; e < nEvents; e++) {
+      const v = data[e * nPar + pi];
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    fcsData.colMins[pi] = mn;
+    fcsData.colMaxs[pi] = mx;
+  }
+
+  // Invalidate WebGL VBO caches so all plots rebuild geometry from new data
+  plots.forEach(p => { p._vboDirty = true; p._posKey = null; });
+  return true;
 }
 
 // ─── FCS PARSER ───────────────────────────────────────────────────────────────
@@ -1406,6 +1454,7 @@ async function parseFCS(buffer) {
 
   // Apply spectral compensation if $SPILLOVER is present (FCS 3.1+)
   const fcsSpill = kv['$SPILLOVER'] || kv['SPILLOVER'] || '';
+  let fcsRawData = null, fcsSpillMatrix = null, fcsSpillParamIdx = null;
   if (fcsSpill) {
     const sv = fcsSpill.split(',').map(s => s.trim());
     const sn = parseInt(sv[0]);
@@ -1418,6 +1467,7 @@ async function parseFCS(buffer) {
     }
     const Sinv = matInvert(S, sn);
     if (Sinv) {
+      fcsRawData = new Float32Array(data);
       const tmp = new Float32Array(sn);
       for (let e = 0; e < nEvents; e++) {
         for (let i = 0; i < sn; i++) tmp[i] = data[e*nPar + spillIdx[i]];
@@ -1428,10 +1478,13 @@ async function parseFCS(buffer) {
           data[e*nPar + spillIdx[i]] = v;
         }
       }
+      fcsSpillMatrix = S;
+      fcsSpillParamIdx = spillIdx;
     }
   }
 
-  return { params, nEvents, nPar, data, meta: kv, version: fcsVer, compensated: !!fcsSpill };
+  return { params, nEvents, nPar, data, meta: kv, version: fcsVer, compensated: !!fcsSpill,
+           rawData: fcsRawData, spillMatrix: fcsSpillMatrix, spillParamIdx: fcsSpillParamIdx };
 }
 
 // ─── TRANSFORM (log10) ────────────────────────────────────────────────────────
@@ -1638,18 +1691,21 @@ function loadFCS(buffer, filename) {
 // for all fluorescent parameters in parallel from the main thread.
 function startOTflowPool(parsedMsg) {
   const { dataBuffer, minsBuffer, maxsBuffer, params, nEvents, nPar,
-          meta, version, compensated, isAsinh, filename, mcIter } = parsedMsg;
+          meta, version, compensated, isAsinh, filename, mcIter,
+          rawDataBuffer, spillMatrix, spillParamIdx } = parsedMsg;
 
   const data    = new Float32Array(dataBuffer);
   const colMins = new Float32Array(minsBuffer);
   const colMaxs = new Float32Array(maxsBuffer);
+  const rawData = rawDataBuffer ? new Float32Array(rawDataBuffer) : null;
 
   const fluorParams = [];
   for (let p = 0; p < nPar; p++) { if (isAsinh[p]) fluorParams.push(p); }
 
   if (fluorParams.length === 0) {
     finalizeFCSLoad(data, colMins, colMaxs, new Float32Array(nPar).fill(NaN),
-                    params, nEvents, nPar, meta, version, compensated, filename);
+                    params, nEvents, nPar, meta, version, compensated, filename,
+                    rawData, spillMatrix, spillParamIdx);
     return;
   }
 
@@ -1681,7 +1737,8 @@ function startOTflowPool(parsedMsg) {
         `OTflow: optimizing cofactors (${doneCount}/${fluorParams.length} channels)…`);
       if (doneCount === fluorParams.length) {
         finalizeFCSLoad(data, colMins, colMaxs, cofactors,
-                        params, nEvents, nPar, meta, version, compensated, filename);
+                        params, nEvents, nPar, meta, version, compensated, filename,
+                        rawData, spillMatrix, spillParamIdx);
       } else {
         startNext();
       }
@@ -1693,7 +1750,8 @@ function startOTflowPool(parsedMsg) {
       doneCount++;
       if (doneCount === fluorParams.length) {
         finalizeFCSLoad(data, colMins, colMaxs, cofactors,
-                        params, nEvents, nPar, meta, version, compensated, filename);
+                        params, nEvents, nPar, meta, version, compensated, filename,
+                        rawData, spillMatrix, spillParamIdx);
       } else {
         startNext();
       }
@@ -1708,11 +1766,15 @@ function startOTflowPool(parsedMsg) {
 }
 
 function finalizeFCSLoad(data, colMins, colMaxs, cofactors,
-                          params, nEvents, nPar, meta, version, compensated, filename) {
+                          params, nEvents, nPar, meta, version, compensated, filename,
+                          rawData, spillMatrix, spillParamIdx) {
   fcsData = {
     params, nEvents, nPar, meta, version, filename, compensated,
     data, colMins, colMaxs,
-    otflowCofactors: cofactors
+    otflowCofactors: cofactors,
+    rawData:      rawData     || null,
+    spillMatrix:  spillMatrix || null,
+    spillParamIdx: spillParamIdx || null,
   };
 
   fcsData.colPercentile05 = new Float32Array(fcsData.nPar);
@@ -1737,8 +1799,12 @@ async function loadFCSFallback(buffer, filename) {
   showProgress(5, 'Parsing (main thread)…');
   try {
     const u8 = new Uint8Array(buffer);
-    fcsData = isLMD(u8) ? await parseLMD(buffer) : await parseFCS(buffer);
+    const parsed = isLMD(u8) ? await parseLMD(buffer) : await parseFCS(buffer);
+    fcsData = parsed;
     fcsData.filename = filename;
+    fcsData.rawData      = parsed.rawData      || null;
+    fcsData.spillMatrix  = parsed.spillMatrix  || null;
+    fcsData.spillParamIdx = parsed.spillParamIdx || null;
     // Compute column min/max on main thread
     const { data, nEvents, nPar } = fcsData;
     const mins = new Float32Array(nPar).fill( Infinity);
@@ -2306,7 +2372,8 @@ function setMode(id, mode) {
     mode==='gate'   ? 'Click to add gate points' :
     mode==='edit'   ? 'Click a gate to select; drag to move' :
     mode==='delete' ? 'Click a gate to delete it' :
-    mode==='zoom'   ? (plot.zoomX ? 'Zoomed — click ⛶ again to reset' : 'Drag to zoom in') : '';
+    mode==='zoom'   ? (plot.zoomX ? 'Zoomed — click ⛶ again to reset' : 'Drag to zoom in') :
+    mode==='spill'  ? 'Drag top edge (←→) to adjust Y→X spillover; drag right edge (↕) to adjust X→Y spillover' : '';
   setStatusBar(txt);
   renderPlot(plot);
 }
@@ -2314,7 +2381,7 @@ function setMode(id, mode) {
 function setGlobalMode(mode) {
   globalMode = mode;
   // Update global toolbar button highlights
-  ['pan','gate','edit','delete','zoom'].forEach(m => {
+  ['pan','gate','edit','delete','spill','zoom'].forEach(m => {
     const btn = document.getElementById(`gbtn-${m}`);
     if (btn) btn.classList.toggle('active', m === mode);
   });
@@ -2335,7 +2402,7 @@ function updateGlobalModeFromSelection() {
   if (sel.length === 1) {
     const m = sel[0].mode;
     globalMode = m;
-    ['pan','gate','edit','delete','zoom'].forEach(mode => {
+    ['pan','gate','edit','delete','spill','zoom'].forEach(mode => {
       const btn = document.getElementById(`gbtn-${mode}`);
       if (btn) btn.classList.toggle('active', mode === m);
     });
@@ -2663,6 +2730,61 @@ function renderPlot(plot) {
   }
 
   document.getElementById(`event-count-${plot.id}`).textContent = `${popCount(pop).toLocaleString()} events`;
+
+  // ── Spill-mode badge: show the spillover coefficient being adjusted ────────
+  if (plot._spillDragging && fcsData && fcsData.params) {
+    const spi = getSpilloverIndices(plot);
+    if (spi) {
+      const { ix, iy } = spi;
+      const xName = fcsData.params[plot.xParam].name;
+      const yName = fcsData.params[plot.yParam].name;
+      const val   = plot._spillCurrentVal;
+
+      // Label: source→destination: value
+      const label = plot._spillZone === 'top'
+        ? `${yName}→${xName}: ${val.toFixed(4)}`   // Y spills into X
+        : `${xName}→${yName}: ${val.toFixed(4)}`;  // X spills into Y
+
+      ctx.save();
+      ctx.font = 'bold 12px monospace';
+      const textW = ctx.measureText(label).width;
+      const padX = 8, padY = 5, r = 5;
+      let bx, by;
+
+      if (plot._spillZone === 'top') {
+        // Centre badge in the top 20% strip, horizontally centred
+        bx = (W - textW - padX * 2) / 2;
+        by = H * 0.2 * 0.3;
+      } else {
+        // Centre badge in the right 20% strip, vertically centred
+        bx = W * 0.8 + (W * 0.2 - textW - padX * 2) / 2;
+        by = H / 2 - (12 + padY * 2) / 2;
+      }
+      const bw = textW + padX * 2, bh = 12 + padY * 2;
+
+      // Pill background
+      ctx.fillStyle = 'rgba(0,0,0,0.72)';
+      ctx.beginPath();
+      ctx.moveTo(bx + r, by);
+      ctx.lineTo(bx + bw - r, by);
+      ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
+      ctx.lineTo(bx + bw, by + bh - r);
+      ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
+      ctx.lineTo(bx + r, by + bh);
+      ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
+      ctx.lineTo(bx, by + r);
+      ctx.arcTo(bx, by, bx + r, by, r);
+      ctx.closePath();
+      ctx.fill();
+
+      // Text in amber
+      ctx.fillStyle = '#f5a623';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(label, bx + padX, by + padY);
+      ctx.restore();
+    }
+  }
 }
 
 function fmtTick(v, scale) {
@@ -3400,6 +3522,29 @@ function buildLODSample(pop, targetN) {
   return out;
 }
 
+// ─── SPILLOVER ZONE HELPERS ───────────────────────────────────────────────────
+// Returns 'right' | 'top' | null.
+// The top-right 20%×20% corner is excluded (returns null) to avoid ambiguity.
+function getSpilloverZone(cx, cy, W, H) {
+  const inRight = cx > W * 0.8;
+  const inTop   = cy < H * 0.2;
+  if (inRight && inTop) return null;  // corner excluded
+  if (inRight) return 'right';
+  if (inTop)   return 'top';
+  return null;
+}
+
+// Returns { ix, iy } — local indices of plot.xParam and plot.yParam within
+// fcsData.spillParamIdx — or null if either param is absent (scatter, time, etc.).
+// Also returns null when no spillover data is loaded.
+function getSpilloverIndices(plot) {
+  if (!fcsData || !fcsData.spillParamIdx) return null;
+  const ix = fcsData.spillParamIdx.indexOf(plot.xParam);
+  const iy = fcsData.spillParamIdx.indexOf(plot.yParam);
+  if (ix < 0 || iy < 0) return null;
+  return { ix, iy };
+}
+
 // ─── GATING ───────────────────────────────────────────────────────────────────
 function canvasCoords(e, canvas) {
   const rect = canvas.getBoundingClientRect();
@@ -3431,6 +3576,30 @@ function hitTestGate(cx, cy, gate, tf, plot) {
 function onCanvasMouseDown(e, canvas, plot) {
   plot._lodActive = true; // switch to subsample while interacting
   plot._lodLevel = 0;     // reset to fast level so interaction is instant
+
+  // ── Spill mode: edge-drag to adjust individual spillover coefficients ──────
+  if (plot.mode === 'spill') {
+    if (e.button !== 0) return;
+    const { cx, cy } = canvasCoords(e, canvas);
+    const zone = getSpilloverZone(cx, cy, canvas.width, canvas.height);
+    const spi  = getSpilloverIndices(plot);
+    if (zone && spi && fcsData.spillMatrix) {
+      const { ix, iy } = spi;
+      const initVal = zone === 'top'
+        ? fcsData.spillMatrix[iy][ix]   // Y→X: how much Y spills into X detector
+        : fcsData.spillMatrix[ix][iy];  // X→Y: how much X spills into Y detector
+      plot._spillDragging    = true;
+      plot._spillZone        = zone;
+      plot._spillDragStart   = { cx, cy };
+      plot._spillInitVal     = initVal;
+      plot._spillCurrentVal  = initVal;
+      plot._spillThrottle    = null;
+      e.preventDefault();
+      renderPlot(plot);  // show badge immediately
+    }
+    return;  // never fall through to gate/zoom in spill mode
+  }
+
   if (plot.mode === 'zoom') {
     if (e.button !== 0) return;
     const { cx, cy } = canvasCoords(e, canvas);
@@ -3472,6 +3641,36 @@ function onCanvasMouseDown(e, canvas, plot) {
 }
 
 function onCanvasMouseMove(e, canvas, plot) {
+  // ── Spill drag: update coefficient in real-time ───────────────────────────
+  if (plot._spillDragging) {
+    const { cx, cy } = canvasCoords(e, canvas);
+    const dx = cx - plot._spillDragStart.cx;
+    const dy = cy - plot._spillDragStart.cy;
+    // Top zone: horizontal drag (left/right) → Y→X spillover
+    // Right zone: vertical drag (up/down) → X→Y spillover
+    const dragDelta = plot._spillZone === 'top' ? dx : -dy;
+    // Sensitivity: full canvas width/height drag = ±0.2 change in spillover coefficient
+    plot._spillCurrentVal = plot._spillInitVal + dragDelta * (0.2 / canvas.width);
+
+    // Throttled re-compensation for live plot feedback (max once per 80 ms)
+    if (!plot._spillThrottle) {
+      plot._spillThrottle = setTimeout(() => {
+        plot._spillThrottle = null;
+        if (!plot._spillDragging || !fcsData || !fcsData.spillMatrix) return;
+        const spi = getSpilloverIndices(plot);
+        if (!spi) return;
+        const { ix, iy } = spi;
+        const newMatrix = fcsData.spillMatrix.map(row => [...row]);
+        if (plot._spillZone === 'top')  newMatrix[iy][ix] = plot._spillCurrentVal;
+        else                            newMatrix[ix][iy] = plot._spillCurrentVal;
+        if (recomputeCompensation(newMatrix)) renderAllPlots();
+      }, 80);
+    }
+
+    renderPlot(plot);  // update badge label immediately
+    return;
+  }
+
   if (plot.mode === 'zoom' && plot._zoomStart) {
     const { cx, cy } = canvasCoords(e, canvas);
     const sx = plot._zoomStart.cx, sy = plot._zoomStart.cy;
@@ -3534,6 +3733,18 @@ function onCanvasMouseMove(e, canvas, plot) {
 }
 
 function onCanvasHover(e, canvas, plot) {
+  // Spill mode: show resize cursor over interactive edge zones
+  if (plot.mode === 'spill') {
+    const { cx, cy } = canvasCoords(e, canvas);
+    const zone = getSpilloverZone(cx, cy, canvas.width, canvas.height);
+    if (zone && getSpilloverIndices(plot)) {
+      canvas.style.cursor = zone === 'top' ? 'ew-resize' : 'ns-resize';
+    } else {
+      canvas.style.cursor = 'default';
+    }
+    return;
+  }
+
   if (plot.mode !== 'edit' || plot._dragGate) return;
   const { cx, cy } = canvasCoords(e, canvas);
   const tf = plot._tf; if (!tf) return;
@@ -3559,6 +3770,25 @@ function onCanvasMouseUp(e, canvas, plot) {
     plot._posKey    = null; // force pos rebuild at new resolution
     _lodCache.clear();
   }
+
+  // ── Spill drag: commit final compensation on release ─────────────────────
+  if (plot._spillDragging) {
+    if (plot._spillThrottle) { clearTimeout(plot._spillThrottle); plot._spillThrottle = null; }
+    const spi = getSpilloverIndices(plot);
+    if (spi && fcsData && fcsData.spillMatrix) {
+      const { ix, iy } = spi;
+      const newMatrix = fcsData.spillMatrix.map(row => [...row]);
+      if (plot._spillZone === 'top')  newMatrix[iy][ix] = plot._spillCurrentVal;
+      else                            newMatrix[ix][iy] = plot._spillCurrentVal;
+      if (recomputeCompensation(newMatrix)) renderAllPlots();
+    }
+    plot._spillDragging   = false;
+    plot._spillZone       = null;
+    plot._spillDragStart  = null;
+    renderPlot(plot);  // clear the badge
+    return;
+  }
+
   if (plot.mode === 'zoom' && plot._zoomStart) {
     const zr = plot._zoomRect;
     if (zr && zr.w > 8 && zr.h > 8) {
@@ -5612,6 +5842,7 @@ async function parseLMD(buffer) {
   // where s_ij = fraction of channel-i signal measured in detector-j
   // Compensated = raw * S^{-1}  (multiply each event's FL vector by inverse spillover)
   const spillStr = kv3['$SPILLOVER'] || kv3['SPILLOVER'] || '';
+  let lmdRawData = null, lmdSpillMatrix = null, lmdSpillParamIdx = null;
   if (spillStr) {
     const sv = spillStr.split(',').map(s => s.trim());
     const sn = parseInt(sv[0]);  // number of FL channels in the matrix
@@ -5631,6 +5862,7 @@ async function parseLMD(buffer) {
     // Invert S using Gauss-Jordan elimination (in-place on augmented matrix)
     const Sinv = matInvert(S, sn);
     if (Sinv) {
+      lmdRawData = new Float32Array(data);
       // Apply compensation: for each event, replace FL values with Sinv * raw_FL
       const tmp = new Float32Array(sn);
       for (let e = 0; e < nEvents; e++) {
@@ -5645,6 +5877,8 @@ async function parseLMD(buffer) {
           data[e * nPar + spillParamIdx[i]] = v;
         }
       }
+      lmdSpillMatrix = S;
+      lmdSpillParamIdx = spillParamIdx;
       console.log('LMD: applied spectral compensation to', sn, 'channels');
     } else {
       console.warn('LMD: spillover matrix not invertible, skipping compensation');
@@ -5656,7 +5890,8 @@ async function parseLMD(buffer) {
   meta['_LMD_FCS3_BASE'] = String(fcs3Base);
   meta['_COMPENSATED'] = spillStr ? 'true' : 'false';
 
-  return { params, nEvents, nPar, data, meta, version: 'LMD/FCS3.0' };
+  return { params, nEvents, nPar, data, meta, version: 'LMD/FCS3.0',
+           rawData: lmdRawData, spillMatrix: lmdSpillMatrix, spillParamIdx: lmdSpillParamIdx };
 }
 
 // Gauss-Jordan matrix inversion — returns inverse of n×n matrix A, or null if singular
@@ -5748,6 +5983,7 @@ async function parseFCS(buffer) {
 
   // Apply spectral compensation if $SPILLOVER is present (FCS 3.1+)
   const fcsSpill = kv['$SPILLOVER'] || kv['SPILLOVER'] || '';
+  let fcsRawData = null, fcsSpillMatrix = null, fcsSpillParamIdx = null;
   if (fcsSpill) {
     const sv = fcsSpill.split(',').map(s => s.trim());
     const sn = parseInt(sv[0]);
@@ -5760,6 +5996,7 @@ async function parseFCS(buffer) {
     }
     const Sinv = matInvert(S, sn);
     if (Sinv) {
+      fcsRawData = new Float32Array(data);
       const tmp = new Float32Array(sn);
       for (let e = 0; e < nEvents; e++) {
         for (let i = 0; i < sn; i++) tmp[i] = data[e*nPar + spillIdx[i]];
@@ -5770,10 +6007,13 @@ async function parseFCS(buffer) {
           data[e*nPar + spillIdx[i]] = v;
         }
       }
+      fcsSpillMatrix = S;
+      fcsSpillParamIdx = spillIdx;
     }
   }
 
-  return { params, nEvents, nPar, data, meta: kv, version: fcsVer, compensated: !!fcsSpill };
+  return { params, nEvents, nPar, data, meta: kv, version: fcsVer, compensated: !!fcsSpill,
+           rawData: fcsRawData, spillMatrix: fcsSpillMatrix, spillParamIdx: fcsSpillParamIdx };
 }
 
 // ── Parameter group heuristic (mirrors main thread defaultScale) ─────────────
@@ -6133,21 +6373,26 @@ self.addEventListener('message', async (e) => {
     const isAsinh = result.params.map(p => isFluorescentParam(p.name, p.longName || p.name));
     postProgress(91, 'Starting cofactor optimization…');
     // Transfer parsed data to main thread; OTflow runs in parallel workers from there
+    const transferables = [result.data.buffer, mins.buffer, maxs.buffer];
+    if (result.rawData) transferables.push(result.rawData.buffer);
     self.postMessage({
       type: 'parsed',
-      params:      result.params,
-      nEvents:     result.nEvents,
-      nPar:        result.nPar,
-      meta:        result.meta,
-      version:     result.version,
+      params:         result.params,
+      nEvents:        result.nEvents,
+      nPar:           result.nPar,
+      meta:           result.meta,
+      version:        result.version,
       filename,
-      compensated: result.compensated,
+      compensated:    result.compensated,
       isAsinh,
-      mcIter:      mcIter || 7,
-      dataBuffer:  result.data.buffer,
-      minsBuffer:  mins.buffer,
-      maxsBuffer:  maxs.buffer,
-    }, [result.data.buffer, mins.buffer, maxs.buffer]);
+      mcIter:         mcIter || 7,
+      dataBuffer:     result.data.buffer,
+      minsBuffer:     mins.buffer,
+      maxsBuffer:     maxs.buffer,
+      rawDataBuffer:  result.rawData  ? result.rawData.buffer  : null,
+      spillMatrix:    result.spillMatrix    || null,
+      spillParamIdx:  result.spillParamIdx  || null,
+    }, transferables);
   } catch (err) {
     self.postMessage({ type: 'error', message: err.message, stack: err.stack });
   }
