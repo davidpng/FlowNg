@@ -5492,18 +5492,15 @@ function isFluorescentParam(name, longName) {
 // Runs only on fluorescent parameters (non-scatter, non-time).
 
 // ── Histogram-convolution KDE ─────────────────────────────────────────────────
-// Faster than direct KDE: bin N samples into HIST_BINS first, then evaluate
-// the Gaussian kernel only at occupied bins vs the output grid.
-// Cost: O(N + occ×G) instead of O(N×G). At N=1000 samples, occ≈200-400, G=128:
-// ~40K ops vs ~128K for direct — ~3× faster, more importantly enables 101 cofactors.
-function gaussianKDE(samples, nPoints) {
+// ── Compute KDE bandwidth/range once, reuse across cofactors ────────────────
+// Returns { lo, hi, bw, binW } for fast reuse across multiple transforms
+function computeKDESetup(samples) {
   const HIST_BINS = 512;
   const n = samples.length;
   if (n < 2) return null;
   let lo = samples[0], hi = samples[0];
   for (let i = 1; i < n; i++) { if (samples[i] < lo) lo = samples[i]; if (samples[i] > hi) hi = samples[i]; }
   if (lo === hi) { lo -= 1; hi += 1; }
-  // Silverman bandwidth from sorted samples
   const sorted = samples.slice().sort((a, b) => a - b);
   let mn = 0; for (const v of sorted) mn += v; mn /= n;
   let std = 0; for (const v of sorted) std += (v - mn) ** 2; std = Math.sqrt(std / (n - 1));
@@ -5511,8 +5508,30 @@ function gaussianKDE(samples, nPoints) {
   const sigma = Math.min(std, (q3 - q1) / 1.34);
   if (sigma === 0) return null;
   const bw = 0.9 * sigma * Math.pow(n, -0.2);
-  // Bin into histogram
   const binW = (hi - lo) / HIST_BINS;
+  return { lo, hi, bw, binW };
+}
+
+// Faster than direct KDE: bin N samples into HIST_BINS first, then evaluate
+// the Gaussian kernel only at occupied bins vs the output grid.
+// Cost: O(N + occ×G) instead of O(N×G). At N=1000 samples, occ≈200-400, G=128:
+// ~40K ops vs ~128K for direct — ~3× faster, more importantly enables 101 cofactors.
+function gaussianKDE(samples, nPoints, kdeSetup) {
+  const HIST_BINS = 512;
+  const n = samples.length;
+  if (n < 2) return null;
+
+  // Use pre-computed setup if provided; otherwise compute it (backward compatible)
+  let lo, hi, bw, binW;
+  if (kdeSetup) {
+    ({ lo, hi, bw, binW } = kdeSetup);
+  } else {
+    let setupResult = computeKDESetup(samples);
+    if (!setupResult) return null;
+    ({ lo, hi, bw, binW } = setupResult);
+  }
+
+  // Bin into histogram
   const hist = new Float32Array(HIST_BINS);
   for (let i = 0; i < n; i++) {
     const b = Math.min(HIST_BINS - 1, (samples[i] - lo) / binW | 0);
@@ -5680,13 +5699,20 @@ function runOTflow(data, nEvents, nPar, isAsinh, mcIter, sampleN, postProgress) 
       const rawSample = new Float32Array(sampleN);
       for (let i = 0; i < sampleN; i++) rawSample[i] = col[idxs[i]];
 
+      // Compute KDE setup once per MC iteration, reuse across all 101 cofactors
+      const kdeSetup = computeKDESetup(rawSample);
+      if (!kdeSetup) {
+        for (let ci = 0; ci < nC; ci++) sumScores[ci] += PENALTY;
+        continue;
+      }
+
       for (let ci = 0; ci < nC; ci++) {
         const cf = cofactorSteps[ci];
         const X = new Float32Array(sampleN);
         for (let i = 0; i < sampleN; i++) X[i] = Math.asinh(rawSample[i] / cf);
 
         let score = 0;
-        const kde = gaussianKDE(X, KDE_PTS);
+        const kde = gaussianKDE(X, KDE_PTS, kdeSetup);
         if (!kde) { sumScores[ci] += PENALTY; continue; }
         const { xi, f } = kde;
 
