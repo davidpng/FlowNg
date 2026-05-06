@@ -2735,15 +2735,8 @@ function renderPlot(plot) {
   if (plot._spillDragging && fcsData && fcsData.params) {
     const spi = getSpilloverIndices(plot);
     if (spi) {
-      const { ix, iy } = spi;
-      const xName = fcsData.params[plot.xParam].name;
-      const yName = fcsData.params[plot.yParam].name;
       const val   = plot._spillCurrentVal;
-
-      // Label: source→destination: value
-      const label = plot._spillZone === 'top'
-        ? `${yName}→${xName}: ${val.toFixed(4)}`   // Y spills into X
-        : `${xName}→${yName}: ${val.toFixed(4)}`;  // X spills into Y
+      const label = val.toFixed(4);
 
       ctx.save();
       ctx.font = 'bold 12px monospace';
@@ -3648,7 +3641,7 @@ function onCanvasMouseMove(e, canvas, plot) {
     const dy = cy - plot._spillDragStart.cy;
     // Top zone: horizontal drag (left/right) → Y→X spillover
     // Right zone: vertical drag (up/down) → X→Y spillover
-    const dragDelta = plot._spillZone === 'top' ? dx : -dy;
+    const dragDelta = plot._spillZone === 'top' ? -dx : dy;
     // Sensitivity: full canvas width/height drag = ±0.2 change in spillover coefficient
     plot._spillCurrentVal = plot._spillInitVal + dragDelta * (0.2 / canvas.width);
 
