@@ -5653,14 +5653,102 @@ function makeLCG(seed) {
   return () => { s = (Math.imul(1664525, s) + 1013904223) >>> 0; return s / 0x100000000; };
 }
 
+// ── Parallel OTflow using Web Workers ──────────────────────────────────────────
+// Distributes parameter ranges to multiple workers for true parallelization.
+// Each worker processes parameters independently: run OTflow on param[pStart:pEnd).
+async function runOTflowParallel(data, nEvents, nPar, isAsinh, mcIter, sampleN, postProgress, numWorkers) {
+  // Check prerequisites: Workers available, multi-core system, multiple parameters
+  if (typeof Worker === 'undefined' || !navigator.hardwareConcurrency) {
+    return runOTflow(data, nEvents, nPar, isAsinh, mcIter, sampleN, postProgress);
+  }
+
+  numWorkers = Math.min(navigator.hardwareConcurrency, numWorkers || 4);
+  const nFluor = isAsinh.filter(Boolean).length;
+  if (nFluor < 2 || numWorkers < 2) return runOTflow(data, nEvents, nPar, isAsinh, mcIter, sampleN, postProgress);
+
+  const optCofactors = new Float32Array(nPar);
+
+  try {
+    // Build parameter ranges for each worker
+    const paramsPerWorker = Math.max(1, Math.ceil(nPar / numWorkers));
+    const paramRanges = [];
+    for (let w = 0; w < numWorkers; w++) {
+      const pStart = w * paramsPerWorker;
+      const pEnd = Math.min(pStart + paramsPerWorker, nPar);
+      if (pStart >= nPar) break;
+      paramRanges.push({ pStart, pEnd });
+    }
+
+    if (paramRanges.length < 2) return runOTflow(data, nEvents, nPar, isAsinh, mcIter, sampleN, postProgress);
+
+    // Create worker instances and assign parameter ranges
+    const workerPromises = paramRanges.map(({ pStart, pEnd }) => {
+      return new Promise((resolve, reject) => {
+        const worker = new Worker(self.location.href);
+        const timeout = setTimeout(() => {
+          worker.terminate();
+          reject(new Error(`OTflow worker timeout for params ${pStart}-${pEnd}`));
+        }, 300000); // 5 minute timeout
+
+        worker.onmessage = (e) => {
+          clearTimeout(timeout);
+          resolve({ result: e.data.result, pStart, pEnd });
+          worker.terminate();
+        };
+
+        worker.onerror = (err) => {
+          clearTimeout(timeout);
+          reject(err);
+          worker.terminate();
+        };
+
+        // Send work to worker: it will receive a message and check for runOTflowWork flag
+        worker.postMessage({
+          type: 'runOTflowWork',
+          data: data.buffer,
+          nEvents, nPar, isAsinh, mcIter, sampleN, pStart, pEnd
+        }, [data.buffer]);
+      });
+    });
+
+    // Await all workers in parallel
+    let completed = 0;
+    const results = await Promise.all(workerPromises.map(p =>
+      p.then(r => {
+        completed++;
+        postProgress(91 + Math.round(6 * completed / paramRanges.length),
+                    `OTflow: workers (${completed}/${paramRanges.length})…`);
+        return r;
+      })
+    ));
+
+    // Aggregate results
+    for (const { result, pStart, pEnd } of results) {
+      const res = new Float32Array(result);
+      for (let p = pStart; p < pEnd; p++) {
+        optCofactors[p] = res[p];
+      }
+    }
+
+    return optCofactors;
+  } catch (err) {
+    console.warn('Parallel OTflow failed, falling back to sequential:', err);
+    return runOTflow(data, nEvents, nPar, isAsinh, mcIter, sampleN, postProgress);
+  }
+}
+
 // ── Main OTflow function ───────────────────────────────────────────────────────
 // data:      Float32Array(nEvents × nPar)  — post-compensation
 // nEvents, nPar: dimensions
 // isAsinh:   bool[nPar] — true for fluorescent params (run OTflow on these)
 // mcIter:    number of Monte Carlo iterations (default 7)
 // sampleN:   subsampling size (default 1000)
+// pStart, pEnd: parameter range [pStart, pEnd) — if omitted, run all params
 // Returns:   Float32Array(nPar) — optimal cofactor per param (NaN for non-asinh)
-function runOTflow(data, nEvents, nPar, isAsinh, mcIter, sampleN, postProgress) {
+function runOTflow(data, nEvents, nPar, isAsinh, mcIter, sampleN, postProgress, pStart, pEnd) {
+  // Support parameter range for parallel processing
+  if (pStart === undefined) pStart = 0;
+  if (pEnd === undefined) pEnd = nPar;
   mcIter  = mcIter  || 7;
   sampleN = sampleN || 1000;
   if (nEvents < sampleN) sampleN = nEvents;
@@ -5681,7 +5769,7 @@ function runOTflow(data, nEvents, nPar, isAsinh, mcIter, sampleN, postProgress) 
   const nFluor = isAsinh.filter(Boolean).length;
   let paramsDone = 0;
 
-  for (let p = 0; p < nPar; p++) {
+  for (let p = pStart; p < pEnd; p++) {
     if (!isAsinh[p]) { optCofactors[p] = NaN; continue; }
 
     // Extract raw column
@@ -5791,8 +5879,22 @@ function computeColumnMinMax(data, nEvents, nPar) {
 // ─── TRANSFORM (log10) ────────────────────────────────────────────────────────
 
 self.addEventListener('message', async (e) => {
-  const { buffer, filename, mcIter } = e.data;
-  // paramGroups: bool[] — true = fluorescent (run OTflow), false = scatter/time
+  const { type, buffer, filename, mcIter } = e.data;
+
+  // Handle OTflow work from parallel workers
+  if (type === 'runOTflowWork') {
+    try {
+      const { data, nEvents, nPar, isAsinh, sampleN, pStart, pEnd } = e.data;
+      const typedData = new Float32Array(data);
+      const result = runOTflow(typedData, nEvents, nPar, isAsinh, mcIter || 7, sampleN, null, pStart, pEnd);
+      self.postMessage({ result: result.buffer }, [result.buffer]);
+    } catch (err) {
+      self.postMessage({ type: 'error', message: err.message });
+    }
+    return;
+  }
+
+  // Handle file parsing (original behavior)
   try {
     const u8 = new Uint8Array(buffer);
     postProgress(5, 'Reading file…');
@@ -5803,10 +5905,10 @@ self.addEventListener('message', async (e) => {
 
     // Build isAsinh array from parameter names
     const isAsinh = result.params.map(p => isFluorescentParam(p.name, p.longName || p.name));
-    const otflowCofactors = runOTflow(
-      result.data, result.nEvents, result.nPar,
-      isAsinh, mcIter || 7, 1000, postProgress
-    );
+    // Try parallel optimization; falls back to sequential if unavailable
+    const otflowCofactors = typeof Worker !== 'undefined' && navigator.hardwareConcurrency > 1
+      ? await runOTflowParallel(result.data, result.nEvents, result.nPar, isAsinh, mcIter || 7, 1000, postProgress)
+      : runOTflow(result.data, result.nEvents, result.nPar, isAsinh, mcIter || 7, 1000, postProgress);
 
     postProgress(98, 'Transferring data…');
     self.postMessage({
