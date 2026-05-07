@@ -1,3 +1,5 @@
+/.claude/
+.DS_Store
 *.fcs
 *.lmd
 !TEST SAMPLE 26125127597b 00028336 001.LMD
