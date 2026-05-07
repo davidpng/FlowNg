@@ -173,6 +173,8 @@
     overflow: hidden;
     box-shadow: 0 4px 24px rgba(0,0,0,0.4);
     user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
   .plot-header {
     padding: 4px 6px;
@@ -2287,6 +2289,12 @@ function renderPlotCard(plot) {
 
   // Plot selection on header click
   const hdr = document.getElementById(`plot-hdr-${plot.id}`);
+  hdr.addEventListener('mousedown', e => {
+    // Prevent text selection for shift/cmd clicks (Safari compatibility)
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+    }
+  });
   hdr.addEventListener('click', e => {
     if (e.target.closest('.plot-drag-handle') || e.target.tagName === 'SELECT' ||
         e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
@@ -2302,9 +2310,13 @@ function renderPlotCard(plot) {
         const cardToSelect = document.getElementById(`plot-card-${plots[i].id}`);
         if (cardToSelect) cardToSelect.classList.add('selected');
       }
+      // Clear any text selection that may have occurred
+      window.getSelection().removeAllRanges();
     } else if (e.ctrlKey || e.metaKey) {
       // Ctrl+click: toggle this plot in/out of selection
       card.classList.toggle('selected');
+      // Clear any text selection
+      window.getSelection().removeAllRanges();
     } else {
       // Single click: always select only this plot (deselect all others)
       document.querySelectorAll('.plot-card.selected').forEach(c => c.classList.remove('selected'));
