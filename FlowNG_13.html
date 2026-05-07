@@ -2221,14 +2221,18 @@ function addPlot(xIdx=0, yIdx=1) {
   // LOD-first: show subsampled render immediately, then upgrade to full resolution
   if (fcsData) {
     const pop0 = populations.find(p => p.id === plot.inputPop);
-    if (pop0 && popCount(pop0) > LOD_TARGET) {
-      plot._lodActive = true;
-      renderPlot(plot);
-      // Schedule full render after browser has painted the LOD frame
-      requestIdleCallback
-        ? requestIdleCallback(() => { plot._lodActive = false; plot._vboDirty = true; renderPlot(plot); }, { timeout: 2000 })
-        : setTimeout(() => { plot._lodActive = false; plot._vboDirty = true; renderPlot(plot); }, 50);
-      return;
+    if (pop0) {
+      if (popCount(pop0) > LOD_TARGET) {
+        plot._lodActive = true;
+        renderPlot(plot);
+        // Schedule full render after browser has painted the LOD frame
+        requestIdleCallback
+          ? requestIdleCallback(() => { plot._lodActive = false; plot._vboDirty = true; renderPlot(plot); }, { timeout: 2000 })
+          : setTimeout(() => { plot._lodActive = false; plot._vboDirty = true; renderPlot(plot); }, 50);
+      } else {
+        // For smaller datasets, render immediately
+        renderPlot(plot);
+      }
     }
   }
 }
