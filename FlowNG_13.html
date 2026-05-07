@@ -2619,6 +2619,7 @@ function renderPlot(plot) {
     });
     const ungatedKey = (renderPop.id !== 0 && renderPop.color && !renderPop.noColor) ? renderPop.color : '#a0a0aa';
     const colorBuckets = new Map();
+    const renderIndices = popIndicesArray(renderPop);
     for (let ei = 0; ei < renderIndices.length; ei++) {
       const e = renderIndices[ei];
       const col = eventColor.has(e) ? eventColor.get(e) : ungatedKey;
@@ -5543,14 +5544,17 @@ document.getElementById('import-input').addEventListener('change', e => {
 
 // ─── DEMO DATA ────────────────────────────────────────────────────────────────
 function generateDemoData() {
-  const nEvents = 10000;
+  const nEvents = 12459;
   const params = [
-    { name:'FSC-A', longName:'Forward Scatter',  range:262144 },
-    { name:'SSC-A', longName:'Side Scatter',     range:262144 },
-    { name:'FITC-A',longName:'CD3 FITC',         range:262144 },
-    { name:'PE-A',  longName:'CD4 PE',            range:262144 },
-    { name:'APC-A', longName:'CD8 APC',           range:262144 },
-    { name:'BV421-A',longName:'CD19 BV421',       range:262144 },
+    { name:'FSC-A', longName:'Forward Scatter', range:262144 },
+    { name:'SSC-A', longName:'Side Scatter', range:262144 },
+    { name:'FITC-A', longName:'CD3 FITC-A', range:262144 },
+    { name:'PE-A', longName:'CD16+56 PE-A', range:262144 },
+    { name:'PerCP-Cy5.5-A', longName:'CD45 PerCP-Cy5.5-A', range:262144 },
+    { name:'PE-Cy7-A', longName:'CD4 PE-Cy7-A', range:262144 },
+    { name:'APC-A', longName:'CD19 APC-A', range:262144 },
+    { name:'APC-Cy7-A', longName:'CD8 APC-Cy7-A', range:262144 },
+    { name:'Time', longName:'Time', range:262144 },
   ].map(p => ({...p, bits:32, gain:1, logDecades:0}));
 
   const nPar = params.length;
@@ -5563,31 +5567,32 @@ function generateDemoData() {
   }
   function clamp(v, lo=10, hi=260000) { return Math.max(lo, Math.min(hi, v)); }
 
-  // Lymphocytes: FSC mid, SSC low
-  // Monocytes: FSC high, SSC high
-  // Granulocytes: FSC high, SSC very high
-  // Debris: FSC low, SSC low
+  // Realistic immune cell populations with all 9 parameters
+  // [count, fsc, ssc, cd3, cd16_56, cd45, cd4, cd19, cd8]
   const clusters = [
-    // [count, fsc,ssc,   cd3,  cd4,   cd8,   cd19]
-    [2500, 80000,25000,  40000, 50000, 200,   200  ],  // CD4 T cells
-    [1800, 80000,25000,  40000, 200,   50000, 200  ],  // CD8 T cells
-    [1000, 75000,22000,  200,   200,   200,   55000],  // B cells
-    [ 800, 70000,20000,  200,   200,   200,   200  ],  // NK/other lymph
-    [1200,140000,90000,  200,   200,   200,   200  ],  // Monocytes
-    [ 700,160000,160000, 200,   200,   200,   200  ],  // Granulocytes
-    [1000, 15000,10000,  200,   200,   200,   200  ],  // Debris
-    [1000, 80000,25000,  200,   200,   200,   200  ],  // Unlabeled lymph
+    [2800, 80000, 25000, 40000, 200, 55000, 50000, 200, 200],      // CD4+ T cells
+    [2000, 80000, 25000, 40000, 200, 55000, 200, 200, 50000],     // CD8+ T cells
+    [1200, 75000, 22000, 200, 200, 55000, 200, 55000, 200],       // B cells
+    [900, 70000, 20000, 200, 45000, 55000, 200, 200, 200],        // NK cells (CD16+56+)
+    [1500, 140000, 90000, 200, 200, 55000, 200, 200, 200],        // Monocytes
+    [900, 160000, 160000, 200, 200, 55000, 200, 200, 200],        // Granulocytes
+    [1200, 15000, 10000, 200, 200, 200, 200, 200, 200],           // Debris
+    [1200, 80000, 25000, 200, 200, 55000, 200, 200, 200],         // Unlabeled lymphocytes
+    [150, 120000, 80000, 200, 200, 200, 200, 200, 200],           // Dead cells (CD45-)
   ];
 
   let ei = 0;
-  for (const [n, fsc,ssc,cd3,cd4,cd8,cd19] of clusters) {
-    for (let i=0; i<n && ei<nEvents; i++, ei++) {
-      data[ei*nPar+0] = clamp(gauss(fsc,  fsc*0.12));
-      data[ei*nPar+1] = clamp(gauss(ssc,  ssc*0.18));
-      data[ei*nPar+2] = clamp(gauss(cd3,  Math.max(cd3*0.5, 3000)));
-      data[ei*nPar+3] = clamp(gauss(cd4,  Math.max(cd4*0.5, 3000)));
-      data[ei*nPar+4] = clamp(gauss(cd8,  Math.max(cd8*0.5, 3000)));
-      data[ei*nPar+5] = clamp(gauss(cd19, Math.max(cd19*0.5,3000)));
+  for (const [n, fsc, ssc, cd3, cd16_56, cd45, cd4, cd19, cd8] of clusters) {
+    for (let i = 0; i < n && ei < nEvents; i++, ei++) {
+      data[ei*nPar+0] = clamp(gauss(fsc, fsc*0.12));             // FSC-A
+      data[ei*nPar+1] = clamp(gauss(ssc, ssc*0.18));             // SSC-A
+      data[ei*nPar+2] = clamp(gauss(cd3, Math.max(cd3*0.5, 3000)));      // FITC-A (CD3)
+      data[ei*nPar+3] = clamp(gauss(cd16_56, Math.max(cd16_56*0.5, 3000)));  // PE-A (CD16+56)
+      data[ei*nPar+4] = clamp(gauss(cd45, Math.max(cd45*0.5, 3000)));    // PerCP-Cy5.5-A (CD45)
+      data[ei*nPar+5] = clamp(gauss(cd4, Math.max(cd4*0.5, 3000)));      // PE-Cy7-A (CD4)
+      data[ei*nPar+6] = clamp(gauss(cd19, Math.max(cd19*0.5, 3000)));    // APC-A (CD19)
+      data[ei*nPar+7] = clamp(gauss(cd8, Math.max(cd8*0.5, 3000)));      // APC-Cy7-A (CD8)
+      data[ei*nPar+8] = (ei / nEvents) * 12000;                    // Time (0-120 seconds in 100ths)
     }
   }
   return { params, nEvents, nPar, data, meta:{}, version:'DEMO' };
