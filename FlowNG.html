@@ -172,6 +172,7 @@
     flex-direction: column;
     overflow: hidden;
     box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    user-select: none;
   }
   .plot-header {
     padding: 4px 6px;
@@ -2294,6 +2295,7 @@ function renderPlotCard(plot) {
 
     if (e.shiftKey && lastClickedPlotIndex !== null && lastClickedPlotIndex !== currentIndex) {
       // Shift+click: select range between last clicked and current
+      e.preventDefault();
       const start = Math.min(lastClickedPlotIndex, currentIndex);
       const end = Math.max(lastClickedPlotIndex, currentIndex);
       for (let i = start; i <= end; i++) {
