@@ -5599,7 +5599,19 @@ function generateDemoData() {
       data[ei*nPar+8] = (ei / nEvents) * 12000;                    // Time (0-120 seconds in 100ths)
     }
   }
-  return { params, nEvents, nPar, data, meta:{}, version:'DEMO' };
+
+  // Compute column min/max for each parameter (required for axis ranging)
+  const colMins = new Array(nPar).fill(Infinity);
+  const colMaxs = new Array(nPar).fill(-Infinity);
+  for (let e = 0; e < ei; e++) {
+    for (let p = 0; p < nPar; p++) {
+      const val = data[e * nPar + p];
+      colMins[p] = Math.min(colMins[p], val);
+      colMaxs[p] = Math.max(colMaxs[p], val);
+    }
+  }
+
+  return { params, nEvents: ei, nPar, data: data.subarray(0, ei * nPar), colMins, colMaxs, meta:{}, version:'DEMO' };
 }
 
 function loadDemo() {
