@@ -449,7 +449,7 @@
     position: fixed;
     top: 44px;
     left: 240px;
-    bottom: 22px;
+    bottom: 0;
     right: 0;
     background: rgba(0, 0, 0, 0.4);
     display: none;
@@ -721,6 +721,7 @@
       <span style="font-size:9px;color:var(--text2);white-space:nowrap">Mode:</span>
       <button class="mode-btn active" id="gbtn-pan"    onclick="setGlobalMode('pan')"    title="Navigate (✥)">✥</button>
       <button class="mode-btn"        id="gbtn-gate"   onclick="setGlobalMode('gate')"   title="Draw Gate (⬡)">⬡</button>
+      <button class="mode-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Draw Rectangular Gate (□)">□</button>
       <button class="mode-btn"        id="gbtn-edit"   onclick="setGlobalMode('edit')"   title="Edit Gates (✎)">✎</button>
       <button class="mode-btn"        id="gbtn-delete" onclick="setGlobalMode('delete')" title="Delete Gate (🗑)">🗑</button>
       <button class="mode-btn"        id="gbtn-spill"  onclick="setGlobalMode('spill')"  title="Adjust Spillover — drag right/top edge of plot (⇔)">⇔</button>
@@ -1520,7 +1521,7 @@ const LOG10E = Math.LOG10E;  // 1/ln(10) ≈ 0.4343
 // asinhCofactor defaults to 300 when not set
 let _paramRanges = new Map();
 
-const DEFAULT_ASINH_COFACTOR = 300;
+let DEFAULT_ASINH_COFACTOR = 300;
 
 function getAsinhCofactor(paramIdx) {
   const pr = _paramRanges.get(paramIdx);
@@ -2070,10 +2071,10 @@ function renderPrecedenceList() {
   section.style.display = gates.length ? '' : 'none';
   if (!gates.length) return;
 
-  // Sync colorPrecedence array: add new gates at end, remove deleted ones
+  // Sync colorPrecedence array: add new gates at beginning (highest precedence), remove deleted ones
   const gateIds = new Set(gates.map(g => g.id));
   colorPrecedence = colorPrecedence.filter(id => gateIds.has(id));
-  gates.forEach(g => { if (!colorPrecedence.includes(g.id)) colorPrecedence.push(g.id); });
+  gates.forEach(g => { if (!colorPrecedence.includes(g.id)) colorPrecedence.unshift(g.id); });
 
   const el = document.getElementById('precedence-list');
   el.innerHTML = '';
@@ -2253,7 +2254,7 @@ function renderPlotCard(plot) {
       <select id="pop-sel-${plot.id}" onchange="changePop(${plot.id},this.value)"
         style="flex:1;min-width:0;font-size:10px;padding:2px 4px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:4px"
         onmousedown="event.stopPropagation()">${popOpts()}</select>
-      <input type="range" min="1" max="10" step="1" value="${Math.round(plot.dotSize*2)}" id="res-${plot.id}"
+      <input type="range" min="2" max="20" step="1" value="${Math.round(plot.dotSize*2)}" id="res-${plot.id}"
         oninput="changeDotSize(${plot.id},this.value)" onmousedown="event.stopPropagation()"
         style="width:44px;height:12px;cursor:pointer;flex-shrink:0" title="Dot size — affects individual dots and gate overlay dots">
       <span id="res-val-${plot.id}" style="font-size:9px;color:var(--text2);flex-shrink:0;min-width:22px">${plot.dotSize}px</span>
@@ -2515,7 +2516,7 @@ function changeDotSize(id, val) {
   const pop = populations.find(p => p.id === plot.inputPop);
   const inHeatmapMode = pop && threshold > 0 && popCount(pop) > threshold;
   const label = document.getElementById(`res-val-${id}`);
-  if (label) label.textContent = plot.dotSize + 'px' + (inHeatmapMode ? '*' : '');
+  if (label) label.textContent = plot.dotSize + ' px';
   const slider = document.getElementById(`res-${id}`);
   if (slider) slider.title = inHeatmapMode
     ? `Dot size ${plot.dotSize}px — affects gate overlay dots only (population renders as heatmap)`
@@ -2711,6 +2712,17 @@ function renderPlot(plot) {
 
   // Zoom selection rect
   if (plot.mode === 'zoom' && plot._zoomRect) {
+    const zr = plot._zoomRect;
+    ctx.strokeStyle = '#f5a623'; ctx.lineWidth = 1.5;
+    ctx.setLineDash([4,3]);
+    ctx.strokeRect(zr.x, zr.y, zr.w, zr.h);
+    ctx.fillStyle = 'rgba(245,166,35,0.06)';
+    ctx.fillRect(zr.x, zr.y, zr.w, zr.h);
+    ctx.setLineDash([]);
+  }
+
+  // Rectgate selection rect (reuses zoom rect rendering)
+  if (plot.mode === 'rectgate' && plot._zoomRect) {
     const zr = plot._zoomRect;
     ctx.strokeStyle = '#f5a623'; ctx.lineWidth = 1.5;
     ctx.setLineDash([4,3]);
@@ -3624,6 +3636,13 @@ function onCanvasMouseDown(e, canvas, plot) {
     plot._zoomRect  = { x: cx, y: cy, w: 0, h: 0 };
     return;
   }
+  if (plot.mode === 'rectgate') {
+    if (e.button !== 0) return;
+    const { cx, cy } = canvasCoords(e, canvas);
+    plot._zoomStart = { cx, cy };
+    plot._zoomRect  = { x: cx, y: cy, w: 0, h: 0 };
+    return;
+  }
   if (plot.mode !== 'edit') return;
   const { cx, cy } = canvasCoords(e, canvas);
   const tf = plot._tf; if (!tf) return;
@@ -3688,7 +3707,7 @@ function onCanvasMouseMove(e, canvas, plot) {
     return;
   }
 
-  if (plot.mode === 'zoom' && plot._zoomStart) {
+  if ((plot.mode === 'zoom' || plot.mode === 'rectgate') && plot._zoomStart) {
     const { cx, cy } = canvasCoords(e, canvas);
     const sx = plot._zoomStart.cx, sy = plot._zoomStart.cy;
     plot._zoomRect = {
@@ -3831,6 +3850,39 @@ function onCanvasMouseUp(e, canvas, plot) {
     renderPlot(plot);
     return;
   }
+
+  if (plot.mode === 'rectgate' && plot._zoomStart) {
+    const zr = plot._zoomRect;
+    if (zr && zr.w > 1 && zr.h > 1) {
+      const tf = plot._tf;
+      if (tf) {
+        // Convert rect corners from canvas → display → raw data space
+        const disp1X = tf.canvasToDispX(zr.x);
+        const disp1Y = tf.canvasToDispY(zr.y);
+        const disp2X = tf.canvasToDispX(zr.x + zr.w);
+        const disp2Y = tf.canvasToDispY(zr.y + zr.h);
+
+        const x1 = fromDisplay(disp1X, plot.xParam, tf.xls);
+        const y1 = fromDisplay(disp1Y, plot.yParam, tf.yls);
+        const x2 = fromDisplay(disp2X, plot.xParam, tf.xls);
+        const y2 = fromDisplay(disp2Y, plot.yParam, tf.yls);
+
+        // Create 4-point polygon from rectangle corners (clockwise: TL, TR, BR, BL)
+        plot.gatePoints = [
+          {rx: x1, ry: y1},
+          {rx: x2, ry: y1},
+          {rx: x2, ry: y2},
+          {rx: x1, ry: y2}
+        ];
+
+        finalizeGate(plot);
+      }
+    }
+    plot._zoomStart = null;
+    plot._zoomRect = null;
+    return;
+  }
+
   if (!plot._dragGate) return;
   // Final commit on release (in case last mousemove was throttled)
   const gate = populations.find(p => p.id === plot._dragGate);
@@ -4638,6 +4690,8 @@ function showAxisRangeModal(plot, clientX, clientY) {
       : (plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin');
     const { rawMin, rawMax, asinhCofactor, isCustomMin, isCustomMax, isCustomCF, minPercentile } = getRawRange(paramIdx, scale);
     const showCF = (scale === 'asinh');
+    const cfSearchMax = Math.round(rawMax * 0.01);
+    const cfClamped = Math.max(10, Math.min(cfSearchMax, asinhCofactor));
 
     rowsHTML += `
       <div class="range-axis-head">${axis.toUpperCase()}: ${label}</div>
@@ -4649,8 +4703,8 @@ function showAxisRangeModal(plot, clientX, clientY) {
       </div>
       <div class="range-modal-row" style="display:${showCF?'grid':'none'};grid-template-columns:auto 1fr auto auto">
         <label>ASINH cofactor:</label>
-        <input class="range-modal-input${isCustomCF?' modified':''}" id="rm-${axis}-cf" type="number" value="${asinhCofactor}" min="1" step="any"
-          title="Controls compression around zero.">
+        <input class="range-modal-input${isCustomCF?' modified':''}" id="rm-${axis}-cf" type="number" value="${cfClamped}" min="10" max="${cfSearchMax}" step="any"
+          title="Controls compression around zero. Search space: 10 to ${cfSearchMax} (1% of max raw value).">
       </div>
       <div class="range-modal-row" style="grid-template-columns:auto 1fr auto;gap:4px">
         <label style="grid-column:1">Min Percentile (%):</label>
@@ -4784,7 +4838,16 @@ function applyAxisRangeModal(plotId) {
     }
 
     if (!isNaN(rawMax)) pr.rawMax = rawMax;
-    if (cf != null && !isNaN(cf) && cf > 0) pr.asinhCofactor = cf;
+    if (cf != null && !isNaN(cf) && cf > 0) {
+      // Clamp cofactor to search space: 10 to 1% of max raw value
+      const cfMin = 10;
+      const cfMax = rawMax * 0.01;
+      const clampedCf = Math.max(cfMin, Math.min(cfMax, cf));
+      if (clampedCf !== cf) {
+        showToast(`Cofactor clamped to ${fmtN(clampedCf)} (valid range: ${cfMin} to ${fmtN(cfMax)})`);
+      }
+      pr.asinhCofactor = clampedCf;
+    }
     _paramRanges.set(paramIdx, pr);
   });
 
@@ -4982,6 +5045,84 @@ function showColorPicker(popId, mx, my) {
 
   // Click outside closes
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+function showGlobalSettingsDialog() {
+  const existing = document.getElementById('global-settings-modal');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'global-settings-modal';
+
+  overlay.innerHTML = `
+    <div class="modal-box" style="width:450px;gap:10px">
+      <h2>⚙ Global Settings</h2>
+
+      <div style="border-bottom:1px solid var(--border2);padding-bottom:8px">
+        <label style="display:block;font-size:10px;color:var(--text2);margin-bottom:4px">ASINH Cofactor</label>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+          <input type="number" id="global-cf-input" value="${DEFAULT_ASINH_COFACTOR}" min="1" step="1"
+            style="flex:1;padding:4px 6px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:3px;font-size:11px">
+          <span style="cursor:help;color:var(--text2);font-weight:bold" title="Applied globally to all plots. Per-plot overrides in Axis Range modal still work.">ⓘ</span>
+        </div>
+        <div style="font-size:9px;color:var(--text2);margin-bottom:4px">Controls compression around zero for asinh scale.</div>
+        <button onclick="applyGlobalAsinhCofactor()" style="width:100%;padding:4px;font-size:10px">Apply Cofactor to All Plots</button>
+      </div>
+
+      <div style="border-bottom:1px solid var(--border2);padding-bottom:8px">
+        <label style="display:block;font-size:10px;color:var(--text2);margin-bottom:4px">Min Percentile (%)</label>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+          <input type="number" id="global-perc-input" value="${_globalMinPercentile}" min="0" max="100" step="0.1"
+            style="flex:1;padding:4px 6px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:3px;font-size:11px">
+          <span style="cursor:help;color:var(--text2);font-weight:bold" title="Percentile-based minimum for fluorescent parameters across all plots.">ⓘ</span>
+        </div>
+        <div style="font-size:9px;color:var(--text2);margin-bottom:4px">Sets minimum range for fluorescent parameters (0-100).</div>
+        <button onclick="applyGlobalMinPercentile()" style="width:100%;padding:4px;font-size:10px">Apply Percentile to All Plots</button>
+      </div>
+
+      <div class="modal-actions" style="justify-content:center">
+        <button onclick="document.getElementById('global-settings-modal').remove()">Close</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('global-cf-input').focus();
+}
+
+function applyGlobalAsinhCofactor() {
+  const cfInput = document.getElementById('global-cf-input');
+  const newCf = parseFloat(cfInput.value);
+  if (isNaN(newCf) || newCf <= 0) {
+    showToast('Invalid cofactor value');
+    return;
+  }
+  DEFAULT_ASINH_COFACTOR = newCf;
+  // Clear all per-parameter cofactor overrides so global setting applies
+  _paramRanges.forEach((pr, paramIdx) => {
+    delete pr.asinhCofactor;
+  });
+  // Invalidate caches and mark plots dirty so transforms are recalculated
+  invalidateSpatialCache();
+  markAllDirty();
+  renderAllPlots();
+  showToast(`Global asinh cofactor set to ${newCf}`);
+}
+
+function applyGlobalMinPercentile() {
+  const percInput = document.getElementById('global-perc-input');
+  const newPerc = parseFloat(percInput.value);
+  if (isNaN(newPerc) || newPerc < 0 || newPerc > 100) {
+    showToast('Percentile must be between 0 and 100');
+    return;
+  }
+  _globalMinPercentile = newPerc;
+  // Invalidate caches and mark plots dirty so range calculations are redone
+  invalidateSpatialCache();
+  markAllDirty();
+  renderAllPlots();
+  showToast(`Global min percentile set to ${newPerc}%`);
 }
 
 function showAbout() {
