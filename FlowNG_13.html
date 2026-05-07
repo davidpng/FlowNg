@@ -721,6 +721,7 @@
       <span style="font-size:9px;color:var(--text2);white-space:nowrap">Mode:</span>
       <button class="mode-btn active" id="gbtn-pan"    onclick="setGlobalMode('pan')"    title="Navigate (✥)">✥</button>
       <button class="mode-btn"        id="gbtn-gate"   onclick="setGlobalMode('gate')"   title="Draw Gate (⬡)">⬡</button>
+      <button class="mode-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Draw Rectangular Gate (□)">□</button>
       <button class="mode-btn"        id="gbtn-edit"   onclick="setGlobalMode('edit')"   title="Edit Gates (✎)">✎</button>
       <button class="mode-btn"        id="gbtn-delete" onclick="setGlobalMode('delete')" title="Delete Gate (🗑)">🗑</button>
       <button class="mode-btn"        id="gbtn-spill"  onclick="setGlobalMode('spill')"  title="Adjust Spillover — drag right/top edge of plot (⇔)">⇔</button>
@@ -2720,6 +2721,17 @@ function renderPlot(plot) {
     ctx.setLineDash([]);
   }
 
+  // Rectgate selection rect (reuses zoom rect rendering)
+  if (plot.mode === 'rectgate' && plot._zoomRect) {
+    const zr = plot._zoomRect;
+    ctx.strokeStyle = '#f5a623'; ctx.lineWidth = 1.5;
+    ctx.setLineDash([4,3]);
+    ctx.strokeRect(zr.x, zr.y, zr.w, zr.h);
+    ctx.fillStyle = 'rgba(245,166,35,0.06)';
+    ctx.fillRect(zr.x, zr.y, zr.w, zr.h);
+    ctx.setLineDash([]);
+  }
+
   ctx.restore();
 
   // ── 5. Axes border ────────────────────────────────────────────────────────
@@ -3624,6 +3636,13 @@ function onCanvasMouseDown(e, canvas, plot) {
     plot._zoomRect  = { x: cx, y: cy, w: 0, h: 0 };
     return;
   }
+  if (plot.mode === 'rectgate') {
+    if (e.button !== 0) return;
+    const { cx, cy } = canvasCoords(e, canvas);
+    plot._zoomStart = { cx, cy };
+    plot._zoomRect  = { x: cx, y: cy, w: 0, h: 0 };
+    return;
+  }
   if (plot.mode !== 'edit') return;
   const { cx, cy } = canvasCoords(e, canvas);
   const tf = plot._tf; if (!tf) return;
@@ -3688,7 +3707,7 @@ function onCanvasMouseMove(e, canvas, plot) {
     return;
   }
 
-  if (plot.mode === 'zoom' && plot._zoomStart) {
+  if ((plot.mode === 'zoom' || plot.mode === 'rectgate') && plot._zoomStart) {
     const { cx, cy } = canvasCoords(e, canvas);
     const sx = plot._zoomStart.cx, sy = plot._zoomStart.cy;
     plot._zoomRect = {
@@ -3831,6 +3850,39 @@ function onCanvasMouseUp(e, canvas, plot) {
     renderPlot(plot);
     return;
   }
+
+  if (plot.mode === 'rectgate' && plot._zoomStart) {
+    const zr = plot._zoomRect;
+    if (zr && zr.w > 1 && zr.h > 1) {
+      const tf = plot._tf;
+      if (tf) {
+        // Convert rect corners from canvas → display → raw data space
+        const disp1X = tf.canvasToDispX(zr.x);
+        const disp1Y = tf.canvasToDispY(zr.y);
+        const disp2X = tf.canvasToDispX(zr.x + zr.w);
+        const disp2Y = tf.canvasToDispY(zr.y + zr.h);
+
+        const x1 = fromDisplay(disp1X, plot.xParam, tf.xls);
+        const y1 = fromDisplay(disp1Y, plot.yParam, tf.yls);
+        const x2 = fromDisplay(disp2X, plot.xParam, tf.xls);
+        const y2 = fromDisplay(disp2Y, plot.yParam, tf.yls);
+
+        // Create 4-point polygon from rectangle corners (clockwise: TL, TR, BR, BL)
+        plot.gatePoints = [
+          {rx: x1, ry: y1},
+          {rx: x2, ry: y1},
+          {rx: x2, ry: y2},
+          {rx: x1, ry: y2}
+        ];
+
+        finalizeGate(plot);
+      }
+    }
+    plot._zoomStart = null;
+    plot._zoomRect = null;
+    return;
+  }
+
   if (!plot._dragGate) return;
   // Final commit on release (in case last mousemove was throttled)
   const gate = populations.find(p => p.id === plot._dragGate);
