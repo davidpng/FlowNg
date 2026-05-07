@@ -863,6 +863,7 @@ let plots = [];
 let populations = [];
 let plotIdCounter = 0;
 let popIdCounter = 0;
+let lastClickedPlotIndex = null;  // For shift-select range selection
 
 // ── Interaction guard — set true during mouse events, cleared on idle ─────────
 // Background rendering tasks check this before running to avoid jank.
@@ -2288,7 +2289,18 @@ function renderPlotCard(plot) {
   hdr.addEventListener('click', e => {
     if (e.target.closest('.plot-drag-handle') || e.target.tagName === 'SELECT' ||
         e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
-    if (e.ctrlKey || e.metaKey) {
+
+    const currentIndex = plots.findIndex(p => p.id === plot.id);
+
+    if (e.shiftKey && lastClickedPlotIndex !== null && lastClickedPlotIndex !== currentIndex) {
+      // Shift+click: select range between last clicked and current
+      const start = Math.min(lastClickedPlotIndex, currentIndex);
+      const end = Math.max(lastClickedPlotIndex, currentIndex);
+      for (let i = start; i <= end; i++) {
+        const cardToSelect = document.getElementById(`plot-card-${plots[i].id}`);
+        if (cardToSelect) cardToSelect.classList.add('selected');
+      }
+    } else if (e.ctrlKey || e.metaKey) {
       // Ctrl+click: toggle this plot in/out of selection
       card.classList.toggle('selected');
     } else {
@@ -2296,6 +2308,8 @@ function renderPlotCard(plot) {
       document.querySelectorAll('.plot-card.selected').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
     }
+
+    lastClickedPlotIndex = currentIndex;
     updateGlobalModeFromSelection();
   });
 
@@ -2515,17 +2529,25 @@ function changePop(id, val, propagate=true) {
 
 function changeDotSize(id, val) {
   const plot = plots.find(p=>p.id===id); if(!plot) return;
-  plot.dotSize = parseFloat(val) / 2;
-  const threshold = plot._densityThreshold != null ? plot._densityThreshold : _globalDensityThreshold;
-  const pop = populations.find(p => p.id === plot.inputPop);
-  const inHeatmapMode = pop && threshold > 0 && popCount(pop) > threshold;
-  const label = document.getElementById(`res-val-${id}`);
-  if (label) label.textContent = plot.dotSize + ' px';
-  const slider = document.getElementById(`res-${id}`);
-  if (slider) slider.title = inHeatmapMode
-    ? `Dot size ${plot.dotSize}px — affects gate overlay dots only (population renders as heatmap)`
-    : `Dot size ${plot.dotSize}px`;
-  renderPlot(plot);
+  const newDotSize = parseFloat(val) / 2;
+
+  // If multiple plots are selected, apply change to all of them
+  const selectedPlots = getSelectedPlots();
+  const targetPlots = selectedPlots.length > 1 ? selectedPlots : [plot];
+
+  for (const targetPlot of targetPlots) {
+    targetPlot.dotSize = newDotSize;
+    const threshold = targetPlot._densityThreshold != null ? targetPlot._densityThreshold : _globalDensityThreshold;
+    const pop = populations.find(p => p.id === targetPlot.inputPop);
+    const inHeatmapMode = pop && threshold > 0 && popCount(pop) > threshold;
+    const label = document.getElementById(`res-val-${targetPlot.id}`);
+    if (label) label.textContent = targetPlot.dotSize + ' px';
+    const slider = document.getElementById(`res-${targetPlot.id}`);
+    if (slider) slider.title = inHeatmapMode
+      ? `Dot size ${targetPlot.dotSize}px — affects gate overlay dots only (population renders as heatmap)`
+      : `Dot size ${targetPlot.dotSize}px`;
+    renderPlot(targetPlot);
+  }
 }
 
 function removePlot(id) {
