@@ -1127,11 +1127,15 @@ async function parseLMD(buffer) {
   const nPar2 = parseInt(kv2['$PAR'] || '0');
 
   // Build FL-key → stain label map from FCS2.0 params
-  // Extract channel key: FL2→'FL2', FS→'FS', SS→'SS', TIME→'TIME'
+  // Extract channel key: FL2→'FL2', FS→'FS_[VARIANT]', SS→'SS', TIME→'TIME'
   function flKey(name) {
     const m = name.match(/FL(\d+)/i);
     if (m) return 'FL' + m[1];
-    if (/^FS/i.test(name)) return 'FS';
+    // For FS parameters, preserve the variant (INT, PEAK, WIDTH, etc.)
+    if (/^FS/i.test(name)) {
+      const variant = name.match(/(?:INT|PEAK|WIDTH)/i);
+      return variant ? 'FS_' + variant[0].toUpperCase() : 'FS';
+    }
     if (/^SS/i.test(name)) return 'SS';
     if (/TIME/i.test(name)) return 'TIME';
     return name.toUpperCase();
@@ -1191,18 +1195,21 @@ async function parseLMD(buffer) {
     const range = parseFloat(kv3[`$P${i}R`] || '262144');
 
     // Map to FCS2.0 stain label
-    // FS-H and FS-A need special handling
+    // FS variants: INT (integral/area) → FS_A, PEAK (height) → FS_H
     let key = flKey(rawName);
-    if (rawName.match(/FS.*H/i)) key = 'FS_H';
+    if (rawName.match(/INT/i)) key = 'FS_A';     // FS INT (area) → FS-A
+    else if (rawName.match(/PEAK/i)) key = 'FS_H'; // FS PEAK (height) → FS-H
+    else if (rawName.match(/FS.*H/i)) key = 'FS_H';
     else if (rawName.match(/FS.*A/i)) key = 'FS_A';
 
     const stain  = stainByFLKey[key] || '';
     const name2  = nameByFLKey[key]  || rawName;
 
     params.push({
-      name:       stain || rawName,     // use stain as primary display name
-      longName:   stain || rawName,
-      rawName,                           // keep original FL* name for reference
+      name:       stain || name2 || rawName,  // Prefer stain, then FCS2.0 name
+      longName:   stain || name2 || rawName,
+      fcs2Name:   name2,                      // Keep FCS2.0 name for reference
+      rawName,
       range, bits, gain: 1, logDecades: 0
     });
   }
@@ -5941,11 +5948,15 @@ async function parseLMD(buffer) {
   const nPar2 = parseInt(kv2['$PAR'] || '0');
 
   // Build FL-key → stain label map from FCS2.0 params
-  // Extract channel key: FL2→'FL2', FS→'FS', SS→'SS', TIME→'TIME'
+  // Extract channel key: FL2→'FL2', FS→'FS_[VARIANT]', SS→'SS', TIME→'TIME'
   function flKey(name) {
     const m = name.match(/FL(\d+)/i);
     if (m) return 'FL' + m[1];
-    if (/^FS/i.test(name)) return 'FS';
+    // For FS parameters, preserve the variant (INT, PEAK, WIDTH, etc.)
+    if (/^FS/i.test(name)) {
+      const variant = name.match(/(?:INT|PEAK|WIDTH)/i);
+      return variant ? 'FS_' + variant[0].toUpperCase() : 'FS';
+    }
     if (/^SS/i.test(name)) return 'SS';
     if (/TIME/i.test(name)) return 'TIME';
     return name.toUpperCase();
@@ -6005,18 +6016,21 @@ async function parseLMD(buffer) {
     const range = parseFloat(kv3[`$P${i}R`] || '262144');
 
     // Map to FCS2.0 stain label
-    // FS-H and FS-A need special handling
+    // FS variants: INT (integral/area) → FS_A, PEAK (height) → FS_H
     let key = flKey(rawName);
-    if (rawName.match(/FS.*H/i)) key = 'FS_H';
+    if (rawName.match(/INT/i)) key = 'FS_A';     // FS INT (area) → FS-A
+    else if (rawName.match(/PEAK/i)) key = 'FS_H'; // FS PEAK (height) → FS-H
+    else if (rawName.match(/FS.*H/i)) key = 'FS_H';
     else if (rawName.match(/FS.*A/i)) key = 'FS_A';
 
     const stain  = stainByFLKey[key] || '';
     const name2  = nameByFLKey[key]  || rawName;
 
     params.push({
-      name:       stain || rawName,     // use stain as primary display name
-      longName:   stain || rawName,
-      rawName,                           // keep original FL* name for reference
+      name:       stain || name2 || rawName,  // Prefer stain, then FCS2.0 name
+      longName:   stain || name2 || rawName,
+      fcs2Name:   name2,                      // Keep FCS2.0 name for reference
+      rawName,
       range, bits, gain: 1, logDecades: 0
     });
   }
