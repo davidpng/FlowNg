@@ -1,0 +1,523 @@
+{
+  "version": 2,
+  "name": "B cells",
+  "sourceFile": "TEST SAMPLE 26125127597b 00028336 001.LMD",
+  "exported": "2026-05-07T21:55:44.621Z",
+  "gates": [
+    {
+      "name": "Time",
+      "color": "#e6194b",
+      "noColor": true,
+      "parentName": "All Events",
+      "xParamName": "TIME",
+      "yParamName": "CD45 KO",
+      "xScale": "lin",
+      "yScale": "asinh",
+      "rawPts": [
+        {
+          "rx": -106.41500000000002,
+          "ry": 684091.1343788694
+        },
+        {
+          "rx": 90683.33877697842,
+          "ry": 684091.1343788694
+        },
+        {
+          "rx": 90683.33877697842,
+          "ry": -90.09468089069749
+        },
+        {
+          "rx": -106.41500000000002,
+          "ry": -90.09468089069749
+        }
+      ],
+      "children": [
+        {
+          "name": "Viable",
+          "color": "#3cb44b",
+          "noColor": true,
+          "parentName": "Time",
+          "xParamName": "SS INT LOG",
+          "yParamName": "FSC-A",
+          "xScale": "log",
+          "yScale": "lin",
+          "rawPts": [
+            {
+              "rx": 3895.506972840392,
+              "ry": 218502.9787837838
+            },
+            {
+              "rx": 7372.5208566314195,
+              "ry": 133658.0311486486
+            },
+            {
+              "rx": 19195.26205398221,
+              "ry": 191352.59554054058
+            },
+            {
+              "rx": 44624.34168119081,
+              "ry": 269196.4142567567
+            },
+            {
+              "rx": 171089.49988435852,
+              "ry": 343859.96817567566
+            },
+            {
+              "rx": 406523.7036082367,
+              "ry": 992288.9012162164
+            },
+            {
+              "rx": 24662.43263361493,
+              "ry": 992288.9012162164
+            },
+            {
+              "rx": 9050.414002491358,
+              "ry": 479825.41750000004
+            }
+          ],
+          "children": [
+            {
+              "name": "Lymphs",
+              "color": "#4363d8",
+              "noColor": true,
+              "parentName": "Viable",
+              "xParamName": "SS INT LOG",
+              "yParamName": "CD45 KO",
+              "xScale": "log",
+              "yScale": "asinh",
+              "rawPts": [
+                {
+                  "rx": 19622.173644614704,
+                  "ry": 112699.55058068503
+                },
+                {
+                  "rx": 23014.95449706084,
+                  "ry": 10902.954418192534
+                },
+                {
+                  "rx": 9251.699435679004,
+                  "ry": 3985.4722106979984
+                },
+                {
+                  "rx": 4565.468451251991,
+                  "ry": 4487.102002582039
+                },
+                {
+                  "rx": 4263.842956492125,
+                  "ry": 9404.158483820753
+                },
+                {
+                  "rx": 4263.842956492125,
+                  "ry": 33535.68485183549
+                }
+              ],
+              "children": [
+                {
+                  "name": "T cells",
+                  "color": "#3cb44b",
+                  "noColor": false,
+                  "parentName": "Lymphs",
+                  "xParamName": "CD5 PC5.5",
+                  "yParamName": "CD20 PB",
+                  "xScale": "asinh",
+                  "yScale": "asinh",
+                  "rawPts": [
+                    {
+                      "rx": 1930.7458918233665,
+                      "ry": 1101.9880622108235
+                    },
+                    {
+                      "rx": 1871.8158173246254,
+                      "ry": -5.997432995174149
+                    },
+                    {
+                      "rx": 210294.978037344,
+                      "ry": 14.793425045401918
+                    },
+                    {
+                      "rx": 150160.9499867423,
+                      "ry": 1535.8096717361136
+                    },
+                    {
+                      "rx": 19902.27307588811,
+                      "ry": 6338.415142581397
+                    }
+                  ],
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Grans",
+              "color": "#469990",
+              "noColor": false,
+              "parentName": "Viable",
+              "xParamName": "SS INT LOG",
+              "yParamName": "CD45 KO",
+              "xScale": "log",
+              "yScale": "asinh",
+              "rawPts": [
+                {
+                  "rx": 139217.1107059891,
+                  "ry": 70225.33455038413
+                },
+                {
+                  "rx": 288618.0582492662,
+                  "ry": 21523.198839802797
+                },
+                {
+                  "rx": 251741.72845372322,
+                  "ry": 5520.832835725713
+                },
+                {
+                  "rx": 76989.23826562379,
+                  "ry": 2334.5663872843847
+                },
+                {
+                  "rx": 38867.675541697696,
+                  "ry": 3335.668800237702
+                },
+                {
+                  "rx": 46638.6842459167,
+                  "ry": 18565.36860805993
+                },
+                {
+                  "rx": 84335.20079058346,
+                  "ry": 86371.18315581638
+                }
+              ],
+              "children": []
+            },
+            {
+              "name": "Monos",
+              "color": "#f032e6",
+              "noColor": false,
+              "parentName": "Viable",
+              "xParamName": "SS INT LOG",
+              "yParamName": "CD45 KO",
+              "xScale": "log",
+              "yScale": "asinh",
+              "rawPts": [
+                {
+                  "rx": 22936.099713148422,
+                  "ry": 94215.49527659398
+                },
+                {
+                  "rx": 22936.099713148422,
+                  "ry": 10406.964709911095
+                },
+                {
+                  "rx": 41644.60245488493,
+                  "ry": 11045.648337318617
+                },
+                {
+                  "rx": 90845.25072031796,
+                  "ry": 165868.76918944754
+                }
+              ],
+              "children": []
+            },
+            {
+              "name": "B cells",
+              "color": "#42d4f4",
+              "noColor": true,
+              "parentName": "Viable",
+              "xParamName": "CD38 APC-A700",
+              "yParamName": "CD19 ECD",
+              "xScale": "asinh",
+              "yScale": "asinh",
+              "rawPts": [
+                {
+                  "rx": -245.85435821919032,
+                  "ry": 2790.4552226609158
+                },
+                {
+                  "rx": 651.0091857056022,
+                  "ry": 2525.50426489122
+                },
+                {
+                  "rx": 4370.831270882453,
+                  "ry": 1336.0822526769816
+                },
+                {
+                  "rx": 37162.51973310207,
+                  "ry": 3639.109920947965
+                },
+                {
+                  "rx": 69719.87015857156,
+                  "ry": 86977.90572953926
+                },
+                {
+                  "rx": -337.94496307418046,
+                  "ry": 78769.15601013303
+                }
+              ],
+              "children": [
+                {
+                  "name": "Kappa",
+                  "color": "#000075",
+                  "noColor": false,
+                  "parentName": "B cells",
+                  "xParamName": "Kappa FITC",
+                  "yParamName": "Lambda PE",
+                  "xScale": "asinh",
+                  "yScale": "asinh",
+                  "rawPts": [
+                    {
+                      "rx": 302462.29249027156,
+                      "ry": 64713.35682809467
+                    },
+                    {
+                      "rx": 290.97536076447574,
+                      "ry": -32.35844586330379
+                    },
+                    {
+                      "rx": 631213.7421286268,
+                      "ry": -23.28312497705912
+                    },
+                    {
+                      "rx": 672913.9048093043,
+                      "ry": 68731.64100063755
+                    }
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Lambda",
+                  "color": "#e6194b",
+                  "noColor": false,
+                  "parentName": "B cells",
+                  "xParamName": "Kappa FITC",
+                  "yParamName": "Lambda PE",
+                  "xScale": "asinh",
+                  "yScale": "asinh",
+                  "rawPts": [
+                    {
+                      "rx": 17550.67054295829,
+                      "ry": 394340.8756892549
+                    },
+                    {
+                      "rx": 47.06300192861917,
+                      "ry": 768.1498698118695
+                    },
+                    {
+                      "rx": 47.06300192861917,
+                      "ry": 566039.7733718504
+                    },
+                    {
+                      "rx": 4291.099003574733,
+                      "ry": 678163.6653575326
+                    }
+                  ],
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "plots": [
+    {
+      "xParamName": "TIME",
+      "yParamName": "CD45 KO",
+      "inputPopName": "All Events",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": false,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "tabName": "Tab 1"
+    },
+    {
+      "xParamName": "SS INT LOG",
+      "yParamName": "FSC-A",
+      "inputPopName": "Time",
+      "xLog": true,
+      "yLog": false,
+      "xAsinh": false,
+      "yAsinh": false,
+      "dotSize": 1.5,
+      "tabName": "Tab 1"
+    },
+    {
+      "xParamName": "SS INT LOG",
+      "yParamName": "CD45 KO",
+      "inputPopName": "Viable",
+      "xLog": true,
+      "yLog": false,
+      "xAsinh": false,
+      "yAsinh": true,
+      "dotSize": 1,
+      "tabName": "Tab 1"
+    },
+    {
+      "xParamName": "CD5 PC5.5",
+      "yParamName": "CD20 PB",
+      "inputPopName": "Lymphs",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "tabName": "Tab 1"
+    },
+    {
+      "xParamName": "CD45 KO",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "All Events",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1,
+      "tabName": "Comps"
+    },
+    {
+      "xParamName": "CD20 PB",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "All Events",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1,
+      "tabName": "Comps"
+    },
+    {
+      "xParamName": "Kappa FITC",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "All Events",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1,
+      "tabName": "Comps"
+    },
+    {
+      "xParamName": "Lambda PE",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "All Events",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1,
+      "tabName": "Comps"
+    },
+    {
+      "xParamName": "CD19 ECD",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "All Events",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1,
+      "tabName": "Comps"
+    },
+    {
+      "xParamName": "CD5 PC5.5",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "All Events",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1,
+      "tabName": "Comps"
+    },
+    {
+      "xParamName": "CD23 PC7",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "All Events",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1,
+      "tabName": "Comps"
+    },
+    {
+      "xParamName": "CD10 APC",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "All Events",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1,
+      "tabName": "Comps"
+    },
+    {
+      "xParamName": "CD38 APC-A700",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "All Events",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1,
+      "tabName": "Comps"
+    },
+    {
+      "xParamName": "CD200 APC-A750",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "All Events",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1,
+      "tabName": "Comps"
+    },
+    {
+      "xParamName": "CD38 APC-A700",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "tabName": "Tab 1"
+    },
+    {
+      "xParamName": "Kappa FITC",
+      "yParamName": "Lambda PE",
+      "inputPopName": "B cells",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "tabName": "Tab 1"
+    }
+  ],
+  "colorPrecedence": [
+    "Lambda",
+    "Kappa",
+    "B cells",
+    "T cells",
+    "Monos",
+    "Grans",
+    "Lymphs",
+    "Viable",
+    "Time"
+  ],
+  "paramRanges": {
+    "SS INT LOG": {},
+    "Kappa FITC": {},
+    "Lambda PE": {},
+    "CD19 ECD": {},
+    "CD5 PC5.5": {},
+    "CD23 PC7": {},
+    "CD10 APC": {},
+    "CD38 APC-A700": {},
+    "CD200 APC-A750": {},
+    "CD20 PB": {},
+    "CD45 KO": {}
+  }
+}
