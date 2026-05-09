@@ -2100,10 +2100,13 @@ function renderPrecedenceList() {
 
     const swatchClass = pop.noColor ? 'prec-swatch no-color' : 'prec-swatch';
     const swatchBg = pop.noColor ? '' : `style="background:${pop.color}"`;
+    const emphBadge = pop.emphasized
+      ? `<span style="font-size:9px;color:#f5a623;margin-left:4px" title="Emphasized (+4px). Double-click to remove.">+4px</span>`
+      : '';
     row.innerHTML = `
       <span style="color:var(--text2);font-size:9px;min-width:12px">${idx+1}</span>
       <div class="${swatchClass}" ${swatchBg} title="Right-click to change color" data-pid="${popId}"></div>
-      <div style="flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${pop.name}</div>
+      <div style="flex:1;font-size:11px;${pop.emphasized ? 'font-weight:600;' : ''}overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${pop.name}${emphBadge}</div>
       <div style="font-size:10px;color:var(--text2)">${popCount(pop).toLocaleString()}</div>`;
 
     // Right-click swatch OR row — suppress drag on right-click
@@ -2112,6 +2115,13 @@ function renderPrecedenceList() {
     row.addEventListener('contextmenu', precPicker);
     row.addEventListener('mousedown', e => { if (e.button !== 0) row.draggable = false; });
     row.addEventListener('mouseup',   () => { row.draggable = true; });
+    // Double-click: toggle emphasis (+4px dot size on all plots)
+    row.addEventListener('dblclick', () => {
+      const p = populations.find(q => q.id === popId); if (!p) return;
+      p.emphasized = !p.emphasized;
+      renderPrecedenceList();
+      renderAllPlots();
+    });
 
     // Drag-and-drop reordering
     row.addEventListener('dragstart', e => {
@@ -2689,6 +2699,20 @@ function renderPlot(plot) {
     }
     drawBucket2D(ungatedKey, 0.45);
     orderedGates.forEach(p2 => { if (!p2.noColor && p2.color) drawBucket2D(p2.color, 0.75); });
+    // Emphasis pass: re-draw emphasized gate events at +4px dot size on top
+    const emphDh2D = (ds + 4) / 2;
+    orderedGates.forEach(p2 => {
+      if (!p2.emphasized || p2.noColor || !p2.color) return;
+      const [er, eg, eb] = [parseInt(p2.color.slice(1,3),16), parseInt(p2.color.slice(3,5),16), parseInt(p2.color.slice(5,7),16)];
+      ctx.fillStyle = `rgba(${er},${eg},${eb},0.9)`;
+      ctx.beginPath();
+      p2.indices.forEach(i => {
+        const cx = tf.dataToCanvasX(data[i*nPar+plot.xParam]);
+        const cy = tf.dataToCanvasY(data[i*nPar+plot.yParam]);
+        ctx.moveTo(cx+emphDh2D, cy); ctx.arc(cx, cy, emphDh2D, 0, Math.PI*2);
+      });
+      ctx.fill();
+    });
     ctx.restore();
   }
 
@@ -3215,9 +3239,6 @@ function drawDotsWebGL(ctx, plot, tf, pad, pw, ph, pop, renderPop, data, nPar, a
   const n = popCount(pop);
   const useHeatmap = _globalDensityEnabledFlag && threshold > 0 && n > threshold;
 
-  // Gated sub-populations always render as individual dots
-  const dotGates = orderedGates.filter(p2 => !p2.noColor && p2.indices.length > 0);
-
   // ── Setup GL for this frame ────────────────────────────────────────────────
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   // Use pw/ph (the plot area dimensions), NOT canvas.width/height.
@@ -3246,8 +3267,8 @@ function drawDotsWebGL(ctx, plot, tf, pad, pw, ph, pop, renderPop, data, nPar, a
     // Re-engage the dot shader program before drawing dots
     gl.useProgram(rend.prog);
     if (rend.psLoc !== null) gl.uniform1f(rend.psLoc, Math.max(1.5, plot.dotSize * 2 || 3.0));
-    if (dotGates.length > 0) {
-      _drawDotLayers(gl, rend, plot, tf, dotGates, nPar);
+    if (orderedGates.some(p2 => !p2.noColor && p2.indices.length > 0)) {
+      _drawDotLayers(gl, rend, plot, tf, pop, orderedGates, nPar);
     }
 
   } else {
@@ -3255,6 +3276,15 @@ function drawDotsWebGL(ctx, plot, tf, pad, pw, ph, pop, renderPop, data, nPar, a
     gl.useProgram(rend.prog);
     const rn = popCount(renderPop);
     _drawDotsFull(gl, rend, plot, tf, pad, pw, ph, renderPop, data, nPar, allColoredGates, orderedGates, rn);
+  }
+
+  // Emphasis pass: draw emphasized gate events at +4px dot size on top of everything
+  const emphGates = orderedGates.filter(g => g.emphasized && !g.noColor && g.indices.length > 0);
+  if (emphGates.length > 0) {
+    gl.useProgram(rend.prog);
+    const emphGLSize = Math.max(1.0, (plot.dotSize + 4) * 2 || 11.0);
+    if (rend.psLoc !== null) gl.uniform1f(rend.psLoc, emphGLSize);
+    emphGates.forEach(gate => _drawGateEvents(gl, rend, plot, tf, gate, nPar));
   }
 
   // Blit offscreen GL canvas onto the 2D canvas at the plot area
@@ -3356,10 +3386,44 @@ function _drawDotsFull(gl, rend, plot, tf, pad, pw, ph, pop, data, nPar, allColo
   _uploadAndDraw(gl, rend, verts, n);
 }
 
-// Draw each gated sub-population as a dot layer on top of the heatmap.
-// Each gate gets its own small VBO — sizes are small (gate pops << 10M).
-function _drawDotLayers(gl, rend, plot, tf, dotGates, nPar) {
+// Single-winner dot overlay for heatmap mode.
+// Builds a per-event color LUT (same strategy as _drawDotsFull) so each event
+// gets exactly one dot in the highest-precedence gate's color. orderedGates must
+// be sorted lowest-precedence first so the last write wins.
+function _drawDotLayers(gl, rend, plot, tf, pop, orderedGates, nPar) {
   const { data } = fcsData;
+  const n = popCount(pop);
+  if (n === 0) return;
+
+  // revIdx: global event index → position in pop (-1 = not in pop)
+  let revIdx = null;
+  if (!pop._isAll) {
+    revIdx = _pool.revIdx(fcsData.nEvents);
+    for (let i = 0; i < n; i++) revIdx[pop.indices[i]] = i;
+  }
+
+  // colorLUT: n positions × 4 bytes [r,g,b,a]; alpha=0 means ungated (no dot)
+  const colorLUT = _pool.colorLUT(n);
+  colorLUT.fill(0, 0, n * 4);
+
+  // Forward iteration: lowest precedence first → highest last → last write wins
+  orderedGates.forEach(pop2 => {
+    if (pop2.noColor) return;
+    const [cr, cg, cb] = hexToRgba255(pop2.color);
+    const gIndices = pop2.indices; const gn = gIndices.length;
+    for (let gi = 0; gi < gn; gi++) {
+      const pos = revIdx ? revIdx[gIndices[gi]] : gIndices[gi];
+      if (pos < 0) continue;
+      const b4 = pos * 4;
+      colorLUT[b4] = cr; colorLUT[b4+1] = cg; colorLUT[b4+2] = cb; colorLUT[b4+3] = 217; // ~0.85 alpha
+    }
+  });
+
+  // Count gated events then build a single VBO — one dot per event, no overlap
+  let gatedCount = 0;
+  for (let i = 0; i < n; i++) { if (colorLUT[i * 4 + 3] > 0) gatedCount++; }
+  if (gatedCount === 0) return;
+
   const xRange = tf.xRange, yRange = tf.yRange;
   const xSC = tf.xls === 'log' ? 1 : tf.xls === 'asinh' ? 2 : 0;
   const ySC = tf.yls === 'log' ? 1 : tf.yls === 'asinh' ? 2 : 0;
@@ -3368,26 +3432,54 @@ function _drawDotLayers(gl, rend, plot, tf, dotGates, nPar) {
   const yRmin = yRange.min, yRspan = 1 / (yRange.max - yRange.min);
   const inv255 = 1 / 255;
 
-  // Draw in order: lowest precedence first so highest wins visually
-  dotGates.forEach(pop2 => {
-    const gIndices = pop2.indices;
-    const gn = gIndices.length;
-    if (gn === 0) return;
-    const [r8, g8, b8] = hexToRgba255(pop2.color);
-    const r = r8 * inv255, g = g8 * inv255, b = b8 * inv255, a = 0.85;
-    const verts = new Uint16Array(gn * 6);
-    let vi = 0;
-    for (let gi = 0; gi < gn; gi++) {
-      const e = gIndices[gi]; const base = e * nPar;
-      let dx = data[base + plot.xParam];
-      if (xSC === 1) dx = Math.log10(dx < 1 ? 1 : dx); else if (xSC === 2) dx = Math.asinh(dx / xCF) * LOG10E;
-      let dy = data[base + plot.yParam];
-      if (ySC === 1) dy = Math.log10(dy < 1 ? 1 : dy); else if (ySC === 2) dy = Math.asinh(dy / yCF) * LOG10E;
-      verts[vi++]=f32f16(2*(dx-xRmin)*xRspan-1); verts[vi++]=f32f16(2*(dy-yRmin)*yRspan-1);
-      verts[vi++]=f32f16(r); verts[vi++]=f32f16(g); verts[vi++]=f32f16(b); verts[vi++]=f32f16(a);
-    }
-    _uploadAndDraw(gl, rend, verts, gn);
-  });
+  const verts = new Uint16Array(gatedCount * 6);
+  let vi = 0;
+  for (let ei = 0; ei < n; ei++) {
+    const b4 = ei * 4;
+    if (colorLUT[b4 + 3] === 0) continue;
+    const e = popGetIndex(pop, ei); const base = e * nPar;
+    let dx = data[base + plot.xParam];
+    if (xSC === 1) dx = Math.log10(dx < 1 ? 1 : dx); else if (xSC === 2) dx = Math.asinh(dx / xCF) * LOG10E;
+    let dy = data[base + plot.yParam];
+    if (ySC === 1) dy = Math.log10(dy < 1 ? 1 : dy); else if (ySC === 2) dy = Math.asinh(dy / yCF) * LOG10E;
+    verts[vi++] = f32f16(2*(dx-xRmin)*xRspan - 1);
+    verts[vi++] = f32f16(2*(dy-yRmin)*yRspan - 1);
+    verts[vi++] = f32f16(colorLUT[b4]   * inv255);
+    verts[vi++] = f32f16(colorLUT[b4+1] * inv255);
+    verts[vi++] = f32f16(colorLUT[b4+2] * inv255);
+    verts[vi++] = f32f16(colorLUT[b4+3] * inv255);
+  }
+  _uploadAndDraw(gl, rend, verts, gatedCount);
+}
+
+// Draw all events from a single gate at whatever GL point size is currently set.
+// Used for the emphasis overlay pass in drawDotsWebGL.
+function _drawGateEvents(gl, rend, plot, tf, gate, nPar) {
+  const { data } = fcsData;
+  const gIndices = gate.indices; const gn = gIndices.length;
+  if (gn === 0) return;
+  const xRange = tf.xRange, yRange = tf.yRange;
+  const xSC = tf.xls === 'log' ? 1 : tf.xls === 'asinh' ? 2 : 0;
+  const ySC = tf.yls === 'log' ? 1 : tf.yls === 'asinh' ? 2 : 0;
+  const xCF = getAsinhCofactor(plot.xParam), yCF = getAsinhCofactor(plot.yParam);
+  const xRmin = xRange.min, xRspan = 1 / (xRange.max - xRange.min);
+  const yRmin = yRange.min, yRspan = 1 / (yRange.max - yRange.min);
+  const [r8, g8, b8] = hexToRgba255(gate.color);
+  const inv255 = 1 / 255;
+  const rv = r8*inv255, gv = g8*inv255, bv = b8*inv255, av = 0.9;
+  const verts = new Uint16Array(gn * 6);
+  let vi = 0;
+  for (let gi = 0; gi < gn; gi++) {
+    const e = gIndices[gi]; const base = e * nPar;
+    let dx = data[base + plot.xParam];
+    if (xSC === 1) dx = Math.log10(dx < 1 ? 1 : dx); else if (xSC === 2) dx = Math.asinh(dx / xCF) * LOG10E;
+    let dy = data[base + plot.yParam];
+    if (ySC === 1) dy = Math.log10(dy < 1 ? 1 : dy); else if (ySC === 2) dy = Math.asinh(dy / yCF) * LOG10E;
+    verts[vi++] = f32f16(2*(dx-xRmin)*xRspan - 1);
+    verts[vi++] = f32f16(2*(dy-yRmin)*yRspan - 1);
+    verts[vi++] = f32f16(rv); verts[vi++] = f32f16(gv); verts[vi++] = f32f16(bv); verts[vi++] = f32f16(av);
+  }
+  _uploadAndDraw(gl, rend, verts, gn);
 }
 
 function _uploadAndDraw(gl, rend, verts, n) {
@@ -4232,17 +4324,21 @@ function deleteGateAndDescendants(gateId) {
 
 function getDescendantGates(popId) {
   const result = [];
-  const queue = [popId];
-  while (queue.length) {
-    const pid = queue.shift();
-    populations.forEach(p => {
-      if (p.gateInfo && p.parentId === pid) {
-        result.push(p);
-        queue.push(p.id);
-      }
-    });
-  }
-  return result;
+  const pop = populations.find(p => p.id === popId);
+  if (!pop) return [];
+
+  // Get all gates that have events in the current population, including:
+  // 1. Descendant gates (hierarchy-based)
+  // 2. Any other gates with overlapping events (true back-gating)
+  const popEventsSet = new Set(pop.indices);
+
+  return populations.filter(p => {
+    // Exclude: non-gates, All Events, and the population itself
+    if (!p.gateInfo || p.id === 0 || p.id === popId || !p.indices) return false;
+
+    // Include if any events are in the current population (back-gating)
+    return p.indices.some(idx => popEventsSet.has(idx));
+  });
 }
 
 
