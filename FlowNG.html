@@ -148,6 +148,9 @@
   }
   .population-item:hover { background: var(--surface2); }
   .population-item.active { background: var(--surface2); border: 1px solid var(--border2); }
+  .pop-file-root { transition: background 0.1s; }
+  .pop-file-root:hover { background: var(--surface2) !important; }
+  .pop-file-root--active { background: #1e3a6e !important; border-left: 2px solid var(--accent) !important; padding-left: 4px !important; }
   .pop-swatch {
     width: 10px; height: 10px;
     border-radius: 2px;
@@ -865,6 +868,7 @@ let fcsFiles = [];           // array of all loaded file objects
 let fileIdCounter = 0;
 let _contextFileId = null;  // set at render time by renderPlot/renderPlotCard
 let _focusedFileId = null;  // tracks last focused plot's file for precedence list
+let _activeFileId = null;   // the file selected in the population tree (used by addPlot)
 let plots = [];
 let populations = [];
 let plotIdCounter = 0;
@@ -1970,10 +1974,12 @@ function addFileToSession(fileObj) {
   // Activate context for this file's params/ranges
   _contextFileId = fileObj.fileId;
   _focusedFileId = fileObj.fileId;
+  _activeFileId = fileObj.fileId;
   _paramRanges = fileObj.paramRanges;
 
   renderPopList();
   addPlot(0, 1, fileObj.fileId);
+  updateAllFileSelects();
   showToast('Loaded: ' + fileObj.filename);
 
   // Per-file compute worker for off-thread gate evaluation
@@ -2011,10 +2017,11 @@ function removeFile(fileId) {
 
   rebuildPopulationsView();
 
-  // If focused/context file was removed, switch to the last remaining file
-  if (_focusedFileId === fileId) {
+  // If focused/active/context file was removed, switch to the last remaining file
+  if (_focusedFileId === fileId || _activeFileId === fileId) {
     const lastFile = fcsFiles[fcsFiles.length - 1];
     _focusedFileId = lastFile ? lastFile.fileId : null;
+    _activeFileId = lastFile ? lastFile.fileId : null;
     _contextFileId = _focusedFileId;
     _paramRanges = lastFile ? lastFile.paramRanges : new Map();
   }
@@ -2066,7 +2073,16 @@ function renderPopList() {
     }
     el.appendChild(tree);
   });
+  // Re-apply active-file highlight after DOM rebuild
+  if (_activeFileId != null) setActiveFile(_activeFileId);
   renderPrecedenceList();
+}
+
+function setActiveFile(fileId) {
+  _activeFileId = fileId;
+  document.querySelectorAll('.pop-file-root').forEach(el => {
+    el.classList.toggle('pop-file-root--active', el.dataset.fileId === String(fileId));
+  });
 }
 
 function buildFileRootNode(fileObj) {
@@ -2075,7 +2091,8 @@ function buildFileRootNode(fileObj) {
 
   const wrap = document.createElement('div');
   wrap.className = 'pop-file-root';
-  wrap.style.cssText = 'display:flex;align-items:center;gap:5px;padding:4px 6px;cursor:default;' +
+  wrap.dataset.fileId = fileObj.fileId;
+  wrap.style.cssText = 'display:flex;align-items:center;gap:5px;padding:4px 6px;cursor:pointer;' +
     'background:var(--surface2);border-radius:4px;margin-bottom:2px;user-select:none;';
 
   // File icon
@@ -2098,9 +2115,15 @@ function buildFileRootNode(fileObj) {
   countEl.textContent = rootPop ? popCount(rootPop).toLocaleString() : '';
   wrap.appendChild(countEl);
 
+  // Single-click → set as active file for plot creation
+  wrap.addEventListener('click', e => {
+    if (e.detail >= 2) return; // ignore, dblclick handled separately
+    setActiveFile(fileObj.fileId);
+  });
+
   // Double-click → metadata dialog
   wrap.addEventListener('dblclick', () => showMetadata(fileObj.fileId));
-  wrap.title = `${fileObj.filename} — double-click for metadata`;
+  wrap.title = `${fileObj.filename} — click to select, double-click for metadata`;
 
   // Right-click → remove file
   wrap.addEventListener('contextmenu', e => {
@@ -2437,14 +2460,15 @@ function defaultScale(paramIdx) {
 
 // ─── PLOT MANAGEMENT ──────────────────────────────────────────────────────────
 function addPlot(xIdx=0, yIdx=1, fileId=null) {
-  // Resolve target file
+  // Resolve target file: explicit > active (selected in pop tree) > only file > picker
   let fcsFile;
   if (fileId != null) {
     fcsFile = getFileById(fileId);
   } else if (fcsFiles.length === 1) {
     fcsFile = fcsFiles[0];
+  } else if (_activeFileId != null && getFileById(_activeFileId)) {
+    fcsFile = getFileById(_activeFileId);
   } else if (fcsFiles.length > 1) {
-    // Show file picker then re-call addPlot with the chosen file
     showFilePicker(fid => addPlot(xIdx, yIdx, fid));
     return;
   }
@@ -2542,12 +2566,23 @@ function renderPlotCard(plot) {
     ? (fcsFile.filename.length > 18 ? fcsFile.filename.slice(0, 16) + '…' : fcsFile.filename)
     : '';
 
+  const fileOpts = () => fcsFiles.map(f =>
+    `<option value="${f.fileId}"${f.fileId===plot.fileId?' selected':''}>${
+      f.filename.length > 22 ? f.filename.slice(0, 20) + '…' : f.filename
+    }</option>`).join('');
+
   card.innerHTML = `
     <div class="plot-header" id="plot-hdr-${plot.id}">
       <div class="plot-drag-handle" title="Drag to reorder plot">⠿</div>
       <span id="file-badge-${plot.id}" style="display:none;font-size:8px;background:var(--accent);color:#fff;
         border-radius:3px;padding:1px 4px;max-width:80px;overflow:hidden;text-overflow:ellipsis;
         white-space:nowrap;flex-shrink:0" title="${fcsFile ? fcsFile.filename : ''}">${badgeName}</span>
+      <select id="file-sel-${plot.id}" onchange="changeFile(${plot.id},parseInt(this.value))"
+        style="display:${fcsFiles.length > 1 ? '' : 'none'};font-size:9px;padding:1px 3px;
+          background:var(--surface2);color:var(--text2);border:1px solid var(--border2);
+          border-radius:3px;flex-shrink:0;max-width:90px;cursor:pointer"
+        title="Source file — changes all selected plots"
+        onmousedown="event.stopPropagation()">${fileOpts()}</select>
       <span style="color:var(--text2);font-size:10px;flex-shrink:0">Pop:</span>
       <select id="pop-sel-${plot.id}" onchange="changePop(${plot.id},this.value)"
         style="flex:1;min-width:0;font-size:10px;padding:2px 4px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:4px"
@@ -2833,7 +2868,19 @@ function changePop(id, val, propagate=true) {
   if (propagate) {
     const multiSel = getSelectedPlots();
     if (multiSel.length >= 2) {
-      multiSel.filter(pl=>pl.id!==id).forEach(pl => changePop(pl.id, val, false));
+      const srcPop = populations.find(p => p.id === parseInt(val));
+      multiSel.filter(pl => pl.id !== id).forEach(pl => {
+        if (pl.fileId === plot.fileId) {
+          changePop(pl.id, val, false);
+        } else if (srcPop) {
+          // Different file: match by population name
+          const targetFile = getFileById(pl.fileId);
+          if (targetFile) {
+            const match = targetFile.populations.find(p => p.name === srcPop.name);
+            if (match) changePop(pl.id, match.id, false);
+          }
+        }
+      });
     }
   }
 }
@@ -4568,6 +4615,76 @@ function updateAllPopSelects() {
       .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${p.name} (${popCount(p).toLocaleString()})</option>`)
       .join('');
   });
+  updateAllFileSelects();
+}
+
+function updateAllFileSelects() {
+  const show = fcsFiles.length > 1;
+  const opts = fcsFiles.map(f =>
+    `<option value="${f.fileId}">${f.filename.length > 22 ? f.filename.slice(0,20)+'…' : f.filename}</option>`
+  ).join('');
+  plots.forEach(plot => {
+    const sel = document.getElementById(`file-sel-${plot.id}`); if (!sel) return;
+    sel.style.display = show ? '' : 'none';
+    // Rebuild options preserving current selection
+    sel.innerHTML = fcsFiles.map(f =>
+      `<option value="${f.fileId}"${f.fileId===plot.fileId?' selected':''}>${
+        f.filename.length > 22 ? f.filename.slice(0,20)+'…' : f.filename}</option>`
+    ).join('');
+  });
+}
+
+function changeFile(plotId, newFileId, propagate=true) {
+  const plot = plots.find(p => p.id === plotId); if (!plot) return;
+  const newFile = getFileById(newFileId); if (!newFile || newFile.fileId === plot.fileId) return;
+
+  // Try to match current input pop by name in the new file
+  const currentPop = populations.find(p => p.id === plot.inputPop);
+  const matchedPop = currentPop
+    ? newFile.populations.find(p => p.name === currentPop.name)
+    : newFile.populations.find(p => p._isAll);
+  const rootPop = newFile.populations.find(p => p._isAll);
+
+  // Try to remap axis params by name
+  const oldFile = getFileById(plot.fileId);
+  if (oldFile) {
+    const xName = oldFile.params[plot.xParam]?.name;
+    const yName = oldFile.params[plot.yParam]?.name;
+    const xi = newFile.params.findIndex(p => p.name === xName);
+    const yi = newFile.params.findIndex(p => p.name === yName);
+    if (xi >= 0) plot.xParam = xi;
+    if (yi >= 0) plot.yParam = yi;
+  }
+
+  plot.fileId = newFileId;
+  plot.inputPop = (matchedPop || rootPop)?.id ?? 0;
+  plot.gatePoints = [];
+  plot._vboDirty = true;
+  plot._posKey = null;
+  plot._colKey = null;
+
+  _contextFileId = newFileId;
+  _paramRanges = newFile.paramRanges;
+
+  // Rebuild pop dropdown for this plot
+  const popSel = document.getElementById(`pop-sel-${plotId}`);
+  if (popSel) popSel.innerHTML = newFile.populations
+    .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${p.name} (${popCount(p).toLocaleString()})</option>`)
+    .join('');
+
+  // Sync file selector
+  const fileSel = document.getElementById(`file-sel-${plotId}`);
+  if (fileSel) fileSel.value = newFileId;
+
+  buildAxisControls(plot);
+  renderPlot(plot);
+
+  if (propagate) {
+    const sel = getSelectedPlots();
+    if (sel.length >= 2) {
+      sel.filter(pl => pl.id !== plotId).forEach(pl => changeFile(pl.id, newFileId, false));
+    }
+  }
 }
 
 // Returns all descendant gate populations of a given population id (any depth)
