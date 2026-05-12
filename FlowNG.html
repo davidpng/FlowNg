@@ -1408,7 +1408,7 @@ function recomputeCompensation(newSpillMatrix, fileId) {
 
   // Invalidate heatmap texture cache so density plots regenerate
   invalidateHeatmapCache();
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
 
   return true;
 }
@@ -3286,7 +3286,7 @@ let _globalMinPercentile = 0.1; // percentile-based min value (0-100 scale)
 
 function toggleDensityPlots(enabled) {
   _globalDensityEnabledFlag = enabled;
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
   markAllDirty();
   renderAllPlots();
 }
@@ -4063,24 +4063,16 @@ function buildLODSample(pop, targetN) {
     for (let ei = 0; ei < n; ei += stride) selected.add(popGetIndex(pop, ei));
   }
 
-  // Phase 2: reservoir-sample (Algorithm R) over remaining budget
+  // Phase 2: stride-based fill — O(targetN) instead of O(n)
+  // Reservoir sampling would iterate all 20M events; stride gives equivalent visual
+  // coverage for LOD preview at ~100x lower cost.
   const budget = targetN - selected.size;
   if (budget > 0) {
-    const reservoir = new Int32Array(budget);
-    let filled = 0;
-    for (let ei = 0; ei < n; ei++) {
+    const stride2 = Math.max(1, Math.floor(n / budget));
+    for (let ei = 0; ei < n && selected.size < targetN; ei += stride2) {
       const e = popGetIndex(pop, ei);
-      if (selected.has(e)) continue;
-      if (filled < budget) {
-        reservoir[filled++] = e;
-      } else {
-        const j = Math.floor(Math.random() * (filled + 1));
-        if (j < budget) reservoir[j] = e;
-        filled++;
-      }
+      if (!selected.has(e)) selected.add(e);
     }
-    const take = Math.min(filled, budget);
-    for (let i = 0; i < take; i++) selected.add(reservoir[i]);
   }
 
   // Materialise as sorted Int32Array (preserves draw order)
@@ -5282,7 +5274,7 @@ function applyGlobalSettings() {
   });
 
   overlay.remove();
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
   markAllDirty();
   renderAllPlots();
   showToast(`Applied percentile to ${updatedCount} parameter(s)`);
@@ -5554,7 +5546,7 @@ function applyAxisRangeModal(plotId) {
   overlay.remove();
 
   // Invalidate all caches — cofactor or range changes affect transforms
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
   markAllDirty();
   renderAllPlots();
 }
@@ -5572,7 +5564,7 @@ function resetAxisRangeModal(plotId) {
 
   // Close modal and re-open to show reset defaults
   overlay.remove();
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
   markAllDirty();
   renderAllPlots();
   // Re-open the dialog to show fresh defaults
@@ -5784,7 +5776,7 @@ function applyGlobalAsinhCofactor() {
   // Clear all per-parameter cofactor overrides across all files so global setting applies
   fcsFiles.forEach(f => f.paramRanges.forEach(pr => { delete pr.asinhCofactor; }));
   // Invalidate caches and mark plots dirty so transforms are recalculated
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
   markAllDirty();
   renderAllPlots();
   showToast(`Global asinh cofactor set to ${newCf}`);
@@ -5799,7 +5791,7 @@ function applyGlobalMinPercentile() {
   }
   _globalMinPercentile = newPerc;
   // Invalidate caches and mark plots dirty so range calculations are redone
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
   markAllDirty();
   renderAllPlots();
   showToast(`Global min percentile set to ${newPerc}%`);
@@ -6180,7 +6172,7 @@ function _importGatesV2(tmpl, fileObj) {
     if (tabs.length > 0) { activeTabId = tabs[0].id; renderTabStrip(); renderTabPlots(); }
   }
 
-  invalidateSpatialCache(); markAllDirty();
+  invalidateSpatialCache(true); markAllDirty();
   renderPopList(); updateAllPopSelects(); renderAllPlots();
   _bgRenderQueue = [];
   plots.filter(p => p.tabId !== activeTabId).forEach(p => queueBgRenderPlot(p));
@@ -6378,7 +6370,7 @@ function _doImportV3(indices) {
   if (strip) strip.style.display = tabs.length > 0 ? 'flex' : 'none';
   if (tabs.length > 0) { activeTabId = tabs[0].id; renderTabStrip(); renderTabPlots(); }
 
-  invalidateSpatialCache(); markAllDirty();
+  invalidateSpatialCache(true); markAllDirty();
   renderPopList(); updateAllPopSelects(); renderAllPlots();
   _bgRenderQueue = [];
   plots.filter(p => p.tabId !== activeTabId).forEach(p => queueBgRenderPlot(p));
