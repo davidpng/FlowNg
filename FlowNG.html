@@ -2847,6 +2847,10 @@ function changeAxis(id, axis, val, propagate=true) {
     plot.yParam = paramIdx; plot.yLog = sc.log; plot.yAsinh = sc.asinh;
   }
   plot.gatePoints = [];
+  // Reset LOD to level 0 so the first render after axis change shows 100K events
+  // instantly instead of rebuilding the full 20M-event VBO synchronously.
+  // Progressive refinement at idle takes care of the rest.
+  plot._lodLevel = 0;
   buildAxisControls(plot);
   renderPlot(plot);
   // Only propagate when 2+ plots are explicitly multi-selected
@@ -4289,15 +4293,14 @@ function onCanvasMouseMove(e, canvas, plot) {
     });
   }
 
-  // Live update: commit pts, recalculate gate AND all descendants.
-  // Pass { invalidate: false } so the spatial index (keyed on parent pop + axes)
-  // is reused across mousemove events — it's only invalid when the parent pop changes,
-  // which doesn't happen during a drag of the gate polygon itself.
+  // Live update: eval on the LOD subsample (~100K events) for instant feedback.
+  // The render loop already uses the same subsample during drag, so the colored
+  // dot overlay stays consistent. Full eval fires on mouseup via evalGateAsync.
   const gate = populations.find(p => p.id === plot._dragGate);
   if (gate) {
     gate.gateInfo.rawPts = plot._dragPts.map(p => ({...p}));
-    evalGate(gate, { invalidate: false });
-    getDescendantGates(gate.id).forEach(g => evalGate(g, { invalidate: false }));
+    evalGateLOD(gate);
+    getDescendantGates(gate.id).forEach(g => evalGateLOD(g));
   }
 
   // Throttle redraws with rAF so we don't queue up more renders than the display can show
@@ -4428,12 +4431,13 @@ function onCanvasMouseUp(e, canvas, plot) {
   }
 
   if (!plot._dragGate) return;
-  // Final commit on release (in case last mousemove was throttled)
+  // Full eval on release — dispatch to worker so the main thread stays unblocked.
+  // evalGateAsync falls back to synchronous evalGate if the worker isn't ready.
   const gate = populations.find(p => p.id === plot._dragGate);
   if (gate && plot._dragPts) {
     gate.gateInfo.rawPts = plot._dragPts.map(p => ({...p}));
-    evalGate(gate);
-    getDescendantGates(gate.id).forEach(g => evalGate(g));
+    evalGateAsync(gate);
+    getDescendantGates(gate.id).forEach(g => evalGateAsync(g));
   }
   plot._dragGate = null; plot._dragPts = null; plot._dragRawStart = null;
   renderPopList();
@@ -4488,6 +4492,69 @@ function onCanvasClick(e, canvas, plot) {
   const n = plot.gatePoints.length;
   setStatusBar(n < 3 ? `${n} point(s) — keep clicking` : `${n} pts — click first point to close`);
   renderPlot(plot);
+}
+
+// Fast gate eval for use during live drag — runs PIP on the LOD subsample (~100K
+// events) rather than the full population. Because renderAllPlots() during drag
+// already uses the same LOD subsample, the colored-dot overlay matches what is
+// visible on screen. Falls back to full evalGate if no LOD sample exists yet.
+function evalGateLOD(gate) {
+  const pop = populations.find(p => p.id === gate.parentId);
+  if (!pop) return;
+  const lodKey = `${pop.id}:${LOD_TARGET}`;
+  const lodIndices = _lodCache.get(lodKey);
+  if (!lodIndices || lodIndices.length === 0) {
+    evalGate(gate, { invalidate: false });
+    return;
+  }
+
+  const gateFile = getFileById(gate.fileId) || getFileById(pop.fileId) || fcsFiles[0];
+  if (!gateFile) return;
+  _contextFileId = gateFile.fileId;
+  _paramRanges = gateFile.paramRanges;
+
+  const { data, nPar } = gateFile;
+  const { rawPts, xParam: xP, yParam: yP } = gate.gateInfo;
+  const xScale = gate.gateInfo.xScale || (defaultScale(xP).asinh ? 'asinh' : defaultScale(xP).log ? 'log' : 'lin');
+  const yScale = gate.gateInfo.yScale || (defaultScale(yP).asinh ? 'asinh' : defaultScale(yP).log ? 'log' : 'lin');
+  const xSC = xScale === 'log' ? 1 : xScale === 'asinh' ? 2 : 0;
+  const ySC = yScale === 'log' ? 1 : yScale === 'asinh' ? 2 : 0;
+  const xCF = getAsinhCofactor(xP), yCF = getAsinhCofactor(yP);
+
+  const dispPts = rawPts.map(pt => ({
+    dx: toDisplay(pt.rx, xP, xScale),
+    dy: toDisplay(pt.ry, yP, yScale)
+  }));
+  const nPts = dispPts.length;
+
+  let dxMin = Infinity, dxMax = -Infinity, dyMin = Infinity, dyMax = -Infinity;
+  for (const pt of dispPts) {
+    if (pt.dx < dxMin) dxMin = pt.dx; if (pt.dx > dxMax) dxMax = pt.dx;
+    if (pt.dy < dyMin) dyMin = pt.dy; if (pt.dy > dyMax) dyMax = pt.dy;
+  }
+
+  const n = lodIndices.length;
+  const result = [];
+  for (let li = 0; li < n; li++) {
+    const e = lodIndices[li];
+    const base = e * nPar;
+    let dx = data[base + xP];
+    if (xSC === 1) dx = Math.log10(dx < 1 ? 1 : dx); else if (xSC === 2) dx = Math.asinh(dx / xCF) * LOG10E;
+    if (dx < dxMin || dx > dxMax) continue;
+    let dy = data[base + yP];
+    if (ySC === 1) dy = Math.log10(dy < 1 ? 1 : dy); else if (ySC === 2) dy = Math.asinh(dy / yCF) * LOG10E;
+    if (dy < dyMin || dy > dyMax) continue;
+    let inside = false;
+    for (let i = 0, j = nPts - 1; i < nPts; j = i++) {
+      const xi = dispPts[i].dx, yi = dispPts[i].dy;
+      const xj = dispPts[j].dx, yj = dispPts[j].dy;
+      if (((yi > dy) !== (yj > dy)) && dx < (xj - xi) * (dy - yi) / (yj - yi) + xi)
+        inside = !inside;
+    }
+    if (inside) result.push(e);
+  }
+  gate.indices = Int32Array.from(result);
+  markAllDirty();
 }
 
 function evalGate(gate, { invalidate = true } = {}) {
