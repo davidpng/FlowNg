@@ -1142,7 +1142,10 @@ function evalGateAsync(gate) {
     parentIsAll: !!pop._isAll,
     parentIndices: pop._isAll ? null : pop.indices
   };
-  fileObj._pendingGateCallbacks.set(gate.id, () => {});
+  // Only register the no-op fallback if finalizeGate hasn't already set a real callback
+  if (!fileObj._pendingGateCallbacks.has(gate.id)) {
+    fileObj._pendingGateCallbacks.set(gate.id, () => {});
+  }
   fileObj._computeWorker.postMessage(msg);
 }
 
@@ -2286,10 +2289,15 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   swatch.title = 'Right-click to change color';
   row.appendChild(swatch);
 
-  // Name
+  // Name — click navigates to/creates the gate's source plot (sequential gating entry point)
   const nameEl = document.createElement('div');
   nameEl.className = 'pop-name-small';
   nameEl.textContent = pop.name;
+  if (pop.gateInfo) {
+    nameEl.style.cursor = 'pointer';
+    nameEl.title = 'Click to navigate to this gate\'s plot (for sequential gating)';
+    nameEl.addEventListener('click', e => { if (!e.shiftKey) { e.stopPropagation(); highlightOrRecreateGatePlot(popId); } });
+  }
   row.appendChild(nameEl);
 
   // Dot-boost badge (shown when dotBoost > 0)
@@ -2317,7 +2325,7 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
 
     // Double-click cycles dot-size boost (0 → 2 → 4 → 8 → 0 px)
     row.addEventListener('dblclick', e => { e.preventDefault(); cycleDotBoost(popId); });
-    row.title = 'Dbl-click to cycle dot size boost · Shift-click or right-click to edit color/name · Drag to reparent';
+    row.title = 'Click name to navigate to gate plot · Dbl-click to cycle dot size boost · Shift-click or right-click to edit color/name · Drag to reparent';
 
     // Drag to reparent — suppress on right-click so context menu fires reliably
     row.draggable = true;
@@ -6648,7 +6656,7 @@ function loadDemo() {
     populations: [],
     colorPrecedence: [],
     paramRanges: new Map(),
-    _computeWorker: null, _computeWorkerReady: false, _pendingGateCallbacks: []
+    _computeWorker: null, _computeWorkerReady: false, _pendingGateCallbacks: new Map()
   });
   fcsFiles.push(fileObj);
   fcsData = fcsFiles[0];
