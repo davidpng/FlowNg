@@ -783,15 +783,23 @@
     </div>
     </div><!-- /sidebar-content -->
     <div class="kb-hints">
-      <div style="color:var(--text2);font-size:9px;font-weight:600;margin-bottom:4px;letter-spacing:0.5px">KEYBOARD SHORTCUTS</div>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin-bottom:4px;letter-spacing:0.5px">PLOT SELECTION</div>
       <kbd>Click</kbd> header — select plot<br>
-      <kbd>Ctrl</kbd>+<kbd>Click</kbd> — multi-select<br>
+      <kbd>Shift</kbd>+<kbd>Click</kbd> — range-select plots<br>
+      <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Click</kbd> — toggle selection<br>
       <kbd>Click</kbd> canvas bg — deselect all<br>
-      <kbd>Del</kbd> — remove selected plot(s)<br>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">PLOT MANAGEMENT</div>
+      <kbd>Del</kbd>/<kbd>⌫</kbd> — remove selected plot(s)<br>
       <kbd>Esc</kbd> — cancel gate / deselect all<br>
+      <kbd>Drag</kbd> ⠿ — reorder plots<br>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">CANVAS</div>
+      <kbd>Click</kbd> — add gate point<br>
+      <kbd>Click</kbd> first point — close gate (3+ pts)<br>
+      <kbd>Dbl-click</kbd> — finalize gate (3+ pts)<br>
+      <kbd>Right-click</kbd> — axis range / cofactor<br>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">POPULATION LIST</div>
       <kbd>Dbl-click</kbd> pop — jump to gate plot<br>
-      <kbd>Right-click</kbd> canvas — axis range / cofactor<br>
-      <kbd>Right-click</kbd> gate — change color<br>
+      <kbd>Right-click</kbd> pop — change gate color<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">MULTI-SELECT (2+ plots)</div>
       Axis / pop changes apply to all selected.<br>
       Scale (LOG/LIN/ASINH) is always per-plot.
@@ -1408,7 +1416,7 @@ function recomputeCompensation(newSpillMatrix, fileId) {
 
   // Invalidate heatmap texture cache so density plots regenerate
   invalidateHeatmapCache();
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
 
   return true;
 }
@@ -2847,6 +2855,10 @@ function changeAxis(id, axis, val, propagate=true) {
     plot.yParam = paramIdx; plot.yLog = sc.log; plot.yAsinh = sc.asinh;
   }
   plot.gatePoints = [];
+  // Reset LOD to level 0 so the first render after axis change shows 100K events
+  // instantly instead of rebuilding the full 20M-event VBO synchronously.
+  // Progressive refinement at idle takes care of the rest.
+  plot._lodLevel = 0;
   buildAxisControls(plot);
   renderPlot(plot);
   // Only propagate when 2+ plots are explicitly multi-selected
@@ -3282,7 +3294,7 @@ let _globalMinPercentile = 0.1; // percentile-based min value (0-100 scale)
 
 function toggleDensityPlots(enabled) {
   _globalDensityEnabledFlag = enabled;
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
   markAllDirty();
   renderAllPlots();
 }
@@ -3459,13 +3471,20 @@ function f32f16(v) {
   return sign | (exp16 << 10) | (mant >>> 13);
 }
 
+// a_pos holds normalized display-space coords [0,1] in the full (unzoomed) param range.
+// u_xr/u_yr encode the zoom sub-range in those same normalized coords so that zoom/pan
+// only updates two uniforms — the VBO itself is zoom-independent.
 const VERT_SRC =
   'attribute vec2 a_pos;' +
   'attribute vec4 a_col;' +
   'uniform float u_ps;' +
+  'uniform vec2 u_xr;' +
+  'uniform vec2 u_yr;' +
   'varying vec4 v_col;' +
   'void main(){' +
-  '  gl_Position=vec4(a_pos,0.0,1.0);' +
+  '  float nx=2.0*(a_pos.x-u_xr.x)/(u_xr.y-u_xr.x)-1.0;' +
+  '  float ny=2.0*(a_pos.y-u_yr.x)/(u_yr.y-u_yr.x)-1.0;' +
+  '  gl_Position=vec4(nx,ny,0.0,1.0);' +
   '  gl_PointSize=u_ps;' +
   '  v_col=a_col;' +
   '}';
@@ -3505,8 +3524,12 @@ function createGLRenderer(canvas) {
   const posLoc = gl.getAttribLocation(prog, 'a_pos');
   const colLoc = gl.getAttribLocation(prog, 'a_col');
   const psLoc  = gl.getUniformLocation(prog, 'u_ps');
-  const buf    = gl.createBuffer();
-  const STRIDE = 6 * 4; // 6 floats per vertex: x, y, r, g, b, a
+  const xrLoc  = gl.getUniformLocation(prog, 'u_xr');
+  const yrLoc  = gl.getUniformLocation(prog, 'u_yr');
+  const buf    = gl.createBuffer(); // interleaved buffer for overlay/emphasis paths
+  const posBuf = gl.createBuffer(); // split pos buffer for _drawDotsFull
+  const colBuf = gl.createBuffer(); // split col buffer for _drawDotsFull
+  const STRIDE = 6 * 4; // 6 floats per vertex (interleaved): x, y, r, g, b, a
 
   // Detect HALF_FLOAT vertex attribute support
   let halfFloatType = null;
@@ -3517,7 +3540,7 @@ function createGLRenderer(canvas) {
     if (ext) halfFloatType = ext.HALF_FLOAT_OES;
   }
 
-  return { gl, canvas, prog, posLoc, colLoc, psLoc, buf, STRIDE, halfFloatType };
+  return { gl, canvas, prog, posLoc, colLoc, psLoc, xrLoc, yrLoc, buf, posBuf, colBuf, STRIDE, halfFloatType };
 }
 
 // Cache renderers per plot (keyed by plot.id)
@@ -3628,17 +3651,21 @@ function drawDotsWebGL(ctx, plot, tf, pad, pw, ph, pop, renderPop, data, nPar, a
 }
 
 // Draw the full dot VBO for a population (used when below threshold).
-// Fix 4: position data (geometry) and color data are cached under separate keys.
-// A gate color change only rebuilds the color half (~25% of the work).
-// Fix 7: large buffers come from _pool — no allocation on cache hits.
+// Position VBO stores normalized display-space [0,1] coords relative to the full
+// (unzoomed) param range — zoom/pan only updates u_xr/u_yr uniforms, no VBO rebuild.
+// Color VBO cached separately — gate color changes only rebuild the 4×f16 col portion.
+// Split pos+col buffers eliminate the 240MB interleave allocation on every render.
 function _drawDotsFull(gl, rend, plot, tf, pad, pw, ph, pop, data, nPar, allColoredGates, orderedGates, n) {
-  const { posLoc, colLoc, psLoc, buf } = rend;
+  const { posLoc, colLoc, psLoc } = rend;
   const xRange = tf.xRange, yRange = tf.yRange;
 
   if (psLoc !== null) gl.uniform1f(psLoc, Math.max(1.0, plot.dotSize * 2 || 3.0));
 
-  // ── Position cache key: axes + scale + range + count ─────────────────────
-  const posKey = `${plot.inputPop}-${plot.xParam}-${plot.yParam}-${tf.xls}-${tf.yls}-${xRange.min.toFixed(4)}-${xRange.max.toFixed(4)}-${yRange.min.toFixed(4)}-${yRange.max.toFixed(4)}-${n}`;
+  // ── Position cache key: axes + scale + FULL (unzoomed) range + count ─────
+  // Zoom range is encoded only in u_xr/u_yr uniforms — the VBO itself is zoom-independent.
+  const fullXRange = getAxisRange(plot.xParam, tf.xls, null);
+  const fullYRange = getAxisRange(plot.yParam, tf.yls, null);
+  const posKey = `${plot.inputPop}-${plot.xParam}-${plot.yParam}-${tf.xls}-${tf.yls}-${fullXRange.min.toFixed(4)}-${fullXRange.max.toFixed(4)}-${fullYRange.min.toFixed(4)}-${fullYRange.max.toFixed(4)}-${n}`;
   // ── Color cache key: gate membership fingerprint only ─────────────────────
   const gfp = orderedGates.map(g => g.id+':'+g.color+':'+(g.noColor?'n':'')).join('|');
   const colKey = `${plot.inputPop}-${gfp}`;
@@ -3648,8 +3675,9 @@ function _drawDotsFull(gl, rend, plot, tf, pad, pw, ph, pop, data, nPar, allColo
     const xSC = tf.xls === 'log' ? 1 : tf.xls === 'asinh' ? 2 : 0;
     const ySC = tf.yls === 'log' ? 1 : tf.yls === 'asinh' ? 2 : 0;
     const xCF = getAsinhCofactor(plot.xParam), yCF = getAsinhCofactor(plot.yParam);
-    const xRmin = xRange.min, xRspan = 1 / (xRange.max - xRange.min);
-    const yRmin = yRange.min, yRspan = 1 / (yRange.max - yRange.min);
+    // Normalize to full (unzoomed) range [0,1] — values stay in float16 range for any scale
+    const fxMin = fullXRange.min, fxSpan = fullXRange.max - fullXRange.min || 1, fxISpan = 1 / fxSpan;
+    const fyMin = fullYRange.min, fySpan = fullYRange.max - fullYRange.min || 1, fyISpan = 1 / fySpan;
     const pos = new Uint16Array(n * 2); // x,y only — half-float
     let pi = 0;
     for (let ei = 0; ei < n; ei++) {
@@ -3658,8 +3686,8 @@ function _drawDotsFull(gl, rend, plot, tf, pad, pw, ph, pop, data, nPar, allColo
       if (xSC === 1) dx = Math.log10(dx < 1 ? 1 : dx); else if (xSC === 2) dx = Math.asinh(dx / xCF) * LOG10E;
       let dy = data[base + plot.yParam];
       if (ySC === 1) dy = Math.log10(dy < 1 ? 1 : dy); else if (ySC === 2) dy = Math.asinh(dy / yCF) * LOG10E;
-      pos[pi++] = f32f16(2*(dx-xRmin)*xRspan - 1);
-      pos[pi++] = f32f16(2*(dy-yRmin)*yRspan - 1);
+      pos[pi++] = f32f16((dx - fxMin) * fxISpan);
+      pos[pi++] = f32f16((dy - fyMin) * fyISpan);
     }
     plot._posVBO = pos;
     plot._posKey = posKey;
@@ -3706,19 +3734,57 @@ function _drawDotsFull(gl, rend, plot, tf, pad, pw, ph, pop, data, nPar, allColo
     plot._colKey = colKey;
   }
 
-  // Interleave pos + col into one upload buffer [x,y,r,g,b,a] × n
-  // Reuse pool buffer to avoid a fresh Uint16Array each frame
-  const verts = new Uint16Array(n * 6);
-  const pos = plot._posVBO, col = plot._colVBO;
-  for (let i = 0; i < n; i++) {
-    const vi = i * 6, pi = i * 2, ci = i * 4;
-    verts[vi]   = pos[pi]; verts[vi+1] = pos[pi+1];
-    verts[vi+2] = col[ci]; verts[vi+3] = col[ci+1];
-    verts[vi+4] = col[ci+2]; verts[vi+5] = col[ci+3];
-  }
+  // ── Compute normalized zoom range (for uniforms) ─────────────────────────
+  // fullXRange/fullYRange already computed above for posKey
+  const fxSpanD = fullXRange.max - fullXRange.min || 1;
+  const fySpanD = fullYRange.max - fullYRange.min || 1;
+  const nxMin = (xRange.min - fullXRange.min) / fxSpanD;
+  const nxMax = (xRange.max - fullXRange.min) / fxSpanD;
+  const nyMin = (yRange.min - fullYRange.min) / fySpanD;
+  const nyMax = (yRange.max - fullYRange.min) / fySpanD;
+
   plot._vboDirty = false;
 
-  _uploadAndDraw(gl, rend, verts, n);
+  if (rend.halfFloatType && rend.posBuf) {
+    // ── Split VBO path: upload pos and col independently, no interleave ──────
+    // Reset GPU-side dirty flags when the GL context was recreated
+    if (plot._glRend !== rend) { plot._posGPU = null; plot._colGPU = null; plot._glRend = rend; }
+    if (plot._posGPU !== posKey) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, rend.posBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, plot._posVBO, gl.DYNAMIC_DRAW);
+      plot._posGPU = posKey;
+    }
+    if (plot._colGPU !== colKey) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, rend.colBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, plot._colVBO, gl.DYNAMIC_DRAW);
+      plot._colGPU = colKey;
+    }
+    // Set range uniforms (zoom encoded as normalized sub-range)
+    if (rend.xrLoc !== null) gl.uniform2f(rend.xrLoc, nxMin, nxMax);
+    if (rend.yrLoc !== null) gl.uniform2f(rend.yrLoc, nyMin, nyMax);
+    // Bind split buffers and draw — no interleave allocation
+    const hft = rend.halfFloatType;
+    gl.bindBuffer(gl.ARRAY_BUFFER, rend.posBuf);
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 2, hft, false, 4, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, rend.colBuf);
+    gl.enableVertexAttribArray(colLoc);
+    gl.vertexAttribPointer(colLoc, 4, hft, false, 8, 0);
+    gl.drawArrays(gl.POINTS, 0, n);
+  } else {
+    // ── Fallback: interleaved upload (no half-float support) ─────────────────
+    const verts = new Uint16Array(n * 6);
+    const posVBO = plot._posVBO, colVBO = plot._colVBO;
+    for (let i = 0; i < n; i++) {
+      const vi = i * 6, pi = i * 2, ci = i * 4;
+      verts[vi]   = posVBO[pi]; verts[vi+1] = posVBO[pi+1];
+      verts[vi+2] = colVBO[ci]; verts[vi+3] = colVBO[ci+1];
+      verts[vi+4] = colVBO[ci+2]; verts[vi+5] = colVBO[ci+3];
+    }
+    if (rend.xrLoc !== null) gl.uniform2f(rend.xrLoc, nxMin, nxMax);
+    if (rend.yrLoc !== null) gl.uniform2f(rend.yrLoc, nyMin, nyMax);
+    _uploadAndDraw(gl, rend, verts, n);
+  }
 }
 
 // Single-winner dot overlay for heatmap mode.
@@ -3763,8 +3829,10 @@ function _drawDotLayers(gl, rend, plot, tf, pop, orderedGates, nPar) {
   const xSC = tf.xls === 'log' ? 1 : tf.xls === 'asinh' ? 2 : 0;
   const ySC = tf.yls === 'log' ? 1 : tf.yls === 'asinh' ? 2 : 0;
   const xCF = getAsinhCofactor(plot.xParam), yCF = getAsinhCofactor(plot.yParam);
-  const xRmin = xRange.min, xRspan = 1 / (xRange.max - xRange.min);
-  const yRmin = yRange.min, yRspan = 1 / (yRange.max - yRange.min);
+  const fullXRange = getAxisRange(plot.xParam, tf.xls, null);
+  const fullYRange = getAxisRange(plot.yParam, tf.yls, null);
+  const fxMin = fullXRange.min, fxSpan = fullXRange.max - fullXRange.min || 1, fxISpan = 1 / fxSpan;
+  const fyMin = fullYRange.min, fySpan = fullYRange.max - fullYRange.min || 1, fyISpan = 1 / fySpan;
   const inv255 = 1 / 255;
 
   const verts = new Uint16Array(gatedCount * 6);
@@ -3777,13 +3845,15 @@ function _drawDotLayers(gl, rend, plot, tf, pop, orderedGates, nPar) {
     if (xSC === 1) dx = Math.log10(dx < 1 ? 1 : dx); else if (xSC === 2) dx = Math.asinh(dx / xCF) * LOG10E;
     let dy = data[base + plot.yParam];
     if (ySC === 1) dy = Math.log10(dy < 1 ? 1 : dy); else if (ySC === 2) dy = Math.asinh(dy / yCF) * LOG10E;
-    verts[vi++] = f32f16(2*(dx-xRmin)*xRspan - 1);
-    verts[vi++] = f32f16(2*(dy-yRmin)*yRspan - 1);
+    verts[vi++] = f32f16((dx - fxMin) * fxISpan);
+    verts[vi++] = f32f16((dy - fyMin) * fyISpan);
     verts[vi++] = f32f16(colorLUT[b4]   * inv255);
     verts[vi++] = f32f16(colorLUT[b4+1] * inv255);
     verts[vi++] = f32f16(colorLUT[b4+2] * inv255);
     verts[vi++] = f32f16(colorLUT[b4+3] * inv255);
   }
+  if (rend.xrLoc !== null) gl.uniform2f(rend.xrLoc, (xRange.min-fxMin)/fxSpan, (xRange.max-fxMin)/fxSpan);
+  if (rend.yrLoc !== null) gl.uniform2f(rend.yrLoc, (yRange.min-fyMin)/fySpan, (yRange.max-fyMin)/fySpan);
   _uploadAndDraw(gl, rend, verts, gatedCount);
 }
 
@@ -3797,8 +3867,10 @@ function _drawGateEvents(gl, rend, plot, tf, gate, nPar) {
   const xSC = tf.xls === 'log' ? 1 : tf.xls === 'asinh' ? 2 : 0;
   const ySC = tf.yls === 'log' ? 1 : tf.yls === 'asinh' ? 2 : 0;
   const xCF = getAsinhCofactor(plot.xParam), yCF = getAsinhCofactor(plot.yParam);
-  const xRmin = xRange.min, xRspan = 1 / (xRange.max - xRange.min);
-  const yRmin = yRange.min, yRspan = 1 / (yRange.max - yRange.min);
+  const fullXRange = getAxisRange(plot.xParam, tf.xls, null);
+  const fullYRange = getAxisRange(plot.yParam, tf.yls, null);
+  const fxMin = fullXRange.min, fxSpan = fullXRange.max - fullXRange.min || 1, fxISpan = 1 / fxSpan;
+  const fyMin = fullYRange.min, fySpan = fullYRange.max - fullYRange.min || 1, fyISpan = 1 / fySpan;
   const [r8, g8, b8] = hexToRgba255(gate.color);
   const inv255 = 1 / 255;
   const rv = r8*inv255, gv = g8*inv255, bv = b8*inv255, av = 0.9;
@@ -3810,10 +3882,12 @@ function _drawGateEvents(gl, rend, plot, tf, gate, nPar) {
     if (xSC === 1) dx = Math.log10(dx < 1 ? 1 : dx); else if (xSC === 2) dx = Math.asinh(dx / xCF) * LOG10E;
     let dy = data[base + plot.yParam];
     if (ySC === 1) dy = Math.log10(dy < 1 ? 1 : dy); else if (ySC === 2) dy = Math.asinh(dy / yCF) * LOG10E;
-    verts[vi++] = f32f16(2*(dx-xRmin)*xRspan - 1);
-    verts[vi++] = f32f16(2*(dy-yRmin)*yRspan - 1);
+    verts[vi++] = f32f16((dx - fxMin) * fxISpan);
+    verts[vi++] = f32f16((dy - fyMin) * fyISpan);
     verts[vi++] = f32f16(rv); verts[vi++] = f32f16(gv); verts[vi++] = f32f16(bv); verts[vi++] = f32f16(av);
   }
+  if (rend.xrLoc !== null) gl.uniform2f(rend.xrLoc, (xRange.min-fxMin)/fxSpan, (xRange.max-fxMin)/fxSpan);
+  if (rend.yrLoc !== null) gl.uniform2f(rend.yrLoc, (yRange.min-fyMin)/fySpan, (yRange.max-fyMin)/fySpan);
   _uploadAndDraw(gl, rend, verts, gn);
 }
 
@@ -3997,24 +4071,16 @@ function buildLODSample(pop, targetN) {
     for (let ei = 0; ei < n; ei += stride) selected.add(popGetIndex(pop, ei));
   }
 
-  // Phase 2: reservoir-sample (Algorithm R) over remaining budget
+  // Phase 2: stride-based fill — O(targetN) instead of O(n)
+  // Reservoir sampling would iterate all 20M events; stride gives equivalent visual
+  // coverage for LOD preview at ~100x lower cost.
   const budget = targetN - selected.size;
   if (budget > 0) {
-    const reservoir = new Int32Array(budget);
-    let filled = 0;
-    for (let ei = 0; ei < n; ei++) {
+    const stride2 = Math.max(1, Math.floor(n / budget));
+    for (let ei = 0; ei < n && selected.size < targetN; ei += stride2) {
       const e = popGetIndex(pop, ei);
-      if (selected.has(e)) continue;
-      if (filled < budget) {
-        reservoir[filled++] = e;
-      } else {
-        const j = Math.floor(Math.random() * (filled + 1));
-        if (j < budget) reservoir[j] = e;
-        filled++;
-      }
+      if (!selected.has(e)) selected.add(e);
     }
-    const take = Math.min(filled, budget);
-    for (let i = 0; i < take; i++) selected.add(reservoir[i]);
   }
 
   // Materialise as sorted Int32Array (preserves draw order)
@@ -4227,13 +4293,14 @@ function onCanvasMouseMove(e, canvas, plot) {
     });
   }
 
-  // Live update: commit pts, recalculate gate AND all descendants
+  // Live update: eval on the LOD subsample (~100K events) for instant feedback.
+  // The render loop already uses the same subsample during drag, so the colored
+  // dot overlay stays consistent. Full eval fires on mouseup via evalGateAsync.
   const gate = populations.find(p => p.id === plot._dragGate);
   if (gate) {
     gate.gateInfo.rawPts = plot._dragPts.map(p => ({...p}));
-    evalGate(gate);
-    // Re-evaluate all descendants in hierarchy order (parents before children)
-    getDescendantGates(gate.id).forEach(g => evalGate(g));
+    evalGateLOD(gate);
+    getDescendantGates(gate.id).forEach(g => evalGateLOD(g));
   }
 
   // Throttle redraws with rAF so we don't queue up more renders than the display can show
@@ -4364,12 +4431,13 @@ function onCanvasMouseUp(e, canvas, plot) {
   }
 
   if (!plot._dragGate) return;
-  // Final commit on release (in case last mousemove was throttled)
+  // Full eval on release — dispatch to worker so the main thread stays unblocked.
+  // evalGateAsync falls back to synchronous evalGate if the worker isn't ready.
   const gate = populations.find(p => p.id === plot._dragGate);
   if (gate && plot._dragPts) {
     gate.gateInfo.rawPts = plot._dragPts.map(p => ({...p}));
-    evalGate(gate);
-    getDescendantGates(gate.id).forEach(g => evalGate(g));
+    evalGateAsync(gate);
+    getDescendantGates(gate.id).forEach(g => evalGateAsync(g));
   }
   plot._dragGate = null; plot._dragPts = null; plot._dragRawStart = null;
   renderPopList();
@@ -4426,7 +4494,70 @@ function onCanvasClick(e, canvas, plot) {
   renderPlot(plot);
 }
 
-function evalGate(gate) {
+// Fast gate eval for use during live drag — runs PIP on the LOD subsample (~100K
+// events) rather than the full population. Because renderAllPlots() during drag
+// already uses the same LOD subsample, the colored-dot overlay matches what is
+// visible on screen. Falls back to full evalGate if no LOD sample exists yet.
+function evalGateLOD(gate) {
+  const pop = populations.find(p => p.id === gate.parentId);
+  if (!pop) return;
+  const lodKey = `${pop.id}:${LOD_TARGET}`;
+  const lodIndices = _lodCache.get(lodKey);
+  if (!lodIndices || lodIndices.length === 0) {
+    evalGate(gate, { invalidate: false });
+    return;
+  }
+
+  const gateFile = getFileById(gate.fileId) || getFileById(pop.fileId) || fcsFiles[0];
+  if (!gateFile) return;
+  _contextFileId = gateFile.fileId;
+  _paramRanges = gateFile.paramRanges;
+
+  const { data, nPar } = gateFile;
+  const { rawPts, xParam: xP, yParam: yP } = gate.gateInfo;
+  const xScale = gate.gateInfo.xScale || (defaultScale(xP).asinh ? 'asinh' : defaultScale(xP).log ? 'log' : 'lin');
+  const yScale = gate.gateInfo.yScale || (defaultScale(yP).asinh ? 'asinh' : defaultScale(yP).log ? 'log' : 'lin');
+  const xSC = xScale === 'log' ? 1 : xScale === 'asinh' ? 2 : 0;
+  const ySC = yScale === 'log' ? 1 : yScale === 'asinh' ? 2 : 0;
+  const xCF = getAsinhCofactor(xP), yCF = getAsinhCofactor(yP);
+
+  const dispPts = rawPts.map(pt => ({
+    dx: toDisplay(pt.rx, xP, xScale),
+    dy: toDisplay(pt.ry, yP, yScale)
+  }));
+  const nPts = dispPts.length;
+
+  let dxMin = Infinity, dxMax = -Infinity, dyMin = Infinity, dyMax = -Infinity;
+  for (const pt of dispPts) {
+    if (pt.dx < dxMin) dxMin = pt.dx; if (pt.dx > dxMax) dxMax = pt.dx;
+    if (pt.dy < dyMin) dyMin = pt.dy; if (pt.dy > dyMax) dyMax = pt.dy;
+  }
+
+  const n = lodIndices.length;
+  const result = [];
+  for (let li = 0; li < n; li++) {
+    const e = lodIndices[li];
+    const base = e * nPar;
+    let dx = data[base + xP];
+    if (xSC === 1) dx = Math.log10(dx < 1 ? 1 : dx); else if (xSC === 2) dx = Math.asinh(dx / xCF) * LOG10E;
+    if (dx < dxMin || dx > dxMax) continue;
+    let dy = data[base + yP];
+    if (ySC === 1) dy = Math.log10(dy < 1 ? 1 : dy); else if (ySC === 2) dy = Math.asinh(dy / yCF) * LOG10E;
+    if (dy < dyMin || dy > dyMax) continue;
+    let inside = false;
+    for (let i = 0, j = nPts - 1; i < nPts; j = i++) {
+      const xi = dispPts[i].dx, yi = dispPts[i].dy;
+      const xj = dispPts[j].dx, yj = dispPts[j].dy;
+      if (((yi > dy) !== (yj > dy)) && dx < (xj - xi) * (dy - yi) / (yj - yi) + xi)
+        inside = !inside;
+    }
+    if (inside) result.push(e);
+  }
+  gate.indices = Int32Array.from(result);
+  markAllDirty();
+}
+
+function evalGate(gate, { invalidate = true } = {}) {
   const pop = populations.find(p => p.id === gate.parentId);
   if (!pop) return;
   // Set context so getAsinhCofactor and defaultScale use the right file
@@ -4483,7 +4614,9 @@ function evalGate(gate) {
   }
 
   gate.indices = Int32Array.from(result);
-  invalidateSpatialCache(true);
+  // During live gate drag the parent pop is unchanged — preserve the spatial cache
+  // so the next mousemove reuses it instead of rebuilding from scratch.
+  if (invalidate) invalidateSpatialCache(true);
   markAllDirty();
 }
 
@@ -4496,64 +4629,18 @@ function finalizeGate(plot) {
   _contextFileId = fcsFile.fileId;
   _paramRanges = fcsFile.paramRanges;
 
-  const pop = populations.find(p => p.id === plot.inputPop);
-  const { data, nPar } = fcsFile;
-
-  // Use spatial index to narrow candidates, then precise PIP in display space
   const xScale2 = plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin';
   const yScale2 = plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin';
-
-  // Pre-compute display-space polygon once
-  const dispPtsF = pts.map(pt => ({
-    dx: toDisplay(pt.rx, plot.xParam, xScale2),
-    dy: toDisplay(pt.ry, plot.yParam, yScale2)
-  }));
-
-  // Bounding box from pre-computed display points
-  let dxMin2 = Infinity, dxMax2 = -Infinity, dyMin2 = Infinity, dyMax2 = -Infinity;
-  for (const pt of dispPtsF) {
-    if (pt.dx < dxMin2) dxMin2 = pt.dx; if (pt.dx > dxMax2) dxMax2 = pt.dx;
-    if (pt.dy < dyMin2) dyMin2 = pt.dy; if (pt.dy > dyMax2) dyMax2 = pt.dy;
-  }
-
-  const spatIdx = buildSpatialIndex(pop, plot.xParam, plot.yParam, xScale2, yScale2);
-  const candidates2 = spatialQuery(spatIdx, dxMin2, dxMax2, dyMin2, dyMax2);
-
-  // PIP using cached display coords — zero toDisplay calls per event
-  const { dispX: fdX, dispY: fdY } = spatIdx;
-  const nPtsF = dispPtsF.length;
-  const gated = [];
-
-  let eiOfEventF = null;
-  if (!pop._isAll) {
-    eiOfEventF = new Int32Array(fcsFile.nEvents).fill(-1);
-    const src = pop.indices;
-    for (let i = 0; i < src.length; i++) eiOfEventF[src[i]] = i;
-  }
-
-  for (let ci = 0; ci < candidates2.length; ci++) {
-    const e = candidates2[ci];
-    const ei = pop._isAll ? e : eiOfEventF[e];
-    if (ei < 0) continue;
-    const dx = fdX[ei], dy = fdY[ei];
-    let inside = false;
-    for (let i = 0, j = nPtsF - 1; i < nPtsF; j = i++) {
-      const xi = dispPtsF[i].dx, yi = dispPtsF[i].dy;
-      const xj = dispPtsF[j].dx, yj = dispPtsF[j].dy;
-      if (((yi > dy) !== (yj > dy)) && dx < (xj - xi) * (dy - yi) / (yj - yi) + xi) inside = !inside;
-    }
-    if (inside) gated.push(e);
-  }
-
   const color = GATE_COLORS[fcsFile.populations.filter(p => !p._isAll).length % GATE_COLORS.length];
   const defaultName = `Gate ${popIdCounter}`;
-  const gateName = prompt(`Name this gate (${gated.length.toLocaleString()} events inside):`, defaultName) || defaultName;
 
+  // Create gate immediately with empty indices so the polygon appears on the plot
+  // while the worker computes the full event set in the background.
   const newPop = {
     id: popIdCounter++,
-    name: gateName,
+    name: defaultName,
     color,
-    indices: gated,
+    indices: new Int32Array(0),
     parentId: plot.inputPop,
     fileId: fcsFile.fileId,
     gateInfo: {
@@ -4566,13 +4653,25 @@ function finalizeGate(plot) {
   };
   fcsFile.populations.push(newPop);
   rebuildPopulationsView();
-
   plot.gatePoints = [];
-  setStatusBar(`\u2713 ${gateName}: ${gated.length.toLocaleString()} events`);
   renderPopList();
   updateAllPopSelects();
   renderAllPlots();
-  showToast(`"${gateName}": ${gated.length.toLocaleString()} events`);
+  setStatusBar('Computing gate\u2026');
+
+  fcsFile._pendingGateCallbacks.set(newPop.id, () => {
+    const count = newPop.indices.length;
+    const gateName = prompt(`Name this gate (${count.toLocaleString()} events inside):`, defaultName) || defaultName;
+    newPop.name = gateName;
+    const fp = fcsFile.populations.find(p => p.id === newPop.id);
+    if (fp) fp.name = gateName;
+    setStatusBar(`\u2713 ${gateName}: ${count.toLocaleString()} events`);
+    renderPopList();
+    updateAllPopSelects();
+    renderAllPlots();
+    showToast(`"${gateName}": ${count.toLocaleString()} events`);
+  });
+  evalGateAsync(newPop);
 }
 
 // Ray-casting PIP in display space.
@@ -5183,7 +5282,7 @@ function applyGlobalSettings() {
   });
 
   overlay.remove();
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
   markAllDirty();
   renderAllPlots();
   showToast(`Applied percentile to ${updatedCount} parameter(s)`);
@@ -5455,7 +5554,7 @@ function applyAxisRangeModal(plotId) {
   overlay.remove();
 
   // Invalidate all caches — cofactor or range changes affect transforms
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
   markAllDirty();
   renderAllPlots();
 }
@@ -5473,7 +5572,7 @@ function resetAxisRangeModal(plotId) {
 
   // Close modal and re-open to show reset defaults
   overlay.remove();
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
   markAllDirty();
   renderAllPlots();
   // Re-open the dialog to show fresh defaults
@@ -5685,7 +5784,7 @@ function applyGlobalAsinhCofactor() {
   // Clear all per-parameter cofactor overrides across all files so global setting applies
   fcsFiles.forEach(f => f.paramRanges.forEach(pr => { delete pr.asinhCofactor; }));
   // Invalidate caches and mark plots dirty so transforms are recalculated
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
   markAllDirty();
   renderAllPlots();
   showToast(`Global asinh cofactor set to ${newCf}`);
@@ -5700,7 +5799,7 @@ function applyGlobalMinPercentile() {
   }
   _globalMinPercentile = newPerc;
   // Invalidate caches and mark plots dirty so range calculations are redone
-  invalidateSpatialCache();
+  invalidateSpatialCache(true);
   markAllDirty();
   renderAllPlots();
   showToast(`Global min percentile set to ${newPerc}%`);
@@ -6081,7 +6180,7 @@ function _importGatesV2(tmpl, fileObj) {
     if (tabs.length > 0) { activeTabId = tabs[0].id; renderTabStrip(); renderTabPlots(); }
   }
 
-  invalidateSpatialCache(); markAllDirty();
+  invalidateSpatialCache(true); markAllDirty();
   renderPopList(); updateAllPopSelects(); renderAllPlots();
   _bgRenderQueue = [];
   plots.filter(p => p.tabId !== activeTabId).forEach(p => queueBgRenderPlot(p));
@@ -6279,7 +6378,7 @@ function _doImportV3(indices) {
   if (strip) strip.style.display = tabs.length > 0 ? 'flex' : 'none';
   if (tabs.length > 0) { activeTabId = tabs[0].id; renderTabStrip(); renderTabPlots(); }
 
-  invalidateSpatialCache(); markAllDirty();
+  invalidateSpatialCache(true); markAllDirty();
   renderPopList(); updateAllPopSelects(); renderAllPlots();
   _bgRenderQueue = [];
   plots.filter(p => p.tabId !== activeTabId).forEach(p => queueBgRenderPlot(p));
