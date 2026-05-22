@@ -1781,6 +1781,18 @@ function startOTflowPool(parsedMsg) {
   const fluorParams = [];
   for (let p = 0; p < nPar; p++) { if (isAsinh[p]) fluorParams.push(p); }
 
+  // LMD files: skip OTflow entirely and use a fixed cofactor of 300 for all
+  // fluorescent channels. OTflow produces unreliable results on Beckman Coulter
+  // LMD data and the extra computation is wasted.
+  if (version.startsWith('LMD')) {
+    const cofactors = new Float32Array(nPar).fill(NaN);
+    for (const p of fluorParams) cofactors[p] = 300;
+    finalizeFCSLoad(data, colMins, colMaxs, cofactors,
+                    params, nEvents, nPar, meta, version, compensated, filename,
+                    rawData, spillMatrix, spillParamIdx);
+    return;
+  }
+
   if (fluorParams.length === 0) {
     finalizeFCSLoad(data, colMins, colMaxs, new Float32Array(nPar).fill(NaN),
                     params, nEvents, nPar, meta, version, compensated, filename,
