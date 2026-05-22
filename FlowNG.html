@@ -775,10 +775,6 @@
           <span>Density plot</span>
           <span style="cursor:help;color:var(--text2);font-weight:bold" title="For large files, turning off density plots can improve performance">ⓘ</span>
         </label>
-        <label id="showfilelabels-wrap" style="display:none;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="showfilelabels" onchange="toggleFileLabelBadges(this.checked)">
-          <span>Show file labels</span>
-        </label>
       </div>
     </div>
     </div><!-- /sidebar-content -->
@@ -796,10 +792,12 @@
       <kbd>Click</kbd> — add gate point<br>
       <kbd>Click</kbd> first point — close gate (3+ pts)<br>
       <kbd>Dbl-click</kbd> — finalize gate (3+ pts)<br>
-      <kbd>Right-click</kbd> — axis range / cofactor<br>
+      <kbd>Right-click</kbd> header — switch source file<br>
+      <kbd>Right-click</kbd> canvas — axis range / cofactor<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">POPULATION LIST</div>
-      <kbd>Dbl-click</kbd> pop — jump to gate plot<br>
-      <kbd>Right-click</kbd> pop — change gate color<br>
+      <kbd>Dbl-click</kbd> pop — cycle dot size boost<br>
+      <kbd>Shift</kbd>+<kbd>Click</kbd> pop — edit name / color<br>
+      <kbd>Right-click</kbd> pop — edit name / color<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">MULTI-SELECT (2+ plots)</div>
       Axis / pop changes apply to all selected.<br>
       Scale (LOG/LIN/ASINH) is always per-plot.
@@ -871,6 +869,27 @@ const GATE_COLORS = [
   '#000000', // black
   '#ffb81c', // gold
 ];
+
+// Per-file identity colours — assigned by position in fcsFiles (alphabetically sorted).
+// Used for the dot indicator in the plot header when multiple files are loaded.
+const FILE_DOT_COLORS = ['#61afef','#e5c07b','#98c379','#e06c75','#c678dd','#56b6c2','#d19a66','#be5046'];
+function getFileColor(fileId) {
+  const idx = fcsFiles.findIndex(f => f.fileId === fileId);
+  return FILE_DOT_COLORS[(idx < 0 ? 0 : idx) % FILE_DOT_COLORS.length];
+}
+
+// Truncates a filename to ≤ maxLen display chars showing the first and last
+// portions separated by '…', so both prefix and distinguishing suffix are visible.
+// The file extension is stripped for display; keep it in the title attribute.
+function shortFilename(name, maxLen) {
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  if (base.length <= maxLen) return base;
+  const tail = Math.floor((maxLen - 1) / 2);
+  const head = maxLen - 1 - tail;
+  return base.slice(0, head) + '…' + base.slice(-tail);
+}
+
 let fcsData = null;         // shim: always fcsFiles[0] or null
 let fcsFiles = [];           // array of all loaded file objects
 let fileIdCounter = 0;
@@ -1123,7 +1142,10 @@ function evalGateAsync(gate) {
     parentIsAll: !!pop._isAll,
     parentIndices: pop._isAll ? null : pop.indices
   };
-  fileObj._pendingGateCallbacks.set(gate.id, () => {});
+  // Only register the no-op fallback if finalizeGate hasn't already set a real callback
+  if (!fileObj._pendingGateCallbacks.has(gate.id)) {
+    fileObj._pendingGateCallbacks.set(gate.id, () => {});
+  }
   fileObj._computeWorker.postMessage(msg);
 }
 
@@ -1781,6 +1803,18 @@ function startOTflowPool(parsedMsg) {
   const fluorParams = [];
   for (let p = 0; p < nPar; p++) { if (isAsinh[p]) fluorParams.push(p); }
 
+  // LMD files: skip OTflow entirely and use a fixed cofactor of 300 for all
+  // fluorescent channels. OTflow produces unreliable results on Beckman Coulter
+  // LMD data and the extra computation is wasted.
+  if (version.startsWith('LMD')) {
+    const cofactors = new Float32Array(nPar).fill(NaN);
+    for (const p of fluorParams) cofactors[p] = 300;
+    finalizeFCSLoad(data, colMins, colMaxs, cofactors,
+                    params, nEvents, nPar, meta, version, compensated, filename,
+                    rawData, spillMatrix, spillParamIdx);
+    return;
+  }
+
   if (fluorParams.length === 0) {
     finalizeFCSLoad(data, colMins, colMaxs, new Float32Array(nPar).fill(NaN),
                     params, nEvents, nPar, meta, version, compensated, filename,
@@ -1877,7 +1911,8 @@ function finalizeFCSLoad(data, colMins, colMaxs, cofactors,
   }
 
   fcsFiles.push(fileObj);
-  fcsData = fcsFiles[0]; // shim always points to first file
+  fcsFiles.sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
+  fcsData = fcsFiles[0]; // shim always points to first (alphabetically) file
 
   showProgress(99, 'Building plots…');
   setTimeout(() => {
@@ -1975,10 +2010,6 @@ function addFileToSession(fileObj) {
     if (db) db.addEventListener('click', e => { if (e.target === db) document.getElementById('file-input').click(); });
   }
 
-  // Show file labels toggle when there are multiple files
-  const flWrap = document.getElementById('showfilelabels-wrap');
-  if (flWrap) flWrap.style.display = fcsFiles.length > 1 ? 'flex' : 'none';
-
   // Activate context for this file's params/ranges
   _contextFileId = fileObj.fileId;
   _focusedFileId = fileObj.fileId;
@@ -2033,9 +2064,6 @@ function removeFile(fileId) {
     _contextFileId = _focusedFileId;
     _paramRanges = lastFile ? lastFile.paramRanges : new Map();
   }
-
-  const flWrap = document.getElementById('showfilelabels-wrap');
-  if (flWrap) flWrap.style.display = fcsFiles.length > 1 ? 'flex' : 'none';
 
   if (fcsFiles.length === 0) {
     // No files left — reset to welcome screen
@@ -2112,7 +2140,7 @@ function buildFileRootNode(fileObj) {
   // Truncated filename with full name as tooltip
   const nameEl = document.createElement('div');
   nameEl.style.cssText = 'flex:1;font-size:11px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
-  const shortName = fileObj.filename.length > 26 ? fileObj.filename.slice(0, 24) + '…' : fileObj.filename;
+  const shortName = shortFilename(fileObj.filename, 26);
   nameEl.textContent = shortName;
   nameEl.title = fileObj.filename;
   wrap.appendChild(nameEl);
@@ -2184,6 +2212,40 @@ function showFileContextMenu(fileId, cx, cy) {
   setTimeout(() => document.addEventListener('mousedown', close), 0);
 }
 
+// Context menu on plot header: lists all loaded files so the user can switch the
+// source file for this plot (and any co-selected plots) without a dropdown in the header.
+function showPlotFileMenu(plotId, cx, cy) {
+  document.getElementById('plot-file-menu')?.remove();
+  const plot = plots.find(p => p.id === plotId); if (!plot) return;
+  const menu = document.createElement('div');
+  menu.id = 'plot-file-menu';
+  menu.style.cssText = `position:fixed;left:${cx}px;top:${cy}px;z-index:9999;
+    background:var(--surface2);border:1px solid var(--border2);border-radius:6px;
+    padding:4px 0;min-width:180px;box-shadow:0 4px 16px rgba(0,0,0,0.4)`;
+  menu.innerHTML = fcsFiles.map(f => {
+    const isCurrent = f.fileId === plot.fileId;
+    const col = getFileColor(f.fileId);
+    return `<div class="ctx-item"
+      style="padding:6px 14px;font-size:11px;cursor:pointer;
+             color:${isCurrent ? 'var(--text)' : 'var(--text2)'};
+             display:flex;align-items:center;gap:8px"
+      onmouseover="this.style.background='var(--surface3)'"
+      onmouseout="this.style.background=''"
+      onclick="changeFile(${plotId},${f.fileId});document.getElementById('plot-file-menu')?.remove()">
+      <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${col};
+                   ${isCurrent ? '' : 'opacity:0.5'}"></span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="${f.filename}">${shortFilename(f.filename, 30)}</span>
+      ${isCurrent ? '<span style="flex-shrink:0;color:var(--accent)">✓</span>' : ''}
+    </div>`;
+  }).join('');
+  document.body.appendChild(menu);
+  const close = e => {
+    if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', close); }
+  };
+  setTimeout(() => document.addEventListener('mousedown', close), 0);
+}
+
 // prefixLines: array of booleans — true = continuing sibling exists at that depth
 // fileObj: the file this gate belongs to (used for cross-file drop prevention)
 function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
@@ -2227,11 +2289,25 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   swatch.title = 'Right-click to change color';
   row.appendChild(swatch);
 
-  // Name
+  // Name — click navigates to/creates the gate's source plot (sequential gating entry point)
   const nameEl = document.createElement('div');
   nameEl.className = 'pop-name-small';
   nameEl.textContent = pop.name;
+  if (pop.gateInfo) {
+    nameEl.style.cursor = 'pointer';
+    nameEl.title = 'Click to navigate to this gate\'s plot (for sequential gating)';
+    nameEl.addEventListener('click', e => { if (!e.shiftKey) { e.stopPropagation(); highlightOrRecreateGatePlot(popId); } });
+  }
   row.appendChild(nameEl);
+
+  // Dot-boost badge (shown when dotBoost > 0)
+  if (pop.dotBoost > 0) {
+    const boostBadge = document.createElement('span');
+    boostBadge.style.cssText = 'font-size:9px;color:#f5a623;flex-shrink:0;margin-left:2px';
+    boostBadge.title = 'Dot size boost — double-click to cycle';
+    boostBadge.textContent = `+${pop.dotBoost}`;
+    row.appendChild(boostBadge);
+  }
 
   // Count
   const countEl = document.createElement('div');
@@ -2241,13 +2317,15 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
 
   // Events
   if (popId !== 0) {
-    // Right-click on swatch OR anywhere on row opens color picker
+    // Right-click or Shift+click opens color/name picker
     const openPicker = e => { e.preventDefault(); e.stopPropagation(); showColorPicker(popId, e.clientX, e.clientY); };
     swatch.addEventListener('contextmenu', openPicker);
     row.addEventListener('contextmenu', openPicker);
+    row.addEventListener('click', e => { if (e.shiftKey) openPicker(e); });
 
-    row.addEventListener('dblclick', () => highlightOrRecreateGatePlot(popId));
-    row.title = 'Double-click to highlight gate plot · Right-click to change color · Drag to reparent';
+    // Double-click cycles dot-size boost (0 → 2 → 4 → 8 → 0 px)
+    row.addEventListener('dblclick', e => { e.preventDefault(); cycleDotBoost(popId); });
+    row.title = 'Click name to navigate to gate plot · Dbl-click to cycle dot size boost · Shift-click or right-click to edit color/name · Drag to reparent';
 
     // Drag to reparent — suppress on right-click so context menu fires reliably
     row.draggable = true;
@@ -2537,7 +2615,7 @@ function showFilePicker(callback) {
   fcsFiles.forEach(f => {
     const btn = document.createElement('button');
     btn.style.cssText = 'text-align:left;padding:8px 12px;font-size:11px;width:100%;border-radius:4px';
-    const short = f.filename.length > 50 ? f.filename.slice(0, 48) + '…' : f.filename;
+    const short = shortFilename(f.filename, 50);
     btn.textContent = `${short}  (${f.nEvents.toLocaleString()} events)`;
     btn.title = f.filename;
     btn.addEventListener('click', () => {
@@ -2569,28 +2647,14 @@ function renderPlotCard(plot) {
     .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${p.name} (${popCount(p).toLocaleString()})</option>`)
     .join('');
 
-  // Short filename for the file badge
-  const badgeName = fcsFile
-    ? (fcsFile.filename.length > 18 ? fcsFile.filename.slice(0, 16) + '…' : fcsFile.filename)
-    : '';
-
-  const fileOpts = () => fcsFiles.map(f =>
-    `<option value="${f.fileId}"${f.fileId===plot.fileId?' selected':''}>${
-      f.filename.length > 22 ? f.filename.slice(0, 20) + '…' : f.filename
-    }</option>`).join('');
-
   card.innerHTML = `
     <div class="plot-header" id="plot-hdr-${plot.id}">
       <div class="plot-drag-handle" title="Drag to reorder plot">⠿</div>
-      <span id="file-badge-${plot.id}" style="display:none;font-size:8px;background:var(--accent);color:#fff;
-        border-radius:3px;padding:1px 4px;max-width:80px;overflow:hidden;text-overflow:ellipsis;
-        white-space:nowrap;flex-shrink:0" title="${fcsFile ? fcsFile.filename : ''}">${badgeName}</span>
-      <select id="file-sel-${plot.id}" onchange="changeFile(${plot.id},parseInt(this.value))"
-        style="display:${fcsFiles.length > 1 ? '' : 'none'};font-size:9px;padding:1px 3px;
-          background:var(--surface2);color:var(--text2);border:1px solid var(--border2);
-          border-radius:3px;flex-shrink:0;max-width:90px;cursor:pointer"
-        title="Source file — changes all selected plots"
-        onmousedown="event.stopPropagation()">${fileOpts()}</select>
+      <span id="file-dot-${plot.id}"
+        style="width:8px;height:8px;border-radius:50%;flex-shrink:0;
+               display:${fcsFiles.length > 1 ? 'inline-block' : 'none'};
+               background:${fcsFile ? getFileColor(plot.fileId) : 'transparent'}"
+        title="${fcsFile ? fcsFile.filename : ''}"></span>
       <span style="color:var(--text2);font-size:10px;flex-shrink:0">Pop:</span>
       <select id="pop-sel-${plot.id}" onchange="changePop(${plot.id},this.value)"
         style="flex:1;min-width:0;font-size:10px;padding:2px 4px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:4px"
@@ -2663,6 +2727,14 @@ function renderPlotCard(plot) {
       _focusedFileId = plot.fileId;
       renderPrecedenceList();
     }
+  });
+
+  // Right-click plot header → file-switch context menu (only when multiple files loaded)
+  hdr.addEventListener('contextmenu', e => {
+    if (fcsFiles.length < 2) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showPlotFileMenu(plot.id, e.clientX, e.clientY);
   });
 
   // Plot drag-to-reorder — drag handle only
@@ -3046,10 +3118,11 @@ function renderPlot(plot) {
     }
     drawBucket2D(ungatedKey, 0.45);
     orderedGates.forEach(p2 => { if (!p2.noColor && p2.color) drawBucket2D(p2.color, 0.75); });
-    // Emphasis pass: re-draw emphasized gate events at +4px dot size on top
-    const emphDh2D = (ds + 4) / 2;
+    // Emphasis pass: re-draw boosted gate events at their boosted size on top
     orderedGates.forEach(p2 => {
-      if (!p2.emphasized || p2.noColor || !p2.color) return;
+      const boost = Math.max(p2.emphasized ? 4 : 0, p2.dotBoost || 0);
+      if (boost === 0 || p2.noColor || !p2.color) return;
+      const emphDh2D = (ds + boost) / 2;
       const [er, eg, eb] = [parseInt(p2.color.slice(1,3),16), parseInt(p2.color.slice(3,5),16), parseInt(p2.color.slice(5,7),16)];
       ctx.fillStyle = `rgba(${er},${eg},${eb},0.9)`;
       ctx.beginPath();
@@ -3549,6 +3622,11 @@ function createGLRenderer(canvas) {
 // avoids that limit entirely. Each renderPlot call renders into this shared
 // offscreen canvas, then blits the result onto the per-plot 2D canvas.
 let _sharedGL = null;
+// Track which plot's data is currently in the shared posBuf / colBuf.
+// Per-plot tracking is wrong because all plots share one GL context — uploading
+// plot B's data overwrites plot A's, but plot A's per-plot flag still says "current".
+let _gpuPosCurrent = null;
+let _gpuColCurrent = null;
 
 function getGLRenderer(plotId, pw, ph) {
   // The GL canvas MUST be exactly pw×ph. WebGL renders into the bottom portion of
@@ -3559,6 +3637,7 @@ function getGLRenderer(plotId, pw, ph) {
   if (_sharedGL && (_sharedGL.canvas.width !== pw || _sharedGL.canvas.height !== ph)) {
     _sharedGL = null;
     _hmapProg = null; _hmapBuf = null; _hmapTex = null;
+    _gpuPosCurrent = null; _gpuColCurrent = null;
   }
   if (!_sharedGL) {
     let offscreen;
@@ -3636,13 +3715,19 @@ function drawDotsWebGL(ctx, plot, tf, pad, pw, ph, pop, renderPop, data, nPar, a
     _drawDotsFull(gl, rend, plot, tf, pad, pw, ph, renderPop, data, nPar, allColoredGates, orderedGates, rn);
   }
 
-  // Emphasis pass: draw emphasized gate events at +4px dot size on top of everything
-  const emphGates = orderedGates.filter(g => g.emphasized && !g.noColor && g.indices.length > 0);
+  // Emphasis pass: re-draw boosted gate events on top at their boosted dot size.
+  // Boost comes from pop.emphasized (+4px, controlled by precedence list) or
+  // pop.dotBoost (0/2/4/8px, cycled via double-click on the population tree row).
+  const emphGates = orderedGates.filter(g =>
+    (g.emphasized || (g.dotBoost || 0) > 0) && !g.noColor && g.indices.length > 0);
   if (emphGates.length > 0) {
     gl.useProgram(rend.prog);
-    const emphGLSize = Math.max(1.0, (plot.dotSize + 4) * 2 || 11.0);
-    if (rend.psLoc !== null) gl.uniform1f(rend.psLoc, emphGLSize);
-    emphGates.forEach(gate => _drawGateEvents(gl, rend, plot, tf, gate, nPar));
+    emphGates.forEach(gate => {
+      const boost = Math.max(gate.emphasized ? 4 : 0, gate.dotBoost || 0);
+      const emphGLSize = Math.max(1.0, (plot.dotSize + boost) * 2 || 11.0);
+      if (rend.psLoc !== null) gl.uniform1f(rend.psLoc, emphGLSize);
+      _drawGateEvents(gl, rend, plot, tf, gate, nPar);
+    });
   }
 
   // Blit offscreen GL canvas onto the 2D canvas at the plot area
@@ -3747,17 +3832,18 @@ function _drawDotsFull(gl, rend, plot, tf, pad, pw, ph, pop, data, nPar, allColo
 
   if (rend.halfFloatType && rend.posBuf) {
     // ── Split VBO path: upload pos and col independently, no interleave ──────
-    // Reset GPU-side dirty flags when the GL context was recreated
-    if (plot._glRend !== rend) { plot._posGPU = null; plot._colGPU = null; plot._glRend = rend; }
-    if (plot._posGPU !== posKey) {
+    // Use module-level tracking (_gpuPosCurrent/_gpuColCurrent) rather than per-plot
+    // flags. The GL context is shared: when plot B uploads to posBuf it overwrites
+    // plot A's data, making per-plot flags dangerously stale.
+    if (_gpuPosCurrent !== posKey) {
       gl.bindBuffer(gl.ARRAY_BUFFER, rend.posBuf);
       gl.bufferData(gl.ARRAY_BUFFER, plot._posVBO, gl.DYNAMIC_DRAW);
-      plot._posGPU = posKey;
+      _gpuPosCurrent = posKey;
     }
-    if (plot._colGPU !== colKey) {
+    if (_gpuColCurrent !== colKey) {
       gl.bindBuffer(gl.ARRAY_BUFFER, rend.colBuf);
       gl.bufferData(gl.ARRAY_BUFFER, plot._colVBO, gl.DYNAMIC_DRAW);
-      plot._colGPU = colKey;
+      _gpuColCurrent = colKey;
     }
     // Set range uniforms (zoom encoded as normalized sub-range)
     if (rend.xrLoc !== null) gl.uniform2f(rend.xrLoc, nxMin, nxMax);
@@ -4718,18 +4804,14 @@ function updateAllPopSelects() {
 }
 
 function updateAllFileSelects() {
+  // The old <select> is replaced by a coloured dot; update dot visibility and colour.
   const show = fcsFiles.length > 1;
-  const opts = fcsFiles.map(f =>
-    `<option value="${f.fileId}">${f.filename.length > 22 ? f.filename.slice(0,20)+'…' : f.filename}</option>`
-  ).join('');
   plots.forEach(plot => {
-    const sel = document.getElementById(`file-sel-${plot.id}`); if (!sel) return;
-    sel.style.display = show ? '' : 'none';
-    // Rebuild options preserving current selection
-    sel.innerHTML = fcsFiles.map(f =>
-      `<option value="${f.fileId}"${f.fileId===plot.fileId?' selected':''}>${
-        f.filename.length > 22 ? f.filename.slice(0,20)+'…' : f.filename}</option>`
-    ).join('');
+    const dot = document.getElementById(`file-dot-${plot.id}`); if (!dot) return;
+    dot.style.display = show ? 'inline-block' : 'none';
+    dot.style.background = getFileColor(plot.fileId);
+    const f = getFileById(plot.fileId);
+    dot.title = f ? f.filename : '';
   });
 }
 
@@ -4771,9 +4853,9 @@ function changeFile(plotId, newFileId, propagate=true) {
     .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${p.name} (${popCount(p).toLocaleString()})</option>`)
     .join('');
 
-  // Sync file selector
-  const fileSel = document.getElementById(`file-sel-${plotId}`);
-  if (fileSel) fileSel.value = newFileId;
+  // Sync file dot indicator
+  const dot = document.getElementById(`file-dot-${plotId}`);
+  if (dot) { dot.style.background = getFileColor(newFileId); dot.title = newFile.filename; }
 
   buildAxisControls(plot);
   renderPlot(plot);
@@ -4787,6 +4869,21 @@ function changeFile(plotId, newFileId, propagate=true) {
 }
 
 // Returns all descendant gate populations of a given population id (any depth)
+// Cycles the per-gate dot-size boost: 0 → 2 → 4 → 8 → 0 (px above plot dot size).
+// When boost > 0 the gate events are re-drawn on top at the larger size so rare
+// populations pop visually without changing any per-plot dot size setting.
+const _DOT_BOOST_STEPS = [0, 2, 4, 8];
+function cycleDotBoost(popId) {
+  const pop = populations.find(p => p.id === popId); if (!pop) return;
+  const cur = pop.dotBoost || 0;
+  const next = _DOT_BOOST_STEPS[(_DOT_BOOST_STEPS.indexOf(cur) + 1) % _DOT_BOOST_STEPS.length];
+  pop.dotBoost = next;
+  const fp = getFileById(pop.fileId)?.populations.find(p => p.id === popId);
+  if (fp) fp.dotBoost = next;
+  renderPopList();
+  renderAllPlots();
+}
+
 function highlightOrRecreateGatePlot(gateId) {
   const gate = populations.find(p => p.id === gateId);
   if (!gate || !gate.gateInfo) return;
@@ -6415,7 +6512,7 @@ function showMetadata(fileId) {
         <div style="margin-left:auto;color:var(--text2);font-size:10px">${keys.length} keywords</div>
       </div>
       <div style="background:var(--bg2);border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:11px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">
-        <div><span style="color:var(--text2)">File:</span> <span title="${fileObj.filename || ''}">${(fileObj.filename || 'unknown').length > 40 ? (fileObj.filename || '').slice(0,40)+'…' : (fileObj.filename || 'unknown')}</span></div>
+        <div><span style="color:var(--text2)">File:</span> <span title="${fileObj.filename || ''}">${shortFilename(fileObj.filename || 'unknown', 40)}</span></div>
         <div><span style="color:var(--text2)">Format:</span> ${fcsVer}</div>
         <div><span style="color:var(--text2)">Events:</span> ${(fileObj.nEvents || 0).toLocaleString()}</div>
         <div><span style="color:var(--text2)">Parameters:</span> ${fileObj.nPar || 0}</div>
@@ -6559,7 +6656,7 @@ function loadDemo() {
     populations: [],
     colorPrecedence: [],
     paramRanges: new Map(),
-    _computeWorker: null, _computeWorkerReady: false, _pendingGateCallbacks: []
+    _computeWorker: null, _computeWorkerReady: false, _pendingGateCallbacks: new Map()
   });
   fcsFiles.push(fileObj);
   fcsData = fcsFiles[0];
@@ -6569,11 +6666,6 @@ function loadDemo() {
   showToast('Demo loaded — try gating lymphocytes on FSC vs SSC first');
 }
 
-function toggleFileLabelBadges(show) {
-  document.querySelectorAll('.file-badge').forEach(el => {
-    el.style.display = show ? '' : 'none';
-  });
-}
 
 // ─── EVENT LISTENERS ──────────────────────────────────────────────────────────
 document.getElementById('file-input').addEventListener('change', e => {
