@@ -775,10 +775,6 @@
           <span>Density plot</span>
           <span style="cursor:help;color:var(--text2);font-weight:bold" title="For large files, turning off density plots can improve performance">ⓘ</span>
         </label>
-        <label id="showfilelabels-wrap" style="display:none;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="showfilelabels" onchange="toggleFileLabelBadges(this.checked)">
-          <span>Show file labels</span>
-        </label>
       </div>
     </div>
     </div><!-- /sidebar-content -->
@@ -796,7 +792,8 @@
       <kbd>Click</kbd> — add gate point<br>
       <kbd>Click</kbd> first point — close gate (3+ pts)<br>
       <kbd>Dbl-click</kbd> — finalize gate (3+ pts)<br>
-      <kbd>Right-click</kbd> — axis range / cofactor<br>
+      <kbd>Right-click</kbd> header — switch source file<br>
+      <kbd>Right-click</kbd> canvas — axis range / cofactor<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">POPULATION LIST</div>
       <kbd>Dbl-click</kbd> pop — jump to gate plot<br>
       <kbd>Right-click</kbd> pop — change gate color<br>
@@ -871,6 +868,27 @@ const GATE_COLORS = [
   '#000000', // black
   '#ffb81c', // gold
 ];
+
+// Per-file identity colours — assigned by position in fcsFiles (alphabetically sorted).
+// Used for the dot indicator in the plot header when multiple files are loaded.
+const FILE_DOT_COLORS = ['#61afef','#e5c07b','#98c379','#e06c75','#c678dd','#56b6c2','#d19a66','#be5046'];
+function getFileColor(fileId) {
+  const idx = fcsFiles.findIndex(f => f.fileId === fileId);
+  return FILE_DOT_COLORS[(idx < 0 ? 0 : idx) % FILE_DOT_COLORS.length];
+}
+
+// Truncates a filename to ≤ maxLen display chars showing the first and last
+// portions separated by '…', so both prefix and distinguishing suffix are visible.
+// The file extension is stripped for display; keep it in the title attribute.
+function shortFilename(name, maxLen) {
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  if (base.length <= maxLen) return base;
+  const tail = Math.floor((maxLen - 1) / 2);
+  const head = maxLen - 1 - tail;
+  return base.slice(0, head) + '…' + base.slice(-tail);
+}
+
 let fcsData = null;         // shim: always fcsFiles[0] or null
 let fcsFiles = [];           // array of all loaded file objects
 let fileIdCounter = 0;
@@ -1889,7 +1907,8 @@ function finalizeFCSLoad(data, colMins, colMaxs, cofactors,
   }
 
   fcsFiles.push(fileObj);
-  fcsData = fcsFiles[0]; // shim always points to first file
+  fcsFiles.sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
+  fcsData = fcsFiles[0]; // shim always points to first (alphabetically) file
 
   showProgress(99, 'Building plots…');
   setTimeout(() => {
@@ -1987,10 +2006,6 @@ function addFileToSession(fileObj) {
     if (db) db.addEventListener('click', e => { if (e.target === db) document.getElementById('file-input').click(); });
   }
 
-  // Show file labels toggle when there are multiple files
-  const flWrap = document.getElementById('showfilelabels-wrap');
-  if (flWrap) flWrap.style.display = fcsFiles.length > 1 ? 'flex' : 'none';
-
   // Activate context for this file's params/ranges
   _contextFileId = fileObj.fileId;
   _focusedFileId = fileObj.fileId;
@@ -2045,9 +2060,6 @@ function removeFile(fileId) {
     _contextFileId = _focusedFileId;
     _paramRanges = lastFile ? lastFile.paramRanges : new Map();
   }
-
-  const flWrap = document.getElementById('showfilelabels-wrap');
-  if (flWrap) flWrap.style.display = fcsFiles.length > 1 ? 'flex' : 'none';
 
   if (fcsFiles.length === 0) {
     // No files left — reset to welcome screen
@@ -2124,7 +2136,7 @@ function buildFileRootNode(fileObj) {
   // Truncated filename with full name as tooltip
   const nameEl = document.createElement('div');
   nameEl.style.cssText = 'flex:1;font-size:11px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
-  const shortName = fileObj.filename.length > 26 ? fileObj.filename.slice(0, 24) + '…' : fileObj.filename;
+  const shortName = shortFilename(fileObj.filename, 26);
   nameEl.textContent = shortName;
   nameEl.title = fileObj.filename;
   wrap.appendChild(nameEl);
@@ -2193,6 +2205,40 @@ function showFileContextMenu(fileId, cx, cy) {
     </div>`;
   document.body.appendChild(menu);
   const close = e => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', close); } };
+  setTimeout(() => document.addEventListener('mousedown', close), 0);
+}
+
+// Context menu on plot header: lists all loaded files so the user can switch the
+// source file for this plot (and any co-selected plots) without a dropdown in the header.
+function showPlotFileMenu(plotId, cx, cy) {
+  document.getElementById('plot-file-menu')?.remove();
+  const plot = plots.find(p => p.id === plotId); if (!plot) return;
+  const menu = document.createElement('div');
+  menu.id = 'plot-file-menu';
+  menu.style.cssText = `position:fixed;left:${cx}px;top:${cy}px;z-index:9999;
+    background:var(--surface2);border:1px solid var(--border2);border-radius:6px;
+    padding:4px 0;min-width:180px;box-shadow:0 4px 16px rgba(0,0,0,0.4)`;
+  menu.innerHTML = fcsFiles.map(f => {
+    const isCurrent = f.fileId === plot.fileId;
+    const col = getFileColor(f.fileId);
+    return `<div class="ctx-item"
+      style="padding:6px 14px;font-size:11px;cursor:pointer;
+             color:${isCurrent ? 'var(--text)' : 'var(--text2)'};
+             display:flex;align-items:center;gap:8px"
+      onmouseover="this.style.background='var(--surface3)'"
+      onmouseout="this.style.background=''"
+      onclick="changeFile(${plotId},${f.fileId});document.getElementById('plot-file-menu')?.remove()">
+      <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${col};
+                   ${isCurrent ? '' : 'opacity:0.5'}"></span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="${f.filename}">${shortFilename(f.filename, 30)}</span>
+      ${isCurrent ? '<span style="flex-shrink:0;color:var(--accent)">✓</span>' : ''}
+    </div>`;
+  }).join('');
+  document.body.appendChild(menu);
+  const close = e => {
+    if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', close); }
+  };
   setTimeout(() => document.addEventListener('mousedown', close), 0);
 }
 
@@ -2549,7 +2595,7 @@ function showFilePicker(callback) {
   fcsFiles.forEach(f => {
     const btn = document.createElement('button');
     btn.style.cssText = 'text-align:left;padding:8px 12px;font-size:11px;width:100%;border-radius:4px';
-    const short = f.filename.length > 50 ? f.filename.slice(0, 48) + '…' : f.filename;
+    const short = shortFilename(f.filename, 50);
     btn.textContent = `${short}  (${f.nEvents.toLocaleString()} events)`;
     btn.title = f.filename;
     btn.addEventListener('click', () => {
@@ -2581,28 +2627,14 @@ function renderPlotCard(plot) {
     .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${p.name} (${popCount(p).toLocaleString()})</option>`)
     .join('');
 
-  // Short filename for the file badge
-  const badgeName = fcsFile
-    ? (fcsFile.filename.length > 18 ? fcsFile.filename.slice(0, 16) + '…' : fcsFile.filename)
-    : '';
-
-  const fileOpts = () => fcsFiles.map(f =>
-    `<option value="${f.fileId}"${f.fileId===plot.fileId?' selected':''}>${
-      f.filename.length > 22 ? f.filename.slice(0, 20) + '…' : f.filename
-    }</option>`).join('');
-
   card.innerHTML = `
     <div class="plot-header" id="plot-hdr-${plot.id}">
       <div class="plot-drag-handle" title="Drag to reorder plot">⠿</div>
-      <span class="file-badge" id="file-badge-${plot.id}" style="display:none;font-size:8px;background:var(--accent);color:#fff;
-        border-radius:3px;padding:1px 4px;max-width:80px;overflow:hidden;text-overflow:ellipsis;
-        white-space:nowrap;flex-shrink:0" title="${fcsFile ? fcsFile.filename : ''}">${badgeName}</span>
-      <select id="file-sel-${plot.id}" onchange="changeFile(${plot.id},parseInt(this.value))"
-        style="display:${fcsFiles.length > 1 ? '' : 'none'};font-size:9px;padding:1px 3px;
-          background:var(--surface2);color:var(--text2);border:1px solid var(--border2);
-          border-radius:3px;flex-shrink:0;max-width:90px;cursor:pointer"
-        title="Source file — changes all selected plots"
-        onmousedown="event.stopPropagation()">${fileOpts()}</select>
+      <span id="file-dot-${plot.id}"
+        style="width:8px;height:8px;border-radius:50%;flex-shrink:0;
+               display:${fcsFiles.length > 1 ? 'inline-block' : 'none'};
+               background:${fcsFile ? getFileColor(plot.fileId) : 'transparent'}"
+        title="${fcsFile ? fcsFile.filename : ''}"></span>
       <span style="color:var(--text2);font-size:10px;flex-shrink:0">Pop:</span>
       <select id="pop-sel-${plot.id}" onchange="changePop(${plot.id},this.value)"
         style="flex:1;min-width:0;font-size:10px;padding:2px 4px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:4px"
@@ -2675,6 +2707,14 @@ function renderPlotCard(plot) {
       _focusedFileId = plot.fileId;
       renderPrecedenceList();
     }
+  });
+
+  // Right-click plot header → file-switch context menu (only when multiple files loaded)
+  hdr.addEventListener('contextmenu', e => {
+    if (fcsFiles.length < 2) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showPlotFileMenu(plot.id, e.clientX, e.clientY);
   });
 
   // Plot drag-to-reorder — drag handle only
@@ -4737,18 +4777,14 @@ function updateAllPopSelects() {
 }
 
 function updateAllFileSelects() {
+  // The old <select> is replaced by a coloured dot; update dot visibility and colour.
   const show = fcsFiles.length > 1;
-  const opts = fcsFiles.map(f =>
-    `<option value="${f.fileId}">${f.filename.length > 22 ? f.filename.slice(0,20)+'…' : f.filename}</option>`
-  ).join('');
   plots.forEach(plot => {
-    const sel = document.getElementById(`file-sel-${plot.id}`); if (!sel) return;
-    sel.style.display = show ? '' : 'none';
-    // Rebuild options preserving current selection
-    sel.innerHTML = fcsFiles.map(f =>
-      `<option value="${f.fileId}"${f.fileId===plot.fileId?' selected':''}>${
-        f.filename.length > 22 ? f.filename.slice(0,20)+'…' : f.filename}</option>`
-    ).join('');
+    const dot = document.getElementById(`file-dot-${plot.id}`); if (!dot) return;
+    dot.style.display = show ? 'inline-block' : 'none';
+    dot.style.background = getFileColor(plot.fileId);
+    const f = getFileById(plot.fileId);
+    dot.title = f ? f.filename : '';
   });
 }
 
@@ -4790,9 +4826,9 @@ function changeFile(plotId, newFileId, propagate=true) {
     .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${p.name} (${popCount(p).toLocaleString()})</option>`)
     .join('');
 
-  // Sync file selector
-  const fileSel = document.getElementById(`file-sel-${plotId}`);
-  if (fileSel) fileSel.value = newFileId;
+  // Sync file dot indicator
+  const dot = document.getElementById(`file-dot-${plotId}`);
+  if (dot) { dot.style.background = getFileColor(newFileId); dot.title = newFile.filename; }
 
   buildAxisControls(plot);
   renderPlot(plot);
@@ -6434,7 +6470,7 @@ function showMetadata(fileId) {
         <div style="margin-left:auto;color:var(--text2);font-size:10px">${keys.length} keywords</div>
       </div>
       <div style="background:var(--bg2);border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:11px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">
-        <div><span style="color:var(--text2)">File:</span> <span title="${fileObj.filename || ''}">${(fileObj.filename || 'unknown').length > 40 ? (fileObj.filename || '').slice(0,40)+'…' : (fileObj.filename || 'unknown')}</span></div>
+        <div><span style="color:var(--text2)">File:</span> <span title="${fileObj.filename || ''}">${shortFilename(fileObj.filename || 'unknown', 40)}</span></div>
         <div><span style="color:var(--text2)">Format:</span> ${fcsVer}</div>
         <div><span style="color:var(--text2)">Events:</span> ${(fileObj.nEvents || 0).toLocaleString()}</div>
         <div><span style="color:var(--text2)">Parameters:</span> ${fileObj.nPar || 0}</div>
@@ -6588,11 +6624,6 @@ function loadDemo() {
   showToast('Demo loaded — try gating lymphocytes on FSC vs SSC first');
 }
 
-function toggleFileLabelBadges(show) {
-  document.querySelectorAll('.file-badge').forEach(el => {
-    el.style.display = show ? '' : 'none';
-  });
-}
 
 // ─── EVENT LISTENERS ──────────────────────────────────────────────────────────
 document.getElementById('file-input').addEventListener('change', e => {
