@@ -2582,7 +2582,7 @@ function renderPlotCard(plot) {
   card.innerHTML = `
     <div class="plot-header" id="plot-hdr-${plot.id}">
       <div class="plot-drag-handle" title="Drag to reorder plot">⠿</div>
-      <span id="file-badge-${plot.id}" style="display:none;font-size:8px;background:var(--accent);color:#fff;
+      <span class="file-badge" id="file-badge-${plot.id}" style="display:none;font-size:8px;background:var(--accent);color:#fff;
         border-radius:3px;padding:1px 4px;max-width:80px;overflow:hidden;text-overflow:ellipsis;
         white-space:nowrap;flex-shrink:0" title="${fcsFile ? fcsFile.filename : ''}">${badgeName}</span>
       <select id="file-sel-${plot.id}" onchange="changeFile(${plot.id},parseInt(this.value))"
@@ -3549,6 +3549,11 @@ function createGLRenderer(canvas) {
 // avoids that limit entirely. Each renderPlot call renders into this shared
 // offscreen canvas, then blits the result onto the per-plot 2D canvas.
 let _sharedGL = null;
+// Track which plot's data is currently in the shared posBuf / colBuf.
+// Per-plot tracking is wrong because all plots share one GL context — uploading
+// plot B's data overwrites plot A's, but plot A's per-plot flag still says "current".
+let _gpuPosCurrent = null;
+let _gpuColCurrent = null;
 
 function getGLRenderer(plotId, pw, ph) {
   // The GL canvas MUST be exactly pw×ph. WebGL renders into the bottom portion of
@@ -3559,6 +3564,7 @@ function getGLRenderer(plotId, pw, ph) {
   if (_sharedGL && (_sharedGL.canvas.width !== pw || _sharedGL.canvas.height !== ph)) {
     _sharedGL = null;
     _hmapProg = null; _hmapBuf = null; _hmapTex = null;
+    _gpuPosCurrent = null; _gpuColCurrent = null;
   }
   if (!_sharedGL) {
     let offscreen;
@@ -3747,17 +3753,18 @@ function _drawDotsFull(gl, rend, plot, tf, pad, pw, ph, pop, data, nPar, allColo
 
   if (rend.halfFloatType && rend.posBuf) {
     // ── Split VBO path: upload pos and col independently, no interleave ──────
-    // Reset GPU-side dirty flags when the GL context was recreated
-    if (plot._glRend !== rend) { plot._posGPU = null; plot._colGPU = null; plot._glRend = rend; }
-    if (plot._posGPU !== posKey) {
+    // Use module-level tracking (_gpuPosCurrent/_gpuColCurrent) rather than per-plot
+    // flags. The GL context is shared: when plot B uploads to posBuf it overwrites
+    // plot A's data, making per-plot flags dangerously stale.
+    if (_gpuPosCurrent !== posKey) {
       gl.bindBuffer(gl.ARRAY_BUFFER, rend.posBuf);
       gl.bufferData(gl.ARRAY_BUFFER, plot._posVBO, gl.DYNAMIC_DRAW);
-      plot._posGPU = posKey;
+      _gpuPosCurrent = posKey;
     }
-    if (plot._colGPU !== colKey) {
+    if (_gpuColCurrent !== colKey) {
       gl.bindBuffer(gl.ARRAY_BUFFER, rend.colBuf);
       gl.bufferData(gl.ARRAY_BUFFER, plot._colVBO, gl.DYNAMIC_DRAW);
-      plot._colGPU = colKey;
+      _gpuColCurrent = colKey;
     }
     // Set range uniforms (zoom encoded as normalized sub-range)
     if (rend.xrLoc !== null) gl.uniform2f(rend.xrLoc, nxMin, nxMax);
