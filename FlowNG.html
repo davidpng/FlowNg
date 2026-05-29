@@ -1089,7 +1089,12 @@ function initComputeWorkerForFile(fileObj) {
           renderAllPlots();
         }
         const cb = fileObj._pendingGateCallbacks.get(msg.gateId);
-        if (cb) { fileObj._pendingGateCallbacks.delete(msg.gateId); cb(); }
+        if (cb) {
+          fileObj._pendingGateCallbacks.delete(msg.gateId);
+          // Defer cb by one animation frame so the browser paints the colored
+          // events before the blocking prompt() dialog appears.
+          requestAnimationFrame(cb);
+        }
       } else if (msg.type === 'otflowParamResult') {
         const cb = _pendingOTflowCallbacks.get(msg.reqId);
         if (cb) { _pendingOTflowCallbacks.delete(msg.reqId); cb(msg.cofactor); }
@@ -2173,7 +2178,7 @@ function buildFileRootNode(fileObj) {
     e.preventDefault(); e.stopPropagation();
     wrap.style.outline = '2px solid var(--accent)';
   });
-  wrap.addEventListener('dragleave', () => { wrap.style.outline = ''; });
+  wrap.addEventListener('dragleave', e => { if (!wrap.contains(e.relatedTarget)) wrap.style.outline = ''; });
   wrap.addEventListener('drop', e => {
     if (!e.dataTransfer.types.includes('gateid')) return;
     e.preventDefault(); e.stopPropagation();
@@ -2350,7 +2355,7 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
     e.preventDefault(); e.stopPropagation();
     row.classList.add('drag-over-node');
   });
-  row.addEventListener('dragleave', () => row.classList.remove('drag-over-node'));
+  row.addEventListener('dragleave', e => { if (!row.contains(e.relatedTarget)) row.classList.remove('drag-over-node'); });
   row.addEventListener('drop', e => {
     if (!e.dataTransfer.types.includes('gateid')) return;
     e.preventDefault(); e.stopPropagation();
@@ -2377,13 +2382,15 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
 function reparentGate(gateId, newParentId) {
   const gate = populations.find(p => p.id === gateId); if (!gate) return;
   // Prevent making a gate its own descendant
-  const desc = getDescendantGates(gateId).map(g => g.id);
-  if (desc.includes(newParentId)) {
+  const descendants = getDescendantGates(gateId);
+  if (descendants.map(g => g.id).includes(newParentId)) {
     showToast('Cannot reparent a gate onto one of its own descendants'); return;
   }
   gate.parentId = newParentId;
-  evalGateAsync(gate); // re-evaluate membership off-thread if possible
-  // Descendants will be re-evaluated by the worker callback
+  // Evaluate synchronously so counts and dot colors are correct immediately
+  evalGate(gate);
+  descendants.forEach(g => evalGate(g));
+  markAllDirty();
   renderPopList();
   updateAllPopSelects();
   renderAllPlots();
@@ -2401,10 +2408,20 @@ function renderPrecedenceList() {
   section.style.display = gates.length ? '' : 'none';
   if (!gates.length) return;
 
-  // Sync this file's colorPrecedence: add new gates at beginning, prune deleted ones
+  // Sync ALL files' colorPrecedence so that rendering is correct regardless of
+  // which file the precedence panel is currently focused on.  Without this, a
+  // gate created while _focusedFileId points to a different file would be absent
+  // from its own file's colorPrecedence → indexOf returns -1 → sort key 9999 →
+  // drawn first → overridden by every ancestor gate.
+  fcsFiles.forEach(fileObj => {
+    const fileGates = fileObj.populations.filter(p => !p._isAll && p.gateInfo);
+    const fileGateIds = new Set(fileGates.map(g => g.id));
+    fileObj.colorPrecedence = fileObj.colorPrecedence.filter(id => fileGateIds.has(id));
+    fileGates.forEach(g => { if (!fileObj.colorPrecedence.includes(g.id)) fileObj.colorPrecedence.unshift(g.id); });
+  });
+
+  // Sync this file's colorPrecedence for the UI list (already done above, kept for clarity)
   const gateIds = new Set(gates.map(g => g.id));
-  focusedFile.colorPrecedence = focusedFile.colorPrecedence.filter(id => gateIds.has(id));
-  gates.forEach(g => { if (!focusedFile.colorPrecedence.includes(g.id)) focusedFile.colorPrecedence.unshift(g.id); });
   // Keep global shim in sync for any legacy references
   colorPrecedence = focusedFile.colorPrecedence;
 
@@ -3069,15 +3086,31 @@ function renderPlot(plot) {
   // ── 2. Draw dots into offscreen GL canvas, blit onto main canvas ──────────
   const { data, nPar } = fcsFile;
   const allColoredGates = getDescendantGates(plot.inputPop);
+  // Build the set of ancestor gate IDs for plot.inputPop.
+  // Ancestor gates must NOT appear in orderedGates: they define which events are
+  // *shown* on this plot but their color should never override the inputPop's own
+  // color or descendant gate colors (e.g. Gate 2 must not paint over B cells on
+  // the B cells plot simply because B cells ⊆ Gate 2).
+  const _ancestorIds = new Set();
+  { let _cur = populations.find(p => p.id === plot.inputPop);
+    while (_cur) {
+      const _par = populations.find(p => p.id === _cur.parentId);
+      if (!_par || _par._isAll) break;
+      _ancestorIds.add(_par.id);
+      _cur = _par;
+    }
+  }
   // Sort so LOWEST precedence index first, HIGHEST last.
   // When building eventColor, we iterate forward so highest (last) overwrites lower ones.
   // colorPrecedence[0] = highest priority → should appear last in sorted array → wins.
   const filePrecedence = fcsFile.colorPrecedence;
-  const orderedGates = [...allColoredGates].sort((a, b) => {
-    const ai = filePrecedence.indexOf(a.id) === -1 ? 9999 : filePrecedence.indexOf(a.id);
-    const bi = filePrecedence.indexOf(b.id) === -1 ? 9999 : filePrecedence.indexOf(b.id);
-    return bi - ai; // highest precedence (lowest index) goes to END
-  });
+  const orderedGates = [...allColoredGates]
+    .filter(g => !_ancestorIds.has(g.id))
+    .sort((a, b) => {
+      const ai = filePrecedence.indexOf(a.id) === -1 ? 9999 : filePrecedence.indexOf(a.id);
+      const bi = filePrecedence.indexOf(b.id) === -1 ? 9999 : filePrecedence.indexOf(b.id);
+      return bi - ai; // highest precedence (lowest index) goes to END
+    });
 
   const glOk = drawDotsWebGL(ctx, plot, tf, pad, pw, ph, pop, renderPop, data, nPar, allColoredGates, orderedGates);
 
@@ -4738,6 +4771,12 @@ function finalizeGate(plot) {
     }
   };
   fcsFile.populations.push(newPop);
+  // Register new gate at highest precedence on its own file immediately.
+  // renderPrecedenceList() only updates focusedFile.colorPrecedence, which may
+  // differ from fcsFile when multiple files are loaded — so we write directly here.
+  if (!fcsFile.colorPrecedence.includes(newPop.id)) {
+    fcsFile.colorPrecedence.unshift(newPop.id);
+  }
   rebuildPopulationsView();
   plot.gatePoints = [];
   renderPopList();
@@ -4967,9 +5006,12 @@ function getDescendantGates(popId) {
   const fileId = pop.fileId;
 
   return populations.filter(p => {
-    if (!p.gateInfo || p.id === popId || !p.indices) return false;
+    if (!p.gateInfo || !p.indices) return false;
     if (p.fileId !== fileId) return false; // same file only
     if (pop._isAll) return true; // all gates belong to this file's root
+    // Include the inputPop gate itself so its color participates in precedence
+    // ordering for its own plot (otherwise ancestor gates override it).
+    if (p.id === popId) return true;
     return p.indices.some(idx => popEventsSet.has(idx));
   });
 }
@@ -5282,6 +5324,7 @@ function collapsePlot() {
   plot._tf = null;  // Clear cached transforms to force full recalculation
   _sharedGL = null; // Force GL canvas recreation at correct size
   _hmapProg = null; _hmapBuf = null; _hmapTex = null; // heatmap resources are context-bound
+  _gpuPosCurrent = null; _gpuColCurrent = null; // new context has empty buffers — force re-upload
 
   // Show all hidden plot cards
   document.querySelectorAll('.plot-card.hidden-plot-card').forEach(c => {
@@ -5810,7 +5853,9 @@ function showColorPicker(popId, mx, my) {
       pop.color = selectedHex;
     }
     overlay.remove();
+    markAllDirty();
     renderPopList();
+    updateAllPopSelects();
     renderAllPlots();
   });
 
@@ -6089,7 +6134,7 @@ function doExportTemplate() {
   const safe = tmplName.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
   const blob = new Blob([JSON.stringify(template, null, 2)], {type:'application/json'});
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = `flowviz_${safe}.json`; a.click();
+  a.download = `${safe}_FlowNgtmplt.json`; a.click();
   const gateCount = fcsFiles.reduce((n, f) => n + f.populations.filter(p => p.gateInfo).length, 0);
   showToast(`Template "${tmplName}" exported — ${fcsFiles.length} file(s), ${gateCount} gate(s), ${plotSnapshots.length} plot(s)`);
 }
