@@ -6201,7 +6201,8 @@ function showShareDialog() {
       <label style="font-size:11px;display:block;margin-bottom:8px">Name
         <input id="share-name" type="text" style="width:100%" value="${(fcsFiles[0].filename||'FlowNG').replace(/\.[^.]+$/, '').replace(/"/g,'')}"></label>
       <label style="font-size:11px;display:block;margin-bottom:8px">Max events per file (blank = all; ${total.toLocaleString()} total loaded)
-        <input id="share-maxev" type="number" min="1000" step="1000" style="width:100%" placeholder="all events"></label>
+        <input id="share-maxev" type="number" min="1000" step="1000" style="width:100%" placeholder="all events" oninput="_updateShareEstimate()"></label>
+      <div id="share-estimate" style="font-size:11px;color:var(--text2);margin:-4px 0 8px"></div>
       <label style="font-size:11px;display:block;margin-bottom:6px">
         <input id="share-anon" type="checkbox"> Replace file names with Sample 1, 2, …</label>
       <label style="font-size:11px;display:block;margin-bottom:12px">
@@ -6213,6 +6214,27 @@ function showShareDialog() {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  // Large files make huge HTML; default to a cap above 500k events per file.
+  if (fcsFiles.some(f => f.nEvents > 500000)) document.getElementById('share-maxev').value = 500000;
+  _updateShareEstimate();
+}
+
+// Rough output size: float32 events (x2 if raw copy kept), ~80% after gzip (float data compresses poorly), +33% base64.
+function _estimateShareBytes() {
+  const cap = parseInt(document.getElementById('share-maxev').value) || 0;
+  return fcsFiles.reduce((t, f) => {
+    const n = cap ? Math.min(cap, f.nEvents) : f.nEvents;
+    return t + n * f.nPar * 4 * (f.rawData ? 2 : 1) * 0.8 * 1.34;
+  }, 0);
+}
+
+function _updateShareEstimate() {
+  const el = document.getElementById('share-estimate');
+  if (!el) return;
+  const mb = _estimateShareBytes() / 1048576;
+  el.textContent = `Estimated file size: ~${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB` +
+    (mb > 200 ? ' — very large; set a lower event cap' : '');
+  el.style.color = mb > 200 ? '#f5a623' : '';
 }
 
 async function doExportShareable() {
@@ -6223,6 +6245,19 @@ async function doExportShareable() {
   const anon = document.getElementById('share-anon').checked;
   const fullMeta = document.getElementById('share-meta').checked;
   go.disabled = true;
+  const safe = name.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
+  const fileName = `${safe}_FlowNG_shared.html`;
+  // Ask where to save up front: the picker needs a fresh user gesture, which would expire during compression.
+  let handle = null;
+  if (window.showSaveFilePicker) {
+    try {
+      handle = await window.showSaveFilePicker({ suggestedName: fileName,
+        types: [{ description: 'HTML', accept: { 'text/html': ['.html'] } }] });
+    } catch (e) {
+      if (e && e.name === 'AbortError') { go.disabled = false; return; }
+      handle = null;   // picker unavailable; fall back to a normal download
+    }
+  }
   try {
     const template = _buildTemplateV3(name);
     const files = [];
@@ -6290,12 +6325,23 @@ async function doExportShareable() {
     src = src.slice(0, insertAt) + `${OPEN} id="flowng-bundle" type="application/json">${json}${CLOSE}\n` + src.slice(insertAt);
     src = src.replace(/<title>[\s\S]*?<\/title>/, `<title>${name.replace(/[<>&]/g, '')} — FlowNG</title>`);
 
-    const safe = name.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
     const blob = new Blob([src], { type: 'text/html' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `${safe}_FlowNG_shared.html`; a.click();
+    const sizeMB = (blob.size / 1048576).toFixed(1);
+    let where;
+    if (handle) {
+      status.textContent = 'Writing file…';
+      const w = await handle.createWritable();
+      await w.write(blob);
+      await w.close();
+      where = `Saved "${handle.name}" (${sizeMB} MB) at the location you chose`;
+    } else {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = fileName; a.click();
+      where = `Downloaded "${fileName}" (${sizeMB} MB) to your browser's download folder`;
+    }
     document.getElementById('share-modal').remove();
-    showToast(`Shareable HTML exported (${(blob.size / 1048576).toFixed(1)} MB)`);
+    showToast(where, 10000);
+    console.log('[FlowNG] ' + where);
   } catch (err) {
     console.error(err);
     status.textContent = 'Export failed: ' + err.message;
