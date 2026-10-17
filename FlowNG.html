@@ -736,9 +736,13 @@
       <button class="tool-btn active" id="gbtn-pan"      onclick="setGlobalMode('pan')"      title="Select and move gates"><i>↖</i>Select</button>
       <button class="tool-btn"        id="gbtn-gate"     onclick="setGlobalMode('gate')"     title="Draw a polygon gate"><i>⬡</i>Polygon</button>
       <button class="tool-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Draw a rectangular gate"><i>▭</i>Rect</button>
+      <button class="tool-btn"        id="gbtn-quad"     onclick="setGlobalMode('quad')"     title="Place a quadrant crosshair (Q1-Q4, clockwise from upper right)"><i>+</i>Quadrant</button>
       <button class="tool-btn"        id="gbtn-edit"     onclick="setGlobalMode('edit')"     title="Edit gate vertices"><i>✎</i>Edit</button>
       <button class="tool-btn"        id="gbtn-spill"    onclick="setGlobalMode('spill')"    title="Compensation: drag the top or right edge of a plot to adjust spillover"><i>⇔</i>Comp</button>
       <button class="tool-btn"        id="gbtn-delete"   onclick="setGlobalMode('delete')"   title="Click a gate to delete it"><i>🗑</i>Delete</button>
+      <button class="tool-btn"        id="gbtn-autocomp" onclick="setGlobalMode('autocomp')" title="Autocomp: draw a polygon around a population that should sit flat; the spillover between the two axes is fitted automatically"><i>◎</i>Autocomp</button>
+      <button class="tool-btn" id="undo-btn" onclick="undo()" title="Undo (Ctrl/Cmd+Z)" disabled><i>↶</i>Undo</button>
+      <button class="tool-btn" id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z)" disabled><i>↷</i>Redo</button>
     </div>
     <div id="parse-progress" style="display:none;align-items:center;gap:8px;font-size:10px;color:var(--text2)">
       <div style="width:100px;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
@@ -789,11 +793,6 @@
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
           <input type="checkbox" id="showgrid" onchange="renderAllPlots()" checked>
           <span>Show grid</span>
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;position:relative">
-          <input type="checkbox" id="showdensity" onchange="toggleDensityPlots(this.checked)" checked>
-          <span>Density plot</span>
-          <span style="cursor:help;color:var(--text2);font-weight:bold" title="For large files, turning off density plots can improve performance">ⓘ</span>
         </label>
       </div>
     </div>
@@ -1171,6 +1170,7 @@ function evalGateAsync(gate) {
     xParam, yParam, xScale, yScale,
     xCofactor: getAsinhCofactor(xParam),
     yCofactor: getAsinhCofactor(yParam),
+    quad: gate.gateInfo.quad || null,
     parentIsAll: !!pop._isAll,
     parentIndices: pop._isAll ? null : pop.indices
   };
@@ -2418,6 +2418,7 @@ function reparentGate(gateId, newParentId) {
   if (descendants.map(g => g.id).includes(newParentId)) {
     showToast('Cannot reparent a gate onto one of its own descendants'); return;
   }
+  pushUndo();
   gate.parentId = newParentId;
   // Evaluate synchronously so counts and dot colors are correct immediately
   evalGate(gate);
@@ -2515,6 +2516,7 @@ function renderPrecedenceList() {
       const toId   = parseInt(row.dataset.id);
       const fi = focusedFile.colorPrecedence.indexOf(fromId);
       const ti = focusedFile.colorPrecedence.indexOf(toId);
+      pushUndo();
       focusedFile.colorPrecedence.splice(fi, 1);
       focusedFile.colorPrecedence.splice(ti, 0, fromId);
       colorPrecedence = focusedFile.colorPrecedence; // keep shim in sync
@@ -2824,7 +2826,7 @@ function renderPlotCard(plot) {
 
   const canvas = document.getElementById(`canvas-${plot.id}`);
   canvas.addEventListener('click',     e => onCanvasClick(e, canvas, plot));
-  canvas.addEventListener('dblclick',  e => { if (plot.mode==='gate' && plot.gatePoints.length>=3) finalizeGate(plot); });
+  canvas.addEventListener('dblclick',  e => { if ((plot.mode==='gate' || plot.mode==='autocomp') && plot.gatePoints.length>=3) finalizeGate(plot); });
   canvas.addEventListener('contextmenu', e => { e.preventDefault(); showAxisRangeModal(plot, e.clientX, e.clientY); });
   canvas.addEventListener('mousedown', e => { _markInteraction(); onCanvasMouseDown(e, canvas, plot); });
   canvas.addEventListener('mousemove', e => { _markInteraction(); onCanvasMouseMove(e, canvas, plot); });
@@ -2888,6 +2890,9 @@ function setMode(id, mode) {
   plot._editGate = null; plot._dragGate = null; plot._dragVertex = -1;
   const txt =
     mode==='gate'   ? 'Click to add gate points' :
+    mode==='autocomp' ? 'Click points around a population that should be flat in this pair; click the first point to fit spillover' :
+    mode==='quad'   ? 'Click to place the quadrant crosshair; drag it afterwards with Select or Edit' :
+    mode==='rectgate' ? 'Drag to draw a rectangle' :
     mode==='edit'   ? 'Click a gate to select; drag to move' :
     mode==='delete' ? 'Click a gate to delete it' :
     mode==='zoom'   ? (plot.zoomX ? 'Zoomed — click ⛶ again to reset' : 'Drag to zoom in') :
@@ -2899,7 +2904,7 @@ function setMode(id, mode) {
 function setGlobalMode(mode) {
   globalMode = mode;
   // Update global toolbar button highlights
-  ['pan','gate','rectgate','quad','edit','delete','spill'].forEach(m => {
+  ['pan','gate','rectgate','quad','edit','delete','spill','autocomp'].forEach(m => {
     const btn = document.getElementById(`gbtn-${m}`);
     if (btn) btn.classList.toggle('active', m === mode);
   });
@@ -2920,7 +2925,7 @@ function updateGlobalModeFromSelection() {
   if (sel.length === 1) {
     const m = sel[0].mode;
     globalMode = m;
-    ['pan','gate','rectgate','quad','edit','delete','spill'].forEach(mode => {
+    ['pan','gate','rectgate','quad','edit','delete','spill','autocomp'].forEach(mode => {
       const btn = document.getElementById(`gbtn-${mode}`);
       if (btn) btn.classList.toggle('active', mode === m);
     });
@@ -3213,6 +3218,7 @@ function renderPlot(plot) {
   populations.forEach(pop2 => {
     if (!pop2.gateInfo || pop2.parentId !== plot.inputPop) return;
     if (pop2.gateInfo.xParam !== plot.xParam || pop2.gateInfo.yParam !== plot.yParam) return;
+    if (pop2.gateInfo.quad) return;   // quadrants are drawn as one crosshair below
     const isDragging = plot._dragGate === pop2.id;
     const pts = isDragging ? plot._dragPts : pop2.gateInfo.rawPts;
     const isEditing = plot._editGate === pop2.id;
@@ -3237,6 +3243,36 @@ function renderPlot(plot) {
     ctx.font = 'bold 11px monospace';
     ctx.fillText(pop2.name, tf.dataToCanvasX(p0.rx)+4, tf.dataToCanvasY(p0.ry)-4);
   });
+
+  // Quadrant crosshairs: one per group, with each quadrant's name and % of parent in its corner
+  {
+    const seen = new Set();
+    populations.forEach(g => {
+      const qi = g.gateInfo && g.gateInfo.quad;
+      if (!qi || seen.has(qi.gid) || g.parentId !== plot.inputPop) return;
+      if (g.gateInfo.xParam !== plot.xParam || g.gateInfo.yParam !== plot.yParam) return;
+      seen.add(qi.gid);
+      const cxp = tf.dataToCanvasX(qi.cx), cyp = tf.dataToCanvasY(qi.cy);
+      const active = plot._dragQuad === qi.gid;
+      ctx.strokeStyle = '#222'; ctx.lineWidth = active ? 2.5 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cxp, pad.top); ctx.lineTo(cxp, pad.top + ph);
+      ctx.moveTo(pad.left, cyp); ctx.lineTo(pad.left + pw, cyp);
+      ctx.stroke();
+      ctx.fillStyle = '#222'; ctx.fillRect(cxp - 3, cyp - 3, 6, 6);
+      const parentN = popCount(populations.find(p => p.id === g.parentId) || g) || 1;
+      ctx.font = 'bold 10px monospace';
+      populations.filter(m => m.gateInfo && m.gateInfo.quad && m.gateInfo.quad.gid === qi.gid).forEach(m => {
+        const q = m.gateInfo.quad.q;
+        const label = `${m.name} ${(100 * m.indices.length / parentN).toFixed(1)}%`;
+        ctx.textAlign = (q === 1 || q === 2) ? 'right' : 'left';
+        const lx = (q === 1 || q === 2) ? pad.left + pw - 4 : pad.left + 4;
+        const ly = (q === 1 || q === 4) ? pad.top + 12 : pad.top + ph - 6;
+        ctx.fillStyle = '#222'; ctx.fillText(label, lx, ly);
+      });
+      ctx.textAlign = 'left';
+    });
+  }
 
   // In-progress gate
   if (plot.gatePoints.length > 0) {
@@ -4409,6 +4445,13 @@ function canvasCoords(e, canvas) {
 function hitTestGate(cx, cy, gate, tf, plot) {
   // Returns: { type: 'vertex', index } | { type: 'body' } | null
   if (!gate.gateInfo) return null;
+  if (gate.gateInfo.quad) {
+    // Quadrant gates are grabbed by their crosshair only (their rectangles span the whole plot).
+    const q = gate.gateInfo.quad;
+    const qx = tf.dataToCanvasX(q.cx), qy = tf.dataToCanvasY(q.cy);
+    if (Math.hypot(cx - qx, cy - qy) < 10 || Math.abs(cx - qx) < 4 || Math.abs(cy - qy) < 4) return { type: 'quad' };
+    return null;
+  }
   const pts = gate.gateInfo.rawPts;
   // Check vertices first (8px hit radius)
   for (let i = 0; i < pts.length; i++) {
@@ -4441,6 +4484,7 @@ function onCanvasMouseDown(e, canvas, plot) {
       const initVal = zone === 'top'
         ? _spillFile.spillMatrix[iy][ix]   // Y→X: how much Y spills into X detector
         : _spillFile.spillMatrix[ix][iy];  // X→Y: how much X spills into Y detector
+      pushUndo();
       plot._spillDragging    = true;
       plot._spillZone        = zone;
       plot._spillDragStart   = { cx, cy };
@@ -4467,7 +4511,7 @@ function onCanvasMouseDown(e, canvas, plot) {
     plot._zoomRect  = { x: cx, y: cy, w: 0, h: 0 };
     return;
   }
-  if (plot.mode !== 'edit') return;
+  if (plot.mode !== 'edit' && plot.mode !== 'pan') return;
   const { cx, cy } = canvasCoords(e, canvas);
   const tf = plot._tf; if (!tf) return;
 
@@ -4485,12 +4529,20 @@ function onCanvasMouseDown(e, canvas, plot) {
   for (const gate of childGates) {
     const hit = hitTestGate(cx, cy, gate, tf, plot);
     if (!hit) continue;
+    if (hit.type === 'quad') {
+      pushUndo();
+      plot._dragQuad = gate.gateInfo.quad.gid;
+      e.preventDefault();
+      renderPlot(plot);
+      return;
+    }
+    pushUndo();
     plot._editGate  = gate.id;
     plot._dragGate  = gate.id;
     plot._dragStart = { cx, cy };
     plot._dragRawStart = gate.gateInfo.rawPts.map(p => ({...p}));
     plot._dragPts   = gate.gateInfo.rawPts.map(p => ({...p}));
-    plot._dragVertex = hit.type === 'vertex' ? hit.index : -1;
+    plot._dragVertex = (hit.type === 'vertex' && plot.mode === 'edit') ? hit.index : -1;
     e.preventDefault();
     renderPlot(plot);
     return;
@@ -4542,7 +4594,19 @@ function onCanvasMouseMove(e, canvas, plot) {
     renderPlot(plot);
     return;
   }
-  if (plot.mode !== 'edit' || !plot._dragGate) return;
+  if (plot._dragQuad != null) {
+    const { cx, cy } = canvasCoords(e, canvas);
+    const tf = plot._tf; if (!tf) return;
+    _quadSetCenter(plot._dragQuad,
+      fromDisplay(tf.canvasToDispX(cx), plot.xParam, tf.xls),
+      fromDisplay(tf.canvasToDispY(cy), plot.yParam, tf.yls), true);
+    if (!plot._rafPending) {
+      plot._rafPending = true;
+      requestAnimationFrame(() => { plot._rafPending = false; renderAllPlots(); });
+    }
+    return;
+  }
+  if ((plot.mode !== 'edit' && plot.mode !== 'pan') || !plot._dragGate) return;
   const { cx, cy } = canvasCoords(e, canvas);
   const tf = plot._tf; if (!tf) return;
 
@@ -4607,7 +4671,7 @@ function onCanvasHover(e, canvas, plot) {
     return;
   }
 
-  if (plot.mode !== 'edit' || plot._dragGate) return;
+  if ((plot.mode !== 'edit' && plot.mode !== 'pan') || plot._dragGate || plot._dragQuad != null) return;
   const { cx, cy } = canvasCoords(e, canvas);
   const tf = plot._tf; if (!tf) return;
   const childGates = populations.filter(p =>
@@ -4617,7 +4681,7 @@ function onCanvasHover(e, canvas, plot) {
   for (const gate of childGates) {
     const hit = hitTestGate(cx, cy, gate, tf, plot);
     if (!hit) continue;
-    canvas.style.cursor = hit.type === 'vertex' ? 'crosshair' : 'move';
+    canvas.style.cursor = (hit.type === 'vertex' && plot.mode === 'edit') ? 'crosshair' : 'move';
     return;
   }
   canvas.style.cursor = 'default';
@@ -4643,7 +4707,7 @@ function onCanvasMouseUp(e, canvas, plot) {
       const newMatrix = _sfUp.spillMatrix.map(row => [...row]);
       if (plot._spillZone === 'top')  newMatrix[iy][ix] = plot._spillCurrentVal;
       else                            newMatrix[ix][iy] = plot._spillCurrentVal;
-      if (recomputeCompensation(newMatrix, plot.fileId)) renderAllPlots();
+      if (recomputeCompensation(newMatrix, plot.fileId)) reevaluateAllGates(_sfUp);
     }
     plot._spillDragging   = false;
     plot._spillZone       = null;
@@ -4710,7 +4774,18 @@ function onCanvasMouseUp(e, canvas, plot) {
     return;
   }
 
+  if (plot._dragQuad != null) {
+    const gid = plot._dragQuad;
+    plot._dragQuad = null;
+    _quadGroup(gid).forEach(g => { evalGateAsync(g); getDescendantGates(g.id).forEach(d => evalGateAsync(d)); });
+    renderPopList(); updateAllPopSelects(); renderAllPlots();
+    return;
+  }
   if (!plot._dragGate) return;
+  if (plot._dragPts && plot._dragRawStart &&
+      JSON.stringify(plot._dragPts) === JSON.stringify(plot._dragRawStart) && _undoStack.length) {
+    _undoStack.pop(); updateUndoButtons();   // a click without movement isn't an edit
+  }
   // Full eval on release — dispatch to worker so the main thread stays unblocked.
   // evalGateAsync falls back to synchronous evalGate if the worker isn't ready.
   const gate = populations.find(p => p.id === plot._dragGate);
@@ -4736,7 +4811,16 @@ function onCanvasClick(e, canvas, plot) {
     for (const gate of childGates) {
       const hit = hitTestGate(cx, cy, gate, tf, plot);
       if (!hit) continue;
+      if (hit.type === 'quad') {
+        if (!confirm('Delete this quadrant (Q1-Q4) and all its children?')) return;
+        pushUndo();
+        _quadGroup(gate.gateInfo.quad.gid).forEach(g => deleteGateAndDescendants(g.id));
+        renderPopList(); updateAllPopSelects(); renderAllPlots();
+        showToast('Deleted quadrant');
+        return;
+      }
       if (!confirm(`Delete gate "${gate.name}" and all its children?`)) return;
+      pushUndo();
       deleteGateAndDescendants(gate.id);
       renderPopList(); updateAllPopSelects(); renderAllPlots();
       showToast(`Deleted "${gate.name}"`);
@@ -4744,7 +4828,14 @@ function onCanvasClick(e, canvas, plot) {
     }
     return;
   }
-  if (plot.mode !== 'gate') return;
+  if (plot.mode === 'quad') {
+    const { cx, cy } = canvasCoords(e, canvas);
+    const tf = plot._tf; if (!tf) return;
+    createQuadrant(plot, fromDisplay(tf.canvasToDispX(cx), plot.xParam, tf.xls), fromDisplay(tf.canvasToDispY(cy), plot.yParam, tf.yls));
+    setGlobalMode('pan');
+    return;
+  }
+  if (plot.mode !== 'gate' && plot.mode !== 'autocomp') return;
   const rect = canvas.getBoundingClientRect();
   // Scale mouse → canvas pixels
   const cx = (e.clientX - rect.left) * canvas.width / rect.width;
@@ -4774,10 +4865,68 @@ function onCanvasClick(e, canvas, plot) {
   renderPlot(plot);
 }
 
+// Quadrant gates are exact half-plane tests in display space (a polygon can't express
+// "everything below zero" on a log axis). q: 1=UR 2=LR 3=LL 4=UL, clockwise from upper right.
+function _quadInside(q, dx, dy, cdx, cdy) {
+  if (q === 1) return dx >= cdx && dy >= cdy;
+  if (q === 2) return dx >= cdx && dy <  cdy;
+  if (q === 3) return dx <  cdx && dy <  cdy;
+  return dx < cdx && dy >= cdy;
+}
+const _QUAD_BIG = 1e12;
+function _quadPts(q, cx, cy) {
+  const B = _QUAD_BIG;
+  const [x0, x1] = (q === 1 || q === 2) ? [cx, B] : [-B, cx];
+  const [y0, y1] = (q === 1 || q === 4) ? [cy, B] : [-B, cy];
+  return [{rx: x0, ry: y0}, {rx: x1, ry: y0}, {rx: x1, ry: y1}, {rx: x0, ry: y1}];
+}
+
 // Fast gate eval for use during live drag — runs PIP on the LOD subsample (~100K
 // events) rather than the full population. Because renderAllPlots() during drag
 // already uses the same LOD subsample, the colored-dot overlay matches what is
 // visible on screen. Falls back to full evalGate if no LOD sample exists yet.
+function _quadGroup(gid) {
+  return populations.filter(p => p.gateInfo && p.gateInfo.quad && p.gateInfo.quad.gid === gid);
+}
+
+// Moves a quadrant crosshair: all four gates follow one centre.
+function _quadSetCenter(gid, rx, ry, lod) {
+  _quadGroup(gid).forEach(g => {
+    const q = g.gateInfo.quad;
+    q.cx = rx; q.cy = ry;
+    g.gateInfo.rawPts = _quadPts(q.q, rx, ry);
+    if (lod) { evalGateLOD(g); getDescendantGates(g.id).forEach(d => evalGateLOD(d)); }
+  });
+}
+
+function createQuadrant(plot, rx, ry) {
+  const fcsFile = getFileForPlot(plot); if (!fcsFile) return;
+  _contextFileId = fcsFile.fileId; _paramRanges = fcsFile.paramRanges;
+  pushUndo();
+  const xScale = plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin';
+  const yScale = plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin';
+  const gid = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const taken = new Set(fcsFile.populations.map(p => p.name));
+  const made = [];
+  for (let q = 1; q <= 4; q++) {
+    let name = `Q${q}`; for (let n = 2; taken.has(name); n++) name = `Q${q} (${n})`;
+    taken.add(name);
+    const color = GATE_COLORS[fcsFile.populations.filter(p => !p._isAll).length % GATE_COLORS.length];
+    const pop = {
+      id: popIdCounter++, name, color, indices: new Int32Array(0),
+      parentId: plot.inputPop, fileId: fcsFile.fileId,
+      gateInfo: { rawPts: _quadPts(q, rx, ry), xParam: plot.xParam, yParam: plot.yParam, xScale, yScale,
+                  quad: { gid, q, cx: rx, cy: ry } }
+    };
+    fcsFile.populations.push(pop);
+    fcsFile.colorPrecedence.unshift(pop.id);
+    made.push(pop);
+  }
+  rebuildPopulationsView();
+  renderPopList(); updateAllPopSelects(); renderAllPlots();
+  made.forEach(g => evalGateAsync(g));
+}
+
 function evalGateLOD(gate) {
   const pop = populations.find(p => p.id === gate.parentId);
   if (!pop) return;
@@ -4813,6 +4962,8 @@ function evalGateLOD(gate) {
     if (pt.dy < dyMin) dyMin = pt.dy; if (pt.dy > dyMax) dyMax = pt.dy;
   }
 
+  const quadC = gate.gateInfo.quad
+    ? { dx: toDisplay(gate.gateInfo.quad.cx, xP, xScale), dy: toDisplay(gate.gateInfo.quad.cy, yP, yScale) } : null;
   const n = lodIndices.length;
   const result = [];
   for (let li = 0; li < n; li++) {
@@ -4825,7 +4976,8 @@ function evalGateLOD(gate) {
     if (ySC === 1) dy = Math.log10(dy < 1 ? 1 : dy); else if (ySC === 2) dy = Math.asinh(dy / yCF) * LOG10E;
     if (dy < dyMin || dy > dyMax) continue;
     let inside = false;
-    for (let i = 0, j = nPts - 1; i < nPts; j = i++) {
+    if (quadC) inside = _quadInside(gate.gateInfo.quad.q, dx, dy, quadC.dx, quadC.dy);
+    else for (let i = 0, j = nPts - 1; i < nPts; j = i++) {
       const xi = dispPts[i].dx, yi = dispPts[i].dy;
       const xj = dispPts[j].dx, yj = dispPts[j].dy;
       if (((yi > dy) !== (yj > dy)) && dx < (xj - xi) * (dy - yi) / (yj - yi) + xi)
@@ -4858,6 +5010,8 @@ function evalGate(gate, { invalidate = true } = {}) {
     if (pt.dy < dyMin) dyMin = pt.dy; if (pt.dy > dyMax) dyMax = pt.dy;
   }
 
+  const quadC = gate.gateInfo.quad
+    ? { dx: toDisplay(gate.gateInfo.quad.cx, xP, xScale), dy: toDisplay(gate.gateInfo.quad.cy, yP, yScale) } : null;
   // Build (or reuse cached) spatial index — dispX/dispY already computed inside
   const idx = buildSpatialIndex(pop, xP, yP, xScale, yScale);
   const candidates = spatialQuery(idx, dxMin, dxMax, dyMin, dyMax);
@@ -4884,7 +5038,8 @@ function evalGate(gate, { invalidate = true } = {}) {
     if (ei < 0) continue;
     const dx = dispX[ei], dy = dispY[ei];
     let inside = false;
-    for (let i = 0, j = nPts - 1; i < nPts; j = i++) {
+    if (quadC) inside = _quadInside(gate.gateInfo.quad.q, dx, dy, quadC.dx, quadC.dy);
+    else for (let i = 0, j = nPts - 1; i < nPts; j = i++) {
       const xi = dispPts[i].dx, yi = dispPts[i].dy;
       const xj = dispPts[j].dx, yj = dispPts[j].dy;
       if (((yi > dy) !== (yj > dy)) && dx < (xj - xi) * (dy - yi) / (yj - yi) + xi)
@@ -4900,15 +5055,78 @@ function evalGate(gate, { invalidate = true } = {}) {
   markAllDirty();
 }
 
+// Robust slope of ys on xs (FlowNg2's auto-compensation fit): equal-count bins in x, median y
+// per bin, then a count-weighted least-squares line through the bin medians.
+function _robustSlope(xs, ys, nBins, minBin) {
+  const n = xs.length; if (!n) return null;
+  const order = Uint32Array.from({ length: n }, (_, i) => i).sort((a, b) => xs[a] - xs[b]);
+  const median = a => { a.sort((p, q) => p - q); const m = a.length; return m % 2 ? a[(m - 1) / 2] : (a[m / 2 - 1] + a[m / 2]) / 2; };
+  const bx = [], by = [], bw = [];
+  for (let b = 0; b < nBins; b++) {
+    const start = Math.floor(b * n / nBins), end = Math.floor((b + 1) * n / nBins);
+    if (end <= start || end - start < minBin) continue;
+    const xv = [], yv = [];
+    for (let i = start; i < end; i++) { xv.push(xs[order[i]]); yv.push(ys[order[i]]); }
+    bx.push(median(xv)); by.push(median(yv)); bw.push(end - start);
+  }
+  if (bx.length < 2) return null;
+  const wsum = bw.reduce((a, b) => a + b, 0);
+  const xm = bx.reduce((a, x, i) => a + x * bw[i], 0) / wsum;
+  const ym = by.reduce((a, y, i) => a + y * bw[i], 0) / wsum;
+  let cov = 0, vr = 0;
+  for (let i = 0; i < bx.length; i++) { cov += bw[i] * (bx[i] - xm) * (by[i] - ym); vr += bw[i] * (bx[i] - xm) ** 2; }
+  return vr < 1e-9 ? null : cov / vr;
+}
+
+// Autocomp: fits the one spillover coefficient (X's contribution to Y's detector) that flattens
+// the population inside the drawn polygon, over up to 3 rounds in linear space.
+function autoCompensate(plot) {
+  const pts = plot.gatePoints; plot.gatePoints = [];
+  const f = getFileForPlot(plot), spi = getSpilloverIndices(plot);
+  if (!f || !f.spillMatrix || !f.rawData || !spi) {
+    showToast('Autocomp needs two fluorescence axes that are in the spillover matrix', 4000);
+    renderPlot(plot); return;
+  }
+  _contextFileId = f.fileId; _paramRanges = f.paramRanges;
+  const xSc = plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin', ySc = plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin';
+  const poly = pts.map(p => ({ dx: toDisplay(p.rx, plot.xParam, xSc), dy: toDisplay(p.ry, plot.yParam, ySc) }));
+  const parent = populations.find(p => p.id === plot.inputPop);
+  const { data, nPar } = f, picked = [];
+  const n = parent ? popCount(parent) : 0;
+  for (let i = 0; i < n; i++) {
+    const e = popGetIndex(parent, i);
+    if (pointInPolygonDisp(toDisplay(data[e * nPar + plot.xParam], plot.xParam, xSc),
+                           toDisplay(data[e * nPar + plot.yParam], plot.yParam, ySc), poly)) picked.push(e);
+  }
+  if (picked.length < 100) { showToast(`Autocomp needs at least 100 events in the polygon (got ${picked.length})`, 4000); renderPlot(plot); return; }
+  pushUndo();
+  const { ix, iy } = spi;
+  const before = f.spillMatrix[ix][iy];
+  for (let iter = 0; iter < 3; iter++) {
+    const d = f.data, xs = new Float32Array(picked.length), ys = new Float32Array(picked.length);
+    picked.forEach((e, k) => { xs[k] = d[e * nPar + plot.xParam]; ys[k] = d[e * nPar + plot.yParam]; });
+    const slope = _robustSlope(xs, ys, 20, 5);
+    if (slope == null || Math.abs(slope) < 1e-4) break;
+    const m = f.spillMatrix.map(r => [...r]);
+    m[ix][iy] += slope;
+    if (!recomputeCompensation(m, f.fileId)) { showToast('Autocomp stopped: matrix became singular', 4000); break; }
+  }
+  reevaluateAllGates(f);
+  showToast(`Autocomp: ${f.params[plot.xParam].name} → ${f.params[plot.yParam].name} spillover ${before.toFixed(4)} → ${f.spillMatrix[ix][iy].toFixed(4)}`, 5000);
+  setGlobalMode('pan');
+}
+
 function finalizeGate(plot) {
   const pts = plot.gatePoints; // [{rx, ry}] in raw data space
   if (pts.length < 3) return;
+  if (plot.mode === 'autocomp') { autoCompensate(plot); return; }
 
   const fcsFile = getFileForPlot(plot);
   if (!fcsFile) return;
   _contextFileId = fcsFile.fileId;
   _paramRanges = fcsFile.paramRanges;
 
+  pushUndo();
   const xScale2 = plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin';
   const yScale2 = plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin';
   const color = GATE_COLORS[fcsFile.populations.filter(p => !p._isAll).length % GATE_COLORS.length];
@@ -4983,6 +5201,10 @@ function eventInGate(rx, ry, gateInfo) {
   const xsc = xScale || 'lin', ysc = yScale || 'lin';
   const dx = toDisplay(rx, xParam, xsc);
   const dy = toDisplay(ry, yParam, ysc);
+  if (gateInfo.quad) {
+    return _quadInside(gateInfo.quad.q, dx, dy,
+      toDisplay(gateInfo.quad.cx, xParam, xsc), toDisplay(gateInfo.quad.cy, yParam, ysc));
+  }
   const dispPts = rawPts.map(pt => ({
     dx: toDisplay(pt.rx, xParam, xsc),
     dy: toDisplay(pt.ry, yParam, ysc)
@@ -5133,6 +5355,92 @@ function highlightOrRecreateGatePlot(gateId) {
     }
   }, 100);
   showToast(`Created plot for "${gate.name}"`);
+}
+
+// ─── UNDO / REDO ─────────────────────────────────────────────────────────────
+// Snapshots cover every file's gate tree (event-index arrays are shared, never mutated in
+// place), colour precedence and spillover matrix. pushUndo() is called just BEFORE a change.
+const _undoStack = [], _redoStack = [];
+const UNDO_MAX = 50;
+
+function _clonePop(p) {
+  const c = { ...p };
+  if (p.gateInfo) {
+    c.gateInfo = { ...p.gateInfo, rawPts: p.gateInfo.rawPts.map(q => ({ ...q })) };
+    if (p.gateInfo.quad) c.gateInfo.quad = { ...p.gateInfo.quad };
+  }
+  return c;
+}
+function _snapshotState() {
+  return fcsFiles.map(f => ({
+    fileId: f.fileId,
+    pops: f.populations.map(_clonePop),
+    prec: [...f.colorPrecedence],
+    spill: f.spillMatrix ? f.spillMatrix.map(r => [...r]) : null,
+  }));
+}
+function _restoreState(snap) {
+  snap.forEach(sf => {
+    const f = getFileById(sf.fileId); if (!f) return;
+    f.populations = sf.pops.map(_clonePop);
+    f.colorPrecedence = [...sf.prec];
+    if (sf.spill && f.spillMatrix && JSON.stringify(sf.spill) !== JSON.stringify(f.spillMatrix)) {
+      recomputeCompensation(sf.spill.map(r => [...r]), f.fileId);
+      sendDataToComputeWorkerForFile(f);
+    }
+  });
+  rebuildPopulationsView();
+  plots.forEach(pl => {
+    if (!populations.find(p => p.id === pl.inputPop)) {
+      const f = getFileForPlot(pl), root = f && f.populations.find(p => p._isAll);
+      if (root) pl.inputPop = root.id;
+    }
+  });
+  const foc = getFileById(_focusedFileId) || fcsFiles[0];
+  if (foc) colorPrecedence = foc.colorPrecedence;
+  invalidateSpatialCache(true); markAllDirty();
+  renderPopList(); renderPrecedenceList(); updateAllPopSelects(); renderAllPlots();
+}
+function pushUndo() {
+  _undoStack.push(_snapshotState());
+  if (_undoStack.length > UNDO_MAX) _undoStack.shift();
+  _redoStack.length = 0;
+  updateUndoButtons();
+}
+function undo() {
+  if (!_undoStack.length) return;
+  _redoStack.push(_snapshotState());
+  _restoreState(_undoStack.pop());
+  updateUndoButtons();
+}
+function redo() {
+  if (!_redoStack.length) return;
+  _undoStack.push(_snapshotState());
+  _restoreState(_redoStack.pop());
+  updateUndoButtons();
+}
+function updateUndoButtons() {
+  const u = document.getElementById('undo-btn'), r = document.getElementById('redo-btn');
+  if (u) u.disabled = !_undoStack.length;
+  if (r) r.disabled = !_redoStack.length;
+}
+document.addEventListener('keydown', e => {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+});
+
+// Re-evaluates every gate (parents before children) after the compensated data changes.
+function reevaluateAllGates(fileObj) {
+  sendDataToComputeWorkerForFile(fileObj);
+  invalidateSpatialCache(false);
+  fileObj.populations.filter(p => p.gateInfo).forEach(g => evalGate(g, { invalidate: false }));
+  invalidateSpatialCache(true);
+  rebuildPopulationsView();
+  renderPopList(); updateAllPopSelects(); markAllDirty(); renderAllPlots();
 }
 
 function deleteGateAndDescendants(gateId) {
@@ -6006,6 +6314,7 @@ function showColorPicker(popId, mx, my) {
   // Apply button
   overlay.querySelector('#cpk-apply-btn').addEventListener('click', () => {
     const nameVal = overlay.querySelector('#gate-rename-input').value.trim();
+    pushUndo();
     if (nameVal) pop.name = nameVal;
     if (selectedHex === null) {
       pop.noColor = true;
@@ -6249,6 +6558,7 @@ function _buildTemplateV3(tmplName) {
         xScale:     p.gateInfo.xScale || 'lin',
         yScale:     p.gateInfo.yScale || 'lin',
         rawPts:     p.gateInfo.rawPts,
+        quad:       p.gateInfo.quad || undefined,
         children:   buildGateTree(fileObj, p.id, p.name)
       }));
   }
@@ -6604,6 +6914,7 @@ function _applySterileMode() {
 function resetToAuthorGates() {
   if (!_authorTemplate) return;
   if (!confirm("Discard your gates and plots and restore the author's version?")) return;
+  pushUndo();
   const fileMap = _authorTemplate.files.map(tf =>
     fcsFiles.find(f => f.filename === tf.sourceFile) || null);
   _applyTemplateV3(_authorTemplate, fileMap);
@@ -6918,12 +7229,15 @@ function _applyTemplateV3(tmpl, fileMap) {
         const ei = popGetIndex(parentPop, ii);
         const dx = toDisplay(data[ei*nPar+xi], xi, xScale);
         const dy = toDisplay(data[ei*nPar+yi], yi, yScale);
-        if (pointInPolygonDisp(dx, dy, dispPtsI)) gated.push(ei);
+        const inside = node.quad
+          ? _quadInside(node.quad.q, dx, dy, toDisplay(node.quad.cx, xi, xScale), toDisplay(node.quad.cy, yi, yScale))
+          : pointInPolygonDisp(dx, dy, dispPtsI);
+        if (inside) gated.push(ei);
       }
       const newPop = {
         id: popIdCounter++, name: node.name, color: node.color,
         noColor: node.noColor || false, indices: gated,
-        parentId, gateInfo: { rawPts: pts, xParam: xi, yParam: yi, xScale, yScale },
+        parentId, gateInfo: { rawPts: pts, xParam: xi, yParam: yi, xScale, yScale, ...(node.quad ? { quad: { ...node.quad } } : {}) },
         fileId: fileObj.fileId
       };
       fileObj.populations.push(newPop);
@@ -7341,7 +7655,8 @@ function spatialQueryW(idx, dxMin, dxMax, dyMin, dyMax) {
 // ── evalGate in worker ───────────────────────────────────────────────────
 function evalGateW(msg) {
   const { gateId, rawPts, xParam, yParam, xScale, yScale, xCofactor, yCofactor,
-          parentIndices, parentIsAll } = msg;
+          parentIndices, parentIsAll, quad } = msg;
+  const quadC = quad ? { dx: toDisplayW(quad.cx, xScale, xCofactor), dy: toDisplayW(quad.cy, yScale, yCofactor) } : null;
 
   // Pre-compute display-space polygon ONCE
   const dispPts = rawPts.map(pt => ({
@@ -7376,7 +7691,13 @@ function evalGateW(msg) {
     if (ei < 0) continue;
     const dx = dispX[ei], dy = dispY[ei];
     let inside = false;
-    for (let i=0, j=nPts-1; i<nPts; j=i++) {
+    if (quadC) {
+      const q = quad.q;
+      inside = q === 1 ? (dx >= quadC.dx && dy >= quadC.dy)
+             : q === 2 ? (dx >= quadC.dx && dy <  quadC.dy)
+             : q === 3 ? (dx <  quadC.dx && dy <  quadC.dy)
+             :           (dx <  quadC.dx && dy >= quadC.dy);
+    } else for (let i=0, j=nPts-1; i<nPts; j=i++) {
       const xi=dispPts[i].dx, yi=dispPts[i].dy;
       const xj=dispPts[j].dx, yj=dispPts[j].dy;
       if (((yi>dy)!==(yj>dy)) && dx<(xj-xi)*(dy-yi)/(yj-yi)+xi) inside=!inside;
