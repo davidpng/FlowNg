@@ -63,7 +63,7 @@
   }
   header {
     display: grid;
-    grid-template-columns: 240px 1fr;
+    grid-template-columns: 300px 1fr;
     align-items: center;
     gap: 0;
     padding: 0;
@@ -114,7 +114,7 @@
   button.danger-btn:hover { background: var(--danger); color: #fff; }
   .main { display: flex; flex: 1; overflow: hidden; }
   .sidebar {
-    width: 240px;
+    width: 300px;
     background: var(--surface);
     border-right: 1px solid var(--border);
     display: flex;
@@ -335,8 +335,8 @@
   .pop-tree-node {
     display: flex;
     align-items: center;
-    gap: 5px;
-    padding: 3px 4px 3px 0;
+    gap: 6px;
+    padding: 3px 6px;
     border-radius: 4px;
     cursor: pointer;
     position: relative;
@@ -382,20 +382,24 @@
     background: rgba(255,255,255,0.15);
   }
   .pop-swatch-tree {
-    width: 10px; height: 10px;
-    border-radius: 2px;
+    width: 9px; height: 9px;
+    border-radius: 50%;
     flex-shrink: 0;
-    border: 1px solid rgba(255,255,255,0.2);
     cursor: pointer;
   }
   .pop-swatch-tree.no-color {
     background: transparent !important;
-    background-image: linear-gradient(45deg,#666 25%,transparent 25%,transparent 75%,#666 75%),
-                      linear-gradient(45deg,#666 25%,transparent 25%,transparent 75%,#666 75%) !important;
-    background-size: 6px 6px !important;
-    background-position: 0 0, 3px 3px !important;
+    background-image: none !important;
+    border: 1px dashed #888;
   }
-  .pop-count-small { font-size: 10px; color: var(--text2); margin-left: auto; white-space: nowrap; }
+  .pop-count-small { font-size: 11px; color: #9aa; margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .pop-pct-small { font-size: 11px; color: #778; min-width: 36px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .pop-plus-btn, .pop-del-btn {
+    border: none; background: transparent; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; flex-shrink: 0;
+  }
+  .pop-plus-btn { color: #667; }
+  .pop-plus-btn.on { color: #7cc4ff; font-weight: 700; }
+  .pop-del-btn { color: #c88; }
   .pop-name-small  { font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ── Plot drag-to-reorder ───────────────────────────────── */
@@ -454,7 +458,7 @@
   .plot-expand-overlay {
     position: fixed;
     top: 44px;
-    left: 240px;
+    left: 300px;
     bottom: 0;
     right: 0;
     background: rgba(0, 0, 0, 0.4);
@@ -656,72 +660,33 @@
   }
   .tab-strip {
     display: flex;
-    align-items: stretch;
-    background: var(--surface);
+    align-items: center;
+    background: var(--bg);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
     overflow-x: auto;
     scrollbar-width: none;
-    gap: 2px;
-    padding: 3px 4px 0;
-    min-height: 30px;
+    gap: 6px;
+    padding: 8px 12px 0;
+    min-height: 34px;
   }
   .tab-strip::-webkit-scrollbar { display: none; }
-  .tab-item {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 10px;
-    border-radius: 5px 5px 0 0;
-    border: 1px solid transparent;
-    border-bottom: none;
-    cursor: pointer;
-    font-size: 10px;
-    color: var(--text2);
-    white-space: nowrap;
-    user-select: none;
-    transition: background 0.1s, color 0.1s;
-    position: relative;
-    top: 1px;
+  .tab-item { display: flex; align-items: stretch; }
+  .tab-main, .tab-close {
+    font: inherit; font-size: 12px; color: #ddd; cursor: pointer;
+    background: #1b1d27; border: 1px solid #444; border-bottom: none;
   }
-  .tab-item:hover { background: var(--surface2); color: var(--text); }
-  .tab-item.active {
-    background: var(--bg);
-    border-color: var(--border);
-    color: var(--text);
-    font-weight: 600;
-  }
-  .tab-item.drag-over-tab {
-    background: rgba(79,142,247,0.2);
-    border-color: var(--accent);
-  }
-  .tab-close {
-    font-size: 9px;
-    opacity: 0.4;
-    padding: 0 2px;
-    border-radius: 2px;
-    cursor: pointer;
-    line-height: 1;
-  }
-  .tab-close:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+  .tab-main { padding: 4px 6px 4px 10px; border-right: none; border-radius: 5px 0 0 0; }
+  .tab-close { padding: 4px 8px; border-radius: 0 5px 0 0; color: #997; }
+  .tab-item.active .tab-main, .tab-item.active .tab-close { background: #2a3550; }
+  .tab-item.drag-over-tab .tab-main, .tab-item.drag-over-tab .tab-close { background: rgba(79,142,247,0.3); }
+  .tab-close:hover { color: #fff; }
   .tab-add {
-    padding: 3px 8px;
-    font-size: 14px;
-    color: var(--text2);
-    cursor: pointer;
-    border-radius: 4px;
-    align-self: center;
-    line-height: 1;
+    padding: 4px 10px; font-size: 12px; color: #aaa; cursor: pointer;
+    border: 1px dashed #555; border-radius: 5px; background: transparent;
+    align-self: center; line-height: 1.2; white-space: nowrap;
   }
-  .tab-add:hover { background: var(--surface2); color: var(--text); }
-  .tab-plot-count {
-    font-size: 9px;
-    background: var(--surface2);
-    border-radius: 8px;
-    padding: 0 5px;
-    color: var(--text2);
-  }
-  .tab-item.active .tab-plot-count { background: var(--border2); }
+  .tab-add:hover { color: #fff; border-color: #888; }
 </style>
 </head>
 <body>
@@ -825,7 +790,7 @@
 
   <div class="workspace">
     <div class="tab-strip" id="tab-strip" style="display:none">
-      <div class="tab-add" onclick="addTab()" title="New tab">＋</div>
+      <div class="tab-add" onclick="addTab()" title="Add a new tab">+ Tab</div>
     </div>
     <div class="canvas-area" id="canvas-area">
     <div class="drop-zone" id="drop-zone">
@@ -2294,30 +2259,8 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   row.className = 'pop-tree-node';
   row.dataset.popid = popId;
 
-  // Build indent with tree lines
-  const indentWrap = document.createElement('div');
-  indentWrap.className = 'tree-indent';
-  indentWrap.style.flexShrink = '0';
-
-  if (!isRoot) {
-    // For each ancestor level, draw a vertical continuation or blank
-    prefixLines.slice(0, -1).forEach(hasSibling => {
-      if (hasSibling) {
-        const vline = document.createElement('div');
-        vline.className = 'tree-line-v';
-        indentWrap.appendChild(vline);
-      } else {
-        const blank = document.createElement('div');
-        blank.style.cssText = 'width:15px;flex-shrink:0';
-        indentWrap.appendChild(blank);
-      }
-    });
-    // L-shaped connector for this node
-    const lline = document.createElement('div');
-    lline.className = 'tree-line-l';
-    indentWrap.appendChild(lline);
-  }
-  row.appendChild(indentWrap);
+  // Indent by depth (14px per level), as in FlowNg2
+  row.style.paddingLeft = `${6 + (isRoot ? 0 : prefixLines.length) * 14}px`;
 
   // Swatch
   const swatch = document.createElement('div');
@@ -2337,20 +2280,37 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   }
   row.appendChild(nameEl);
 
-  // Dot-boost badge (shown when dotBoost > 0)
-  if (pop.dotBoost > 0) {
-    const boostBadge = document.createElement('span');
-    boostBadge.style.cssText = 'font-size:9px;color:#f5a623;flex-shrink:0;margin-left:2px';
-    boostBadge.title = 'Dot size boost — double-click to cycle';
-    boostBadge.textContent = `+${pop.dotBoost}`;
-    row.appendChild(boostBadge);
-  }
-
-  // Count
+  // Count and % of parent
   const countEl = document.createElement('div');
   countEl.className = 'pop-count-small';
   countEl.textContent = popCount(pop).toLocaleString();
   row.appendChild(countEl);
+  if (pop.gateInfo) {
+    const parentPop = populations.find(p => p.id === pop.parentId);
+    const pctEl = document.createElement('div');
+    pctEl.className = 'pop-pct-small';
+    pctEl.textContent = `${(100 * popCount(pop) / (parentPop ? popCount(parentPop) || 1 : 1)).toFixed(1)}%`;
+    pctEl.title = '% of parent';
+    row.appendChild(pctEl);
+
+    // "+" draws this population as exact events (dots) on plots that show it
+    const plus = document.createElement('button');
+    plus.className = 'pop-plus-btn' + (pop.dotBoost > 0 ? ' on' : '');
+    plus.textContent = '+';
+    plus.title = pop.dotBoost > 0 ? 'Drawn as exact events (dots) — click to return to density'
+                                  : 'Draw this population as exact events (dots)';
+    plus.addEventListener('click', e => { e.stopPropagation(); cycleDotBoost(popId); });
+    plus.addEventListener('dblclick', e => e.stopPropagation());
+    row.appendChild(plus);
+
+    const del = document.createElement('button');
+    del.className = 'pop-del-btn';
+    del.textContent = '×';
+    del.title = 'Delete this gate and its children';
+    del.addEventListener('click', e => { e.stopPropagation(); deleteGateFromTree(popId); });
+    del.addEventListener('dblclick', e => e.stopPropagation());
+    row.appendChild(del);
+  }
 
   // Events
   if (popId !== 0) {
@@ -2360,9 +2320,7 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
     row.addEventListener('contextmenu', openPicker);
     row.addEventListener('click', e => { if (e.shiftKey) openPicker(e); });
 
-    // Double-click cycles dot-size boost (0 → 2 → 4 → 8 → 0 px)
-    row.addEventListener('dblclick', e => { e.preventDefault(); cycleDotBoost(popId); });
-    row.title = 'Click name to navigate to gate plot · Dbl-click to cycle dot size boost · Shift-click or right-click to edit color/name · Drag to reparent';
+    row.title = 'Click name to navigate to gate plot · Shift-click or right-click to edit color/name · Drag to reparent';
 
     // Drag to reparent — suppress on right-click so context menu fires reliably
     row.draggable = true;
@@ -3196,16 +3154,14 @@ function renderPlot(plot) {
     ctx.restore();
   }
 
-  // ── 3. Grid (drawn on top of dots) ───────────────────────────────────────
+  // ── 3. Grid at the axis ticks (drawn on top of the density) ───────────────
+  const xTicks = _axisTicks(tf.xls, plot.xParam, tf.xRange.min, tf.xRange.max, pw, 52);
+  const yTicks = _axisTicks(tf.yls, plot.yParam, tf.yRange.min, tf.yRange.max, ph, 26);
   if (document.getElementById('showgrid').checked) {
-    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
     ctx.lineWidth = 1;
-    for (let i = 0; i <= 5; i++) {
-      const x = pad.left + i*pw/5;
-      const y = pad.top  + i*ph/5;
-      ctx.beginPath(); ctx.moveTo(x, pad.top);    ctx.lineTo(x, pad.top+ph); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(pad.left, y);   ctx.lineTo(pad.left+pw, y); ctx.stroke();
-    }
+    xTicks.forEach(k => { const x = Math.round(pad.left + k.t * pw) + 0.5; ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + ph); ctx.stroke(); });
+    yTicks.forEach(k => { const y = Math.round(pad.top + ph - k.t * ph) + 0.5; ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + pw, y); ctx.stroke(); });
   }
 
   // ── 4. Overlays: clip to plot area ────────────────────────────────────────
@@ -3323,30 +3279,19 @@ function renderPlot(plot) {
   ctx.strokeRect(pad.left, pad.top, pw, ph);
 
   // ── 6. Tick labels ────────────────────────────────────────────────────────
-  const xR = tf.xRange, yR = tf.yRange;
-  const N = 5;
-  ctx.font = '9px monospace';
   ctx.fillStyle = '#fff';
-
-  ctx.textAlign = 'center';
-  for (let i = 0; i <= N; i++) {
-    const dispVal = xR.min + i*(xR.max-xR.min)/N;
-    const cx = tf.dispToCanvasX(dispVal);
-    const rawVal = fromDisplay(dispVal, plot.xParam, tf.xls);
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx, pad.top+ph); ctx.lineTo(cx, pad.top+ph+4); ctx.stroke();
-    ctx.fillText(fmtTick(rawVal, tf.xls), cx, pad.top+ph+14);
-  }
-
-  ctx.textAlign = 'right';
-  for (let i = 0; i <= N; i++) {
-    const dispVal = yR.min + i*(yR.max-yR.min)/N;
-    const cy = tf.dispToCanvasY(dispVal);
-    const rawVal = fromDisplay(dispVal, plot.yParam, tf.yls);
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(pad.left, cy); ctx.lineTo(pad.left-4, cy); ctx.stroke();
-    ctx.fillText(fmtTick(rawVal, tf.yls), pad.left-6, cy+3);
-  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+  xTicks.forEach(k => {
+    const cx = pad.left + k.t * pw;
+    ctx.beginPath(); ctx.moveTo(cx, pad.top + ph); ctx.lineTo(cx, pad.top + ph + 4); ctx.stroke();
+    _drawTickLabel(ctx, k, cx, pad.top + ph + 16, 'center');
+  });
+  yTicks.forEach(k => {
+    const cy = pad.top + ph - k.t * ph;
+    ctx.beginPath(); ctx.moveTo(pad.left, cy); ctx.lineTo(pad.left - 4, cy); ctx.stroke();
+    _drawTickLabel(ctx, k, pad.left - 7, cy + 3, 'right');
+  });
+  ctx.textAlign = 'left';
 
   document.getElementById(`event-count-${plot.id}`).textContent = `${popCount(pop).toLocaleString()} events`;
 
@@ -3397,6 +3342,91 @@ function renderPlot(plot) {
       ctx.restore();
     }
   }
+}
+
+// ─── FlowNg2-style axis ticks ────────────────────────────────────────────────
+// Log/asinh axes label a gridline at each power of ten (asinh also labels zero and the negative
+// decades); linear axes use 1/2/5 x 10^k steps. Labels print as mantissa x 10^k with a raised exponent.
+const TICK_FONT = '10px system-ui, sans-serif';
+const TICK_SUP_FONT = '7px system-ui, sans-serif';
+
+function _tickDivisions(extentPx, minSpacingPx) {
+  return Math.min(5, Math.max(2, Math.floor(extentPx / minSpacingPx)));
+}
+
+// scale: 'log' | 'asinh' | 'lin'. Returns [{ t (0..1 along the axis), raw, kind }]
+function _axisTicks(scale, paramIdx, dMin, dMax, extentPx, minSpacingPx) {
+  const span = dMax - dMin;
+  if (!(span > 0)) return [];
+  const toT = raw => (toDisplay(raw, paramIdx, scale) - dMin) / span;
+  if (scale === 'lin') {
+    const roughStep = span / _tickDivisions(extentPx, minSpacingPx);
+    const mag = 10 ** Math.floor(Math.log10(roughStep));
+    const norm = roughStep / mag;
+    const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+    const ticks = [];
+    for (let raw = Math.ceil(dMin / step) * step; raw <= dMax + step * 1e-6; raw += step) {
+      ticks.push({ t: (raw - dMin) / span, raw: Math.abs(raw) < step * 1e-9 ? 0 : raw });
+    }
+    const maxAbs = Math.max(0, ...ticks.map(k => Math.abs(k.raw)));
+    if (maxAbs >= 10000 || (maxAbs > 0 && maxAbs < 0.01)) ticks.forEach(k => { if (k.raw !== 0) k.kind = 'sci'; });
+    return ticks;
+  }
+  const EPS = 1e-6, cands = [];
+  if (scale === 'asinh') cands.push({ t: toT(0), raw: 0 });
+  const rawMin = fromDisplay(dMin, paramIdx, scale), rawMax = fromDisplay(dMax, paramIdx, scale);
+  const addDecades = (lo, hi, sign) => {
+    if (hi <= 0) return;
+    const kLo = Math.floor(Math.log10(Math.max(lo, EPS))), kHi = Math.ceil(Math.log10(Math.max(hi, EPS)));
+    for (let k = kLo; k <= kHi; k++) {
+      const raw = sign * 10 ** k, t = toT(raw);
+      if (t >= -EPS && t <= 1 + EPS) cands.push({ t: Math.min(Math.max(t, 0), 1), raw, kind: 'decade' });
+    }
+  };
+  addDecades(Math.max(rawMin, 0), Math.max(rawMax, 0), 1);
+  if (scale === 'asinh') addDecades(Math.max(-rawMax, 0), Math.max(-rawMin, 0), -1);
+  cands.sort((a, b) => a.t - b.t);
+  const px = cands.map(c => c.t * extentPx);
+  const zeroIdx = cands.findIndex(c => c.raw === 0);
+  const anchor = zeroIdx >= 0 ? zeroIdx : 0;
+  const kept = new Set([anchor]);
+  let last = px[anchor];
+  for (let i = anchor + 1; i < cands.length; i++) if (px[i] - last >= minSpacingPx) { kept.add(i); last = px[i]; }
+  last = px[anchor];
+  for (let i = anchor - 1; i >= 0; i--) if (last - px[i] >= minSpacingPx) { kept.add(i); last = px[i]; }
+  const out = [...kept].sort((a, b) => a - b).map(i => cands[i]);
+  if (out.length >= 2) return out;
+  // Fallback: even divisions
+  const n = _tickDivisions(extentPx, minSpacingPx);
+  return Array.from({ length: n + 1 }, (_, i) => ({ t: i / n, raw: fromDisplay(dMin + (i / n) * span, paramIdx, scale) }));
+}
+
+function _formatTick(raw) {
+  if (raw === 0) return '0';
+  const a = Math.abs(raw);
+  if (a < 0.01 || a >= 100000) return raw.toExponential(1);
+  if (a >= 1000) return raw.toFixed(0);
+  if (a >= 10) return raw.toFixed(1);
+  return raw.toFixed(2);
+}
+
+// Draws one tick label; power-of-ten kinds get a real superscript exponent.
+function _drawTickLabel(ctx, tick, x, y, align) {
+  if (tick.kind !== 'decade' && tick.kind !== 'sci') {
+    ctx.font = TICK_FONT; ctx.textAlign = align; ctx.fillText(_formatTick(tick.raw), x, y); return;
+  }
+  const sign = tick.raw < 0 ? '-' : '', abs = Math.abs(tick.raw);
+  let exp = Math.floor(Math.log10(abs));
+  let man = Math.round((abs / 10 ** exp) * 100) / 100;
+  if (man >= 10) { man = 1; exp += 1; }
+  const manText = man === 1 && tick.kind === 'decade' ? '' : `${man}×`;
+  if (exp === 0) { ctx.font = TICK_FONT; ctx.textAlign = align; ctx.fillText(`${sign}${man}`, x, y); return; }
+  const base = `${sign}${manText}10`, expText = String(exp);
+  ctx.font = TICK_FONT; const bw = ctx.measureText(base).width;
+  ctx.font = TICK_SUP_FONT; const ew = ctx.measureText(expText).width;
+  const total = bw + ew, x0 = align === 'left' ? x : align === 'right' ? x - total : x - total / 2;
+  ctx.font = TICK_FONT; ctx.textAlign = 'left'; ctx.fillText(base, x0, y);
+  ctx.font = TICK_SUP_FONT; ctx.fillText(expText, x0 + bw, y - 4);
 }
 
 function fmtTick(v, scale) {
@@ -5294,16 +5324,33 @@ function changeFile(plotId, newFileId, propagate=true) {
 // Cycles the per-gate dot-size boost: 0 → 2 → 4 → 8 → 0 (px above plot dot size).
 // When boost > 0 the gate events are re-drawn on top at the larger size so rare
 // populations pop visually without changing any per-plot dot size setting.
-const _DOT_BOOST_STEPS = [0, 2, 4, 8];
+// "+" toggle: a population is either part of the density or additionally drawn as exact dots.
+const _DOT_BOOST_ON = 4;
 function cycleDotBoost(popId) {
   const pop = populations.find(p => p.id === popId); if (!pop) return;
-  const cur = pop.dotBoost || 0;
-  const next = _DOT_BOOST_STEPS[(_DOT_BOOST_STEPS.indexOf(cur) + 1) % _DOT_BOOST_STEPS.length];
+  const next = (pop.dotBoost || 0) > 0 ? 0 : _DOT_BOOST_ON;
   pop.dotBoost = next;
   const fp = getFileById(pop.fileId)?.populations.find(p => p.id === popId);
   if (fp) fp.dotBoost = next;
   renderPopList();
   renderAllPlots();
+}
+
+// Tree "×": delete a gate (a whole quadrant group for Q1-Q4) with its descendants.
+function deleteGateFromTree(popId) {
+  const pop = populations.find(p => p.id === popId); if (!pop) return;
+  const group = pop.gateInfo && pop.gateInfo.quad ? _quadGroup(pop.gateInfo.quad.gid) : [pop];
+  const what = group.length > 1 ? 'this quadrant (Q1-Q4)' : `"${pop.name}"`;
+  if (!confirm(`Delete ${what} and all children?`)) return;
+  pushUndo();
+  group.forEach(g => deleteGateAndDescendants(g.id));
+  plots.forEach(pl => {
+    if (!populations.find(p => p.id === pl.inputPop)) {
+      const f = getFileForPlot(pl), root = f && f.populations.find(p => p._isAll);
+      if (root) pl.inputPop = root.id;
+    }
+  });
+  renderPopList(); renderPrecedenceList(); updateAllPopSelects(); renderAllPlots();
 }
 
 function highlightOrRecreateGatePlot(gateId) {
@@ -5495,6 +5542,8 @@ function addTab(name) {
   const id = tabIdCounter++;
   tabs.push({ id, name: name || `Tab ${id + 1}` });
   if (activeTabId === null) activeTabId = id;
+  const strip = document.getElementById('tab-strip');
+  if (strip) strip.style.display = 'flex';
   renderTabStrip();
   return id;
 }
@@ -5536,9 +5585,10 @@ function renderTabStrip() {
     el.className = 'tab-item' + (tab.id === activeTabId ? ' active' : '');
     el.dataset.tabId = tab.id;
     el.innerHTML = `
-      <span class="tab-label" ondblclick="renameTab(${tab.id})">${tab.name}</span>
-      <span class="tab-plot-count">${plotCount}</span>
-      <span class="tab-close" onclick="removeTab(${tab.id});event.stopPropagation()" title="Close tab">✕</span>`;
+      <button class="tab-main" title="Click to switch, right-click or double-click to rename, drop a plot here to move it">${tab.name} (${plotCount})</button>
+      <button class="tab-close" onclick="removeTab(${tab.id});event.stopPropagation()" title="Close tab">✕</button>`;
+    el.querySelector('.tab-main').addEventListener('dblclick', () => renameTab(tab.id));
+    el.querySelector('.tab-main').addEventListener('contextmenu', e => { e.preventDefault(); renameTab(tab.id); });
     el.addEventListener('click', () => switchTab(tab.id));
     // Accept plot drops
     el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drag-over-tab'); });
@@ -5558,7 +5608,7 @@ function renderTabStrip() {
   });
   strip.appendChild(addBtn || (() => {
     const b = document.createElement('div');
-    b.className = 'tab-add'; b.textContent = '＋';
+    b.className = 'tab-add'; b.textContent = '+ Tab';
     b.title = 'New tab'; b.onclick = () => addTab();
     return b;
   })());
@@ -6559,6 +6609,7 @@ function _buildTemplateV3(tmplName) {
         yScale:     p.gateInfo.yScale || 'lin',
         rawPts:     p.gateInfo.rawPts,
         quad:       p.gateInfo.quad || undefined,
+        dots:       (p.dotBoost > 0) || undefined,
         children:   buildGateTree(fileObj, p.id, p.name)
       }));
   }
@@ -7236,7 +7287,7 @@ function _applyTemplateV3(tmpl, fileMap) {
       }
       const newPop = {
         id: popIdCounter++, name: node.name, color: node.color,
-        noColor: node.noColor || false, indices: gated,
+        noColor: node.noColor || false, indices: gated, dotBoost: node.dots ? _DOT_BOOST_ON : 0,
         parentId, gateInfo: { rawPts: pts, xParam: xi, yParam: yi, xScale, yScale, ...(node.quad ? { quad: { ...node.quad } } : {}) },
         fileId: fileObj.fileId
       };
