@@ -6917,8 +6917,13 @@ function showShareDialog() {
       <label style="font-size:11px;display:block;margin-bottom:8px">Max events per file (blank = all; ${total.toLocaleString()} total loaded)
         <input id="share-maxev" type="number" min="1000" step="1000" style="width:100%" placeholder="all events" oninput="_updateShareEstimate()"></label>
       <div id="share-estimate" style="font-size:11px;color:var(--text2);margin:-4px 0 8px"></div>
-      <label style="font-size:11px;display:block;margin-bottom:6px">
-        <input id="share-anon" type="checkbox"> Replace file names with Sample 1, 2, …</label>
+      <div style="font-size:11px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span>Tube / file names shown in the shared file</span>
+          <a href="#" onclick="document.querySelectorAll('.share-fname').forEach((e,i)=>e.value='Sample '+(i+1));return false" style="color:var(--accent)">Use Sample 1, 2, …</a>
+        </div>
+        <div style="max-height:30vh;overflow:auto">${fcsFiles.map((f, i) => `<input class="share-fname" data-i="${i}" type="text" style="width:100%;margin-bottom:4px" value="${(f.filename || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">`).join('')}</div>
+      </div>
       <label style="font-size:11px;display:block;margin-bottom:6px">
         <input id="share-meta" type="checkbox"> Include full FCS header metadata (may contain patient/sample IDs)</label>
       <label style="font-size:11px;display:block;margin-bottom:12px">
@@ -6958,7 +6963,8 @@ async function doExportShareable() {
   const go = document.getElementById('share-go');
   const name = (document.getElementById('share-name').value.trim()) || 'FlowNG';
   const maxEv = parseInt(document.getElementById('share-maxev').value) || 0;
-  const anon = document.getElementById('share-anon').checked;
+  const nameInputs = [...document.querySelectorAll('.share-fname')];
+  const usedNames = new Set();
   const fullMeta = document.getElementById('share-meta').checked;
   const sterile = document.getElementById('share-sterile').checked;
   go.disabled = true;
@@ -7010,7 +7016,9 @@ async function doExportShareable() {
         Object.keys(meta).forEach(k => { if (_SAFE_META_KEYS.test(k)) kept[k] = meta[k]; });
         meta = kept;
       }
-      const fname = anon ? `Sample ${fi + 1}` : f.filename;
+      let fname = ((nameInputs[fi] && nameInputs[fi].value.trim()) || f.filename);
+      for (let n = 2, base = fname; usedNames.has(fname); n++) fname = `${base} (${n})`;
+      usedNames.add(fname);
       template.files[fi].sourceFile = fname;
       files.push({
         filename: fname,

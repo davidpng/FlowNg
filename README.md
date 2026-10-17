@@ -33,7 +33,7 @@
 ### 🔗 Shareable HTML
 - **Export Shareable HTML** writes one self-contained HTML containing the event data (gzip), compensation, gates, plots and axis settings — not the original FCS/LMD file
 - Recipients open it with your gating applied and can move, redraw and add gates; **Reset to author's gates** restores yours
-- Options: cap events per file (large files default to 500,000), anonymize file names, strip FCS header metadata (default; may contain patient IDs), and **Locked viewer** (default on)
+- Options: cap events per file (large files default to 500,000), rename the tubes / files (or use Sample 1, 2, …), strip FCS header metadata (default; may contain patient IDs), and **Locked viewer** (default on)
 - **Locked viewer** removes the FCS/LMD parsers, demo data, template import/export and the share code from the file, hides the open/import/export buttons and stops dropped files. Recipients can still gate, compensate, undo and reset to your gates. The embedded events can still be read with View Source or developer tools, so it limits casual reuse rather than preventing extraction
 
 ### 📁 File Format Support
