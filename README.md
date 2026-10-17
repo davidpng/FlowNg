@@ -28,6 +28,11 @@
 - **Multiple axis scales**: LOG, LINEAR, and ASINH transformations with per-plot or global configuration
 - **Level-of-detail (LOD) rendering**: Subsampled preview rendering with automatic high-resolution upgrade during idle time for smooth interaction with large datasets
 
+### 🔗 Shareable HTML
+- **Export Shareable HTML** writes one self-contained HTML containing the event data (gzip), compensation, gates, plots and axis settings — not the original FCS/LMD file
+- Recipients open it with your gating applied and can move, redraw and add gates; **Reset to author's gates** restores yours
+- Options: cap events per file, anonymize file names, strip FCS header metadata (default; may contain patient IDs)
+
 ### 📁 File Format Support
 - **FCS 2.0, 3.0, 3.1** standard flow cytometry file format
 - **Beckman Coulter LMD** files (embedded FCS 2.0 log-transformed + FCS 3.0 raw data)

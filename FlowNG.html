@@ -745,6 +745,8 @@
       <button onclick="addPlot()" id="add-plot-btn" style="display:none">+ Add Plot</button>
       <button onclick="exportGates()" id="export-btn" style="display:none" title="Export template">↓ Export Template</button>
       <button onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Import template">↑ Import Template</button>
+      <button onclick="showShareDialog()" id="share-btn" style="display:none" title="Export a self-contained HTML with data, gates and plots">🔗 Export Shareable HTML</button>
+      <button onclick="resetToAuthorGates()" id="reset-author-btn" style="display:none" title="Restore the gates and plots the author shared">↺ Reset to author's gates</button>
       <input type="file" id="import-input" accept=".json" style="display:none">
     </div>
   </div>
@@ -1993,6 +1995,7 @@ function addFileToSession(fileObj) {
     document.getElementById('status-bar').style.display = 'flex';
     document.getElementById('export-btn').style.display = '';
     document.getElementById('import-btn').style.display = '';
+    document.getElementById('share-btn').style.display = '';
 
     // Reset tabs and plots
     tabs = []; activeTabId = null; tabIdCounter = 0;
@@ -6063,6 +6066,17 @@ function doExportTemplate() {
   const overlay = document.getElementById('export-name-modal');
   if (overlay) overlay.remove();
 
+  const template = _buildTemplateV3(tmplName);
+  const safe = tmplName.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
+  const blob = new Blob([JSON.stringify(template, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `${safe}_FlowNgtmplt.json`; a.click();
+  const gateCount = fcsFiles.reduce((n, f) => n + f.populations.filter(p => p.gateInfo).length, 0);
+  showToast(`Template "${tmplName}" exported — ${fcsFiles.length} file(s), ${gateCount} gate(s), ${template.plots.length} plot(s)`);
+}
+
+// Snapshot of the current gates/plots/ranges for all loaded files as a v3 template.
+function _buildTemplateV3(tmplName) {
   function buildGateTree(fileObj, popId, parentName) {
     return fileObj.populations
       .filter(p => p.gateInfo && p.parentId === popId)
@@ -6123,20 +6137,232 @@ function doExportTemplate() {
     };
   }).filter(Boolean);
 
-  const template = {
+  return {
     version:  3,
     name:     tmplName,
     exported: new Date().toISOString(),
     files:    filesArr,
     plots:    plotSnapshots
   };
+}
 
-  const safe = tmplName.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
-  const blob = new Blob([JSON.stringify(template, null, 2)], {type:'application/json'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = `${safe}_FlowNgtmplt.json`; a.click();
-  const gateCount = fcsFiles.reduce((n, f) => n + f.populations.filter(p => p.gateInfo).length, 0);
-  showToast(`Template "${tmplName}" exported — ${fcsFiles.length} file(s), ${gateCount} gate(s), ${plotSnapshots.length} plot(s)`);
+// ─── SHAREABLE HTML EXPORT / BUNDLE LOAD ─────────────────────────────────────
+// A shareable HTML is this app plus a script#flowng-bundle JSON block holding the
+// event data (gzip+base64), compensation, and the author's gates/plots. On open, the
+// bundle is rebuilt into normal editable file objects, so recipients can regate freely.
+
+// Pristine copy of this document (taken before any bundle is injected) used as the export base.
+let _authorTemplate = null;   // template to restore with "Reset to author's gates"
+let _bundleInfo = null;
+
+const _SAFE_META_KEYS = /^(\$CYT|\$DATE|\$BTIM|\$ETIM|\$TOT|\$PAR|\$MODE|\$DATATYPE|\$BYTEORD|\$NEXTDATA|FCSVersion|\$FCSVersion|\$P\d+[NSRBEGVD])$/;
+
+function _docSource() {
+  const parts = Array.from(document.childNodes).map(n => {
+    if (n.nodeType === Node.DOCUMENT_TYPE_NODE) return '<!DOCTYPE html>';
+    if (n.nodeType === Node.COMMENT_NODE) return '<!--' + n.data + '-->';
+    if (n.nodeType === Node.ELEMENT_NODE) return n.outerHTML;
+    return '';
+  });
+  return parts.join('\n');
+}
+
+async function _gzipB64(typedArray) {
+  const stream = new Blob([typedArray.buffer, ]).stream().pipeThrough(new CompressionStream('gzip'));
+  const gz = await new Response(stream).blob();
+  return await new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result.slice(fr.result.indexOf(',') + 1));
+    fr.onerror = rej;
+    fr.readAsDataURL(gz);
+  });
+}
+
+async function _gunzipB64(b64) {
+  const resp = await fetch('data:application/octet-stream;base64,' + b64);
+  const stream = resp.body.pipeThrough(new DecompressionStream('gzip'));
+  return await new Response(stream).arrayBuffer();
+}
+
+function showShareDialog() {
+  if (!fcsFiles.length) { showToast('Load a file first'); return; }
+  const existing = document.getElementById('share-modal');
+  if (existing) existing.remove();
+  const total = fcsFiles.reduce((n, f) => n + f.nEvents, 0);
+  const overlay = document.createElement('div');
+  overlay.id = 'share-modal';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:420px">
+      <h2>🔗 Export Shareable HTML</h2>
+      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">
+        One self-contained HTML with the event data, compensation, gates and plots. Recipients can move and
+        redraw gates, and reset to your gates. The original FCS/LMD file is not included.</p>
+      <label style="font-size:11px;display:block;margin-bottom:8px">Name
+        <input id="share-name" type="text" style="width:100%" value="${(fcsFiles[0].filename||'FlowNG').replace(/\.[^.]+$/, '').replace(/"/g,'')}"></label>
+      <label style="font-size:11px;display:block;margin-bottom:8px">Max events per file (blank = all; ${total.toLocaleString()} total loaded)
+        <input id="share-maxev" type="number" min="1000" step="1000" style="width:100%" placeholder="all events"></label>
+      <label style="font-size:11px;display:block;margin-bottom:6px">
+        <input id="share-anon" type="checkbox"> Replace file names with Sample 1, 2, …</label>
+      <label style="font-size:11px;display:block;margin-bottom:12px">
+        <input id="share-meta" type="checkbox"> Include full FCS header metadata (may contain patient/sample IDs)</label>
+      <div id="share-status" style="font-size:11px;color:var(--text2);min-height:14px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="document.getElementById('share-modal').remove()">Cancel</button>
+        <button class="primary" id="share-go" onclick="doExportShareable()">Export</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function doExportShareable() {
+  const status = document.getElementById('share-status');
+  const go = document.getElementById('share-go');
+  const name = (document.getElementById('share-name').value.trim()) || 'FlowNG';
+  const maxEv = parseInt(document.getElementById('share-maxev').value) || 0;
+  const anon = document.getElementById('share-anon').checked;
+  const fullMeta = document.getElementById('share-meta').checked;
+  go.disabled = true;
+  try {
+    const template = _buildTemplateV3(name);
+    const files = [];
+    for (let fi = 0; fi < fcsFiles.length; fi++) {
+      const f = fcsFiles[fi];
+      status.textContent = `Compressing file ${fi + 1} of ${fcsFiles.length}…`;
+      await new Promise(r => setTimeout(r, 0));
+      const { nPar } = f;
+      const n = (maxEv && maxEv < f.nEvents) ? maxEv : f.nEvents;
+      const pick = (src) => {
+        if (n === f.nEvents) return src;
+        const out = new Float32Array(n * nPar);
+        for (let i = 0; i < n; i++) {
+          const e = Math.floor(i * f.nEvents / n);
+          out.set(src.subarray(e * nPar, (e + 1) * nPar), i * nPar);
+        }
+        return out;
+      };
+      const data = pick(f.data);
+      const rawData = f.rawData ? pick(f.rawData) : null;
+      let colMins = f.colMins, colMaxs = f.colMaxs;
+      if (n !== f.nEvents) {
+        colMins = new Float32Array(nPar).fill(Infinity); colMaxs = new Float32Array(nPar).fill(-Infinity);
+        for (let i = 0; i < n; i++) for (let p = 0; p < nPar; p++) {
+          const v = data[i * nPar + p];
+          if (v < colMins[p]) colMins[p] = v;
+          if (v > colMaxs[p]) colMaxs[p] = v;
+        }
+      }
+      let meta = f.meta || {};
+      if (!fullMeta) {
+        const kept = {};
+        Object.keys(meta).forEach(k => { if (_SAFE_META_KEYS.test(k)) kept[k] = meta[k]; });
+        meta = kept;
+      }
+      const fname = anon ? `Sample ${fi + 1}` : f.filename;
+      template.files[fi].sourceFile = fname;
+      files.push({
+        filename: fname,
+        params: f.params, nEvents: n, nPar, totalEvents: f.nEvents,
+        meta, version: f.version, compensated: f.compensated,
+        colMins: Array.from(colMins), colMaxs: Array.from(colMaxs),
+        otflowCofactors: f.otflowCofactors ? Array.from(f.otflowCofactors) : null,
+        spillMatrix: f.spillMatrix || null, spillParamIdx: f.spillParamIdx || null,
+        data: await _gzipB64(data),
+        rawData: rawData ? await _gzipB64(rawData) : null,
+      });
+    }
+    status.textContent = 'Building HTML…';
+    await new Promise(r => setTimeout(r, 0));
+    const bundle = { format: 1, name, created: new Date().toISOString(), files, template };
+    const json = JSON.stringify(bundle).replace(/</g, '\\u003c');
+
+    // Tag strings are split so this source never contains a literal script tag of its own.
+    const OPEN = '<scr' + 'ipt', CLOSE = '</scr' + 'ipt>';
+    let src = _docSource();
+    const oldBundle = src.indexOf(OPEN + ' id="flowng-bundle" ');
+    if (oldBundle >= 0) {
+      const oldEnd = src.indexOf(CLOSE, oldBundle) + CLOSE.length;
+      src = src.slice(0, oldBundle) + src.slice(oldEnd).replace(/^\s+/, '');
+    }
+    // Insert the bundle just before the loader hook at the end of <body>.
+    const insertAt = src.lastIndexOf(OPEN + ' id="flowng-bundle-loader"');
+    if (insertAt < 0) throw new Error('loader hook not found');
+    src = src.slice(0, insertAt) + `${OPEN} id="flowng-bundle" type="application/json">${json}${CLOSE}\n` + src.slice(insertAt);
+    src = src.replace(/<title>[\s\S]*?<\/title>/, `<title>${name.replace(/[<>&]/g, '')} — FlowNG</title>`);
+
+    const safe = name.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
+    const blob = new Blob([src], { type: 'text/html' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `${safe}_FlowNG_shared.html`; a.click();
+    document.getElementById('share-modal').remove();
+    showToast(`Shareable HTML exported (${(blob.size / 1048576).toFixed(1)} MB)`);
+  } catch (err) {
+    console.error(err);
+    status.textContent = 'Export failed: ' + err.message;
+    go.disabled = false;
+  }
+}
+
+async function loadBundleIfPresent() {
+  const el = document.getElementById('flowng-bundle');
+  if (!el) return;
+  try {
+    const bundle = JSON.parse(el.textContent);
+    showProgress(5, 'Loading shared analysis…');
+    const fileMap = [];
+    for (let i = 0; i < bundle.files.length; i++) {
+      const b = bundle.files[i];
+      showProgress(5 + Math.round(90 * i / bundle.files.length), `Decoding ${b.filename}…`);
+      await new Promise(r => setTimeout(r, 0));
+      const data = new Float32Array(await _gunzipB64(b.data));
+      const rawData = b.rawData ? new Float32Array(await _gunzipB64(b.rawData)) : null;
+      const fileObj = {
+        fileId: fileIdCounter++,
+        params: b.params, nEvents: b.nEvents, nPar: b.nPar, meta: b.meta,
+        version: b.version, filename: b.filename, compensated: b.compensated,
+        data, colMins: Float32Array.from(b.colMins), colMaxs: Float32Array.from(b.colMaxs),
+        otflowCofactors: b.otflowCofactors ? Float32Array.from(b.otflowCofactors) : null,
+        rawData, spillMatrix: b.spillMatrix, spillParamIdx: b.spillParamIdx,
+        totalEvents: b.totalEvents,
+        populations: [], paramRanges: new Map(), colorPrecedence: [],
+        _computeWorker: null, _computeWorkerReady: false, _pendingGateCallbacks: new Map(),
+      };
+      fileObj.colPercentile05 = new Float32Array(fileObj.nPar);
+      for (let p = 0; p < fileObj.nPar; p++) {
+        const s = new Float32Array(fileObj.nEvents);
+        for (let e = 0; e < fileObj.nEvents; e++) s[e] = data[e * fileObj.nPar + p];
+        s.sort();
+        fileObj.colPercentile05[p] = s[Math.max(0, Math.ceil(s.length * 0.005) - 1)];
+      }
+      fcsFiles.push(fileObj);
+      fcsData = fcsFiles[0];
+      addFileToSession(fileObj);
+      fileMap.push(fileObj);
+    }
+    hideProgress();
+    _authorTemplate = bundle.template;
+    _bundleInfo = bundle;
+    _applyTemplateV3(bundle.template, fileMap);
+    const reset = document.getElementById('reset-author-btn');
+    if (reset) reset.style.display = '';
+    const sub = bundle.files.filter(f => f.nEvents < f.totalEvents);
+    showToast(sub.length
+      ? `Shared analysis loaded — downsampled to ${sub.map(f => f.nEvents.toLocaleString()).join(', ')} events`
+      : 'Shared analysis loaded', 4000);
+  } catch (err) {
+    hideProgress();
+    console.error(err);
+    showToast('Failed to load shared analysis: ' + err.message, 6000);
+  }
+}
+
+function resetToAuthorGates() {
+  if (!_authorTemplate) return;
+  if (!confirm("Discard your gates and plots and restore the author's version?")) return;
+  const fileMap = _authorTemplate.files.map(tf =>
+    fcsFiles.find(f => f.filename === tf.sourceFile) || null);
+  _applyTemplateV3(_authorTemplate, fileMap);
+  showToast("Restored author's gates");
 }
 
 function importGates(templateJson) {
@@ -6391,7 +6617,11 @@ function _doImportV3(indices) {
   });
 
   modal.remove();
+  _applyTemplateV3(tmpl, fileMap);
+}
 
+// Applies a v3 template to already-loaded files. fileMap[i] is the fcsFile for tmpl.files[i].
+function _applyTemplateV3(tmpl, fileMap) {
   // Reset plots/tabs
   plots = []; plotIdCounter = 0;
   tabs = []; activeTabId = null; tabIdCounter = 0;
@@ -7699,5 +7929,6 @@ self.addEventListener('message', async (e) => {
 });
 
 </script>
+<script id="flowng-bundle-loader">loadBundleIfPresent();</script>
 </body>
 </html>
