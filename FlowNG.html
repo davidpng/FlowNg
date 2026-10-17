@@ -740,7 +740,7 @@
       <span id="parse-label">Loading…</span>
     </div>
     <div class="header-actions" style="margin-left:auto;display:flex;gap:6px;align-items:center">
-      <button onclick="document.getElementById('file-input').click()">📂 Open FCS File</button>
+      <button onclick="document.getElementById('file-input').click()" id="open-btn">📂 Open FCS File</button>
       <button onclick="showGlobalSettingsDialog()" id="settings-btn" style="display:none" title="Global settings">⚙️ Settings</button>
       <button onclick="addPlot()" id="add-plot-btn" style="display:none">+ Add Plot</button>
       <button onclick="exportGates()" id="export-btn" style="display:none" title="Export template">↓ Export Template</button>
@@ -6212,8 +6212,10 @@ function showShareDialog() {
       <div id="share-estimate" style="font-size:11px;color:var(--text2);margin:-4px 0 8px"></div>
       <label style="font-size:11px;display:block;margin-bottom:6px">
         <input id="share-anon" type="checkbox"> Replace file names with Sample 1, 2, …</label>
-      <label style="font-size:11px;display:block;margin-bottom:12px">
+      <label style="font-size:11px;display:block;margin-bottom:6px">
         <input id="share-meta" type="checkbox"> Include full FCS header metadata (may contain patient/sample IDs)</label>
+      <label style="font-size:11px;display:block;margin-bottom:12px">
+        <input id="share-sterile" type="checkbox" checked> Locked viewer: recipients cannot load other files, import, or export</label>
       <div id="share-status" style="font-size:11px;color:var(--text2);min-height:14px;margin-bottom:8px"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button onclick="document.getElementById('share-modal').remove()">Cancel</button>
@@ -6251,6 +6253,7 @@ async function doExportShareable() {
   const maxEv = parseInt(document.getElementById('share-maxev').value) || 0;
   const anon = document.getElementById('share-anon').checked;
   const fullMeta = document.getElementById('share-meta').checked;
+  const sterile = document.getElementById('share-sterile').checked;
   go.disabled = true;
   const safe = name.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
   const fileName = `${safe}_FlowNG_shared.html`;
@@ -6315,7 +6318,7 @@ async function doExportShareable() {
     }
     status.textContent = 'Building HTML…';
     await new Promise(r => setTimeout(r, 0));
-    const bundle = { format: 1, name, created: new Date().toISOString(), files, template };
+    const bundle = { format: 1, sterile, name, created: new Date().toISOString(), files, template };
     const json = JSON.stringify(bundle).replace(/</g, '\\u003c');
 
     // Tag strings are split so this source never contains a literal script tag of its own.
@@ -6398,6 +6401,7 @@ async function loadBundleIfPresent() {
     _applyTemplateV3(bundle.template, fileMap);
     const reset = document.getElementById('reset-author-btn');
     if (reset) reset.style.display = '';
+    if (bundle.sterile) _applySterileMode();
     const sub = bundle.files.filter(f => f.nEvents < f.totalEvents);
     showToast(sub.length
       ? `Shared analysis loaded — downsampled to ${sub.map(f => f.nEvents.toLocaleString()).join(', ')} events`
@@ -6407,6 +6411,26 @@ async function loadBundleIfPresent() {
     console.error(err);
     showToast('Failed to load shared analysis: ' + err.message, 6000);
   }
+}
+
+// Locked viewer: no loading other data, no template import, no export of any kind.
+// Gating, plotting, compensation and reset-to-author stay available.
+function _applySterileMode() {
+  document.body.classList.add('sterile');
+  const st = document.createElement('style');
+  st.textContent = '#open-btn,#export-btn,#import-btn,#share-btn,#drop-zone{display:none !important}';
+  document.head.appendChild(st);
+  ['file-input', 'import-input'].forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
+  const deny = () => showToast('This shared file is a locked viewer', 3000);
+  ['loadFCS', 'loadFCSFallback', 'loadDemo', 'importGates', 'exportGates', 'doExportTemplate',
+   'showShareDialog', 'doExportShareable', 'showExportNameDialog'].forEach(n => { window[n] = deny; });
+  // Stop the browser navigating to / opening a dropped file, and stop the app seeing the drop.
+  ['dragover', 'drop'].forEach(ev => window.addEventListener(ev, e => {
+    // Only external file drags; in-app drags (reordering populations/plots) must keep working.
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) {
+      e.preventDefault(); e.stopPropagation();
+    }
+  }, true));
 }
 
 function resetToAuthorGates() {
