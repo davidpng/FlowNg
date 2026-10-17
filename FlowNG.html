@@ -63,7 +63,7 @@
   }
   header {
     display: grid;
-    grid-template-columns: 240px 1fr;
+    grid-template-columns: 300px 1fr;
     align-items: center;
     gap: 0;
     padding: 0;
@@ -114,7 +114,7 @@
   button.danger-btn:hover { background: var(--danger); color: #fff; }
   .main { display: flex; flex: 1; overflow: hidden; }
   .sidebar {
-    width: 240px;
+    width: 300px;
     background: var(--surface);
     border-right: 1px solid var(--border);
     display: flex;
@@ -335,8 +335,8 @@
   .pop-tree-node {
     display: flex;
     align-items: center;
-    gap: 5px;
-    padding: 3px 4px 3px 0;
+    gap: 6px;
+    padding: 3px 6px;
     border-radius: 4px;
     cursor: pointer;
     position: relative;
@@ -382,20 +382,31 @@
     background: rgba(255,255,255,0.15);
   }
   .pop-swatch-tree {
-    width: 10px; height: 10px;
-    border-radius: 2px;
+    width: 9px; height: 9px;
+    border-radius: 50%;
     flex-shrink: 0;
-    border: 1px solid rgba(255,255,255,0.2);
     cursor: pointer;
   }
   .pop-swatch-tree.no-color {
     background: transparent !important;
-    background-image: linear-gradient(45deg,#666 25%,transparent 25%,transparent 75%,#666 75%),
-                      linear-gradient(45deg,#666 25%,transparent 25%,transparent 75%,#666 75%) !important;
-    background-size: 6px 6px !important;
-    background-position: 0 0, 3px 3px !important;
+    background-image: none !important;
+    border: 1px dashed #888;
   }
-  .pop-count-small { font-size: 10px; color: var(--text2); margin-left: auto; white-space: nowrap; }
+  .pop-count-small { font-size: 11px; color: #9aa; margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .pop-pct-small { font-size: 11px; color: #778; min-width: 36px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cf-handle { position: absolute; width: 20px; height: 20px; transform: translate(-50%,-50%); z-index: 12; display: none; }
+  .cf-handle i { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); background: #5a8dee; pointer-events: none; }
+  .cf-handle-x { cursor: ew-resize; }
+  .cf-handle-x i { width: 14px; height: 12px; clip-path: polygon(50% 0%, 100% 42%, 100% 100%, 0% 100%, 0% 42%); }
+  .cf-handle-y { cursor: ns-resize; }
+  .cf-handle-y i { width: 12px; height: 14px; clip-path: polygon(100% 50%, 58% 0%, 0% 0%, 0% 100%, 58% 100%); }
+  .pop-grip { cursor: grab; color: #667; font-size: 11px; flex-shrink: 0; user-select: none; }
+  .pop-plus-btn, .pop-del-btn {
+    border: none; background: transparent; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; flex-shrink: 0;
+  }
+  .pop-plus-btn { color: #667; }
+  .pop-plus-btn.on { color: #7cc4ff; font-weight: 700; }
+  .pop-del-btn { color: #c88; }
   .pop-name-small  { font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ── Plot drag-to-reorder ───────────────────────────────── */
@@ -454,7 +465,7 @@
   .plot-expand-overlay {
     position: fixed;
     top: 44px;
-    left: 240px;
+    left: 300px;
     bottom: 0;
     right: 0;
     background: rgba(0, 0, 0, 0.4);
@@ -598,6 +609,15 @@
   }
 
   /* ── Global mode toolbar ─────────────────────────── */
+  .tool-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    padding: 3px 9px; border-radius: 5px; border: 1px solid #444;
+    background: #22232e; color: #ddd; cursor: pointer; font-size: 10px; line-height: 1.2;
+  }
+  .tool-btn i { font-style: normal; font-size: 13px; }
+  .tool-btn:hover { background: #2d2f3d; }
+  .tool-btn.active { background: #3a4a6b; border-color: #5a6f9f; color: #fff; }
+  .tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .global-toolbar {
     display: none; /* shown after file load */
     align-items: center;
@@ -647,72 +667,33 @@
   }
   .tab-strip {
     display: flex;
-    align-items: stretch;
-    background: var(--surface);
+    align-items: center;
+    background: var(--bg);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
     overflow-x: auto;
     scrollbar-width: none;
-    gap: 2px;
-    padding: 3px 4px 0;
-    min-height: 30px;
+    gap: 6px;
+    padding: 8px 12px 0;
+    min-height: 34px;
   }
   .tab-strip::-webkit-scrollbar { display: none; }
-  .tab-item {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 10px;
-    border-radius: 5px 5px 0 0;
-    border: 1px solid transparent;
-    border-bottom: none;
-    cursor: pointer;
-    font-size: 10px;
-    color: var(--text2);
-    white-space: nowrap;
-    user-select: none;
-    transition: background 0.1s, color 0.1s;
-    position: relative;
-    top: 1px;
+  .tab-item { display: flex; align-items: stretch; }
+  .tab-main, .tab-close {
+    font: inherit; font-size: 12px; color: #ddd; cursor: pointer;
+    background: #1b1d27; border: 1px solid #444; border-bottom: none;
   }
-  .tab-item:hover { background: var(--surface2); color: var(--text); }
-  .tab-item.active {
-    background: var(--bg);
-    border-color: var(--border);
-    color: var(--text);
-    font-weight: 600;
-  }
-  .tab-item.drag-over-tab {
-    background: rgba(79,142,247,0.2);
-    border-color: var(--accent);
-  }
-  .tab-close {
-    font-size: 9px;
-    opacity: 0.4;
-    padding: 0 2px;
-    border-radius: 2px;
-    cursor: pointer;
-    line-height: 1;
-  }
-  .tab-close:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+  .tab-main { padding: 4px 6px 4px 10px; border-right: none; border-radius: 5px 0 0 0; }
+  .tab-close { padding: 4px 8px; border-radius: 0 5px 0 0; color: #997; }
+  .tab-item.active .tab-main, .tab-item.active .tab-close { background: #2a3550; }
+  .tab-item.drag-over-tab .tab-main, .tab-item.drag-over-tab .tab-close { background: rgba(79,142,247,0.3); }
+  .tab-close:hover { color: #fff; }
   .tab-add {
-    padding: 3px 8px;
-    font-size: 14px;
-    color: var(--text2);
-    cursor: pointer;
-    border-radius: 4px;
-    align-self: center;
-    line-height: 1;
+    padding: 4px 10px; font-size: 12px; color: #aaa; cursor: pointer;
+    border: 1px dashed #555; border-radius: 5px; background: transparent;
+    align-self: center; line-height: 1.2; white-space: nowrap;
   }
-  .tab-add:hover { background: var(--surface2); color: var(--text); }
-  .tab-plot-count {
-    font-size: 9px;
-    background: var(--surface2);
-    border-radius: 8px;
-    padding: 0 5px;
-    color: var(--text2);
-  }
-  .tab-item.active .tab-plot-count { background: var(--border2); }
+  .tab-add:hover { color: #fff; border-color: #888; }
 </style>
 </head>
 <body>
@@ -724,14 +705,16 @@
   <div class="header-right">
     <div class="global-toolbar" id="global-toolbar" style="display:none;align-items:center;gap:3px;flex-shrink:0;
       border-right:1px solid var(--border);padding-right:10px;margin-right:4px">
-      <span style="font-size:9px;color:var(--text2);white-space:nowrap">Mode:</span>
-      <button class="mode-btn active" id="gbtn-pan"    onclick="setGlobalMode('pan')"    title="Navigate (✥)">✥</button>
-      <button class="mode-btn"        id="gbtn-gate"   onclick="setGlobalMode('gate')"   title="Draw Gate (⬡)">⬡</button>
-      <button class="mode-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Draw Rectangular Gate (□)">□</button>
-      <button class="mode-btn"        id="gbtn-edit"   onclick="setGlobalMode('edit')"   title="Edit Gates (✎)">✎</button>
-      <button class="mode-btn"        id="gbtn-delete" onclick="setGlobalMode('delete')" title="Delete Gate (🗑)">🗑</button>
-      <button class="mode-btn"        id="gbtn-spill"  onclick="setGlobalMode('spill')"  title="Adjust Spillover — drag right/top edge of plot (⇔)">⇔</button>
-      <button class="mode-btn"        id="gbtn-zoom"   onclick="setGlobalMode('zoom')"   title="Zoom (⛶)">⛶</button>
+      <button class="tool-btn active" id="gbtn-pan"      onclick="setGlobalMode('pan')"      title="Select: drag a gate to move it. With a plot selected, drag the blue marker on an arcsinh axis to change its cofactor."><i>↖</i>Select</button>
+      <button class="tool-btn"        id="gbtn-gate"     onclick="setGlobalMode('gate')"     title="Polygon: click points around a population, then click the first point (or double-click) to close the gate. Esc cancels."><i>⬡</i>Polygon</button>
+      <button class="tool-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Rect: drag a rectangle on a plot to create a gate."><i>▭</i>Rect</button>
+      <button class="tool-btn"        id="gbtn-quad"     onclick="setGlobalMode('quad')"     title="Quadrant: click to place a crosshair that creates Q1-Q4 (clockwise from upper right). Drag the crosshair with Select or Edit to move all four together."><i>+</i>Quadrant</button>
+      <button class="tool-btn"        id="gbtn-edit"     onclick="setGlobalMode('edit')"     title="Edit: drag a gate's corner points to reshape it, or drag its body to move it."><i>✎</i>Edit</button>
+      <button class="tool-btn"        id="gbtn-spill"    onclick="setGlobalMode('spill')"    title="Comp: on a plot whose two axes are both in the spillover matrix, drag the top edge (Y into X) or right edge (X into Y) to tune that coefficient. Gates are re-evaluated when you let go."><i>⇔</i>Comp</button>
+      <button class="tool-btn"        id="gbtn-delete"   onclick="setGlobalMode('delete')"   title="Delete: click a gate on a plot to remove it and its children (a quadrant is removed as a set)."><i>🗑</i>Delete</button>
+      <button class="tool-btn"        id="gbtn-autocomp" onclick="setGlobalMode('autocomp')" title="Autocomp: outline a population that should sit flat in this pair of axes (at least 100 events). The spillover coefficient between the two axes is fitted automatically. Undoable."><i>◎</i>Autocomp</button>
+      <button class="tool-btn" id="undo-btn" onclick="undo()" title="Undo the last gate, colour, order, compensation or cofactor change (Ctrl/Cmd+Z)" disabled><i>↶</i>Undo</button>
+      <button class="tool-btn" id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)" disabled><i>↷</i>Redo</button>
     </div>
     <div id="parse-progress" style="display:none;align-items:center;gap:8px;font-size:10px;color:var(--text2)">
       <div style="width:100px;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
@@ -740,16 +723,29 @@
       <span id="parse-label">Loading…</span>
     </div>
     <div class="header-actions" style="margin-left:auto;display:flex;gap:6px;align-items:center">
-      <button onclick="document.getElementById('file-input').click()">📂 Open FCS File</button>
-      <button onclick="showGlobalSettingsDialog()" id="settings-btn" style="display:none" title="Global settings">⚙️ Settings</button>
-      <button onclick="addPlot()" id="add-plot-btn" style="display:none">+ Add Plot</button>
-      <button onclick="exportGates()" id="export-btn" style="display:none" title="Export template">↓ Export Template</button>
-      <button onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Import template">↑ Import Template</button>
+<!--@lite:begin-->
+      <button onclick="document.getElementById('file-input').click()" id="open-btn" title="Open one or more FCS / LMD files (or drop them on the page)">📂 Open FCS File</button>
+      
+<!--@lite:end-->
+<button onclick="showGlobalSettingsDialog()" id="settings-btn" style="display:none" title="Global settings: set the lower display limit of every fluorescent axis from a data percentile">⚙️ Settings</button>
+      <button onclick="addPlot()" id="add-plot-btn" style="display:none" title="Add a plot to the current tab (for the selected file)">+ Add Plot</button>
+<!--@lite:begin-->
+      <button onclick="exportGates()" id="export-btn" style="display:none" title="Save gates, plots and axis settings as a JSON template (no event data)">↓ Export Template</button>
+      <button onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Apply a saved JSON template to the loaded file(s)">↑ Import Template</button>
+      <button onclick="showShareDialog()" id="share-btn" style="display:none" title="Export one self-contained HTML containing the event data, compensation, gates and plots (not the original FCS/LMD file)">🔗 Export Shareable HTML</button>
+      
+<!--@lite:end-->
+<button onclick="resetToAuthorGates()" id="reset-author-btn" style="display:none" title="Throw away your changes and restore the gates and plots exactly as the author shared them (undoable)">↺ Reset to author's gates</button>
+<!--@lite:begin-->
       <input type="file" id="import-input" accept=".json" style="display:none">
-    </div>
+    
+<!--@lite:end-->
+</div>
   </div>
 </header>
+<!--@lite:begin-->
 <input type="file" id="file-input" accept=".fcs,.lmd,.LMD" multiple>
+<!--@lite:end-->
 
 <div class="main">
   <div class="sidebar" id="sidebar" style="display:none">
@@ -758,55 +754,59 @@
       <h3>Populations</h3>
       <div id="pop-list"></div>
     </div>
-    <div class="sidebar-section" id="precedence-section" style="display:none">
-      <h3>Color Precedence</h3>
-      <div style="color:var(--text2);font-size:10px;margin-bottom:6px">Drag to reorder. Top gate wins.</div>
-      <div id="precedence-list"></div>
-    </div>
     <div class="sidebar-section">
       <h3>Display</h3>
       <div style="display:flex;flex-direction:column;gap:6px">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Draw grid lines at the axis ticks">
           <input type="checkbox" id="showgrid" onchange="renderAllPlots()" checked>
           <span>Show grid</span>
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;position:relative">
-          <input type="checkbox" id="showdensity" onchange="toggleDensityPlots(this.checked)" checked>
-          <span>Density plot</span>
-          <span style="cursor:help;color:var(--text2);font-weight:bold" title="For large files, turning off density plots can improve performance">ⓘ</span>
         </label>
       </div>
     </div>
     </div><!-- /sidebar-content -->
     <div class="kb-hints">
-      <div style="color:var(--text2);font-size:9px;font-weight:600;margin-bottom:4px;letter-spacing:0.5px">PLOT SELECTION</div>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin-bottom:4px;letter-spacing:0.5px">TOOLBAR</div>
+      <kbd>Select</kbd> — drag a gate to move it; with a plot selected, drag the blue marker on an arcsinh axis to set its cofactor<br>
+      <kbd>Polygon</kbd> — click points, click the first point (or double-click) to close<br>
+      <kbd>Rect</kbd> — drag a rectangle<br>
+      <kbd>Quadrant</kbd> — click to place a crosshair (Q1–Q4 clockwise from upper right); drag it with Select or Edit<br>
+      <kbd>Edit</kbd> — drag gate vertices<br>
+      <kbd>Comp</kbd> — drag a plot's top or right edge to tune spillover<br>
+      <kbd>Autocomp</kbd> — outline a population that should sit flat; spillover is fitted for you<br>
+      <kbd>Delete</kbd> — click a gate to remove it<br>
+      <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> undo · <kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Y</kbd> redo<br>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">PLOTS</div>
       <kbd>Click</kbd> header — select plot<br>
+      <kbd>Click</kbd> empty canvas — deselect all<br>
       <kbd>Shift</kbd>+<kbd>Click</kbd> — range-select plots<br>
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Click</kbd> — toggle selection<br>
-      <kbd>Click</kbd> canvas bg — deselect all<br>
-      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">PLOT MANAGEMENT</div>
       <kbd>Del</kbd>/<kbd>⌫</kbd> — remove selected plot(s)<br>
       <kbd>Esc</kbd> — cancel gate / deselect all<br>
-      <kbd>Drag</kbd> ⠿ — reorder plots<br>
-      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">CANVAS</div>
-      <kbd>Click</kbd> — add gate point<br>
-      <kbd>Click</kbd> first point — close gate (3+ pts)<br>
-      <kbd>Dbl-click</kbd> — finalize gate (3+ pts)<br>
-      <kbd>Right-click</kbd> header — switch source file<br>
+      <kbd>Drag</kbd> ⠿ — reorder plots; drop on a tab to move it<br>
       <kbd>Right-click</kbd> canvas — axis range / cofactor<br>
-      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">POPULATION LIST</div>
-      <kbd>Dbl-click</kbd> pop — cycle dot size boost<br>
-      <kbd>Shift</kbd>+<kbd>Click</kbd> pop — edit name / color<br>
-      <kbd>Right-click</kbd> pop — edit name / color<br>
+      <kbd>Right-click</kbd> header — switch source file<br>
+      <kbd>Slider</kbd> — density bins per axis<br>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">TABS</div>
+      <kbd>Right-click</kbd> or <kbd>Dbl-click</kbd> tab — rename<br>
+      <kbd>✕</kbd> — close tab · <kbd>+ Tab</kbd> — add a tab<br>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">POPULATION TREE</div>
+      <kbd>+</kbd> — also draw this population as exact events (dots)<br>
+      <kbd>×</kbd> — delete gate and children<br>
+      <kbd>Right-click</kbd> row — rename / color, copy, cut, paste, delete<br>
+      <kbd>Shift</kbd>+<kbd>Click</kbd> row — rename / color<br>
+      <kbd>Right-click</kbd> file row — paste a gate at the top level
+      <kbd>Drag</kbd> row onto another — re-parent<br>
+      <kbd>Drag</kbd> ⠿ above/below a sibling — reorder; the lower one wins shared cells<br>
+      <kbd>Click</kbd> name — jump to the gate's plot<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">MULTI-SELECT (2+ plots)</div>
-      Axis / pop changes apply to all selected.<br>
+      Axis / pop / bin changes apply to all selected.<br>
       Scale (LOG/LIN/ASINH) is always per-plot.
     </div>
   </div>
 
   <div class="workspace">
     <div class="tab-strip" id="tab-strip" style="display:none">
-      <div class="tab-add" onclick="addTab()" title="New tab">＋</div>
+      <div class="tab-add" onclick="addTab()" title="Add a new tab (a separate page of plots)">+ Tab</div>
     </div>
     <div class="canvas-area" id="canvas-area">
     <div class="drop-zone" id="drop-zone">
@@ -815,15 +815,19 @@
         <div class="drop-title">Drop an FCS file here</div>
         <div class="drop-sub">or click to browse</div>
         <br>
+<!--@lite:begin-->
         <button class="primary" onclick="document.getElementById('file-input').click()">Open FCS File</button>
         <br><br>
+<!--@lite:end-->
         <div class="drop-sub" style="font-size:10px">FCS 2.0, 3.0, 3.1 and Beckman Coulter LMD supported<br>All data processed locally in your browser</div>
       </div>
+<!--@lite:begin-->
       <div style="color:var(--text2);font-size:11px;max-width:400px;text-align:center;line-height:1.8">
         💡 No FCS file? Try the <strong style="color:var(--accent)">demo</strong> to explore the interface with synthetic data.
         <br><br>
         <button onclick="loadDemo()">Load Demo Data</button>
       </div>
+<!--@lite:end-->
       <div style="max-width:420px;margin-top:8px;padding:10px 16px;border-radius:8px;
                   background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.25);
                   text-align:center;font-size:10px;color:var(--text2);line-height:1.7">
@@ -848,26 +852,29 @@
 <script>
 // 19-color palette with maximum contrast on white background
 // Based on Kelly's 22 colors of maximum contrast, excluding white-like variants
+// Kelly's 22 colours of maximum contrast, minus white (plots are on a white background) — as FlowNg2.
 const GATE_COLORS = [
-  '#e6194b', // vivid red
-  '#3cb44b', // vivid green
-  '#4363d8', // vivid blue
-  '#f58231', // vivid orange
-  '#911eb4', // vivid purple
-  '#42d4f4', // vivid cyan
-  '#f032e6', // vivid magenta
-  '#bfef45', // lime
-  '#fabed4', // pink
-  '#469990', // teal
-  '#dcbeff', // lavender
-  '#9a6324', // brown
-  '#800000', // maroon
-  '#808000', // olive
-  '#000075', // navy
-  '#ffff00', // vivid yellow
-  '#808080', // grey
-  '#000000', // black
-  '#ffb81c', // gold
+  '#222222', // black
+  '#f3c300', // vivid yellow
+  '#875692', // strong purple
+  '#f38400', // vivid orange
+  '#a1caf1', // very light blue
+  '#be0032', // vivid red
+  '#c2b280', // grayish yellow
+  '#848482', // medium gray
+  '#008856', // vivid green
+  '#e68fac', // strong purplish pink
+  '#0067a5', // strong blue
+  '#f99379', // strong yellowish pink
+  '#604e97', // strong violet
+  '#f6a600', // vivid orange yellow
+  '#b3446c', // strong purplish red
+  '#dcd300', // vivid greenish yellow
+  '#882d17', // strong reddish brown
+  '#8db600', // vivid yellowish green
+  '#654522', // deep yellowish brown
+  '#e25822', // vivid reddish orange
+  '#2b3d26', // dark olive green
 ];
 
 // Per-file identity colours — assigned by position in fcsFiles (alphabetically sorted).
@@ -1144,6 +1151,7 @@ function evalGateAsync(gate) {
     xParam, yParam, xScale, yScale,
     xCofactor: getAsinhCofactor(xParam),
     yCofactor: getAsinhCofactor(yParam),
+    quad: gate.gateInfo.quad || null,
     parentIsAll: !!pop._isAll,
     parentIndices: pop._isAll ? null : pop.indices
   };
@@ -1154,6 +1162,7 @@ function evalGateAsync(gate) {
   fileObj._computeWorker.postMessage(msg);
 }
 
+/*@lite:begin*/
 // ─── LMD PARSER (Beckman Coulter) ────────────────────────────────────────────
 // LMD files embed FCS2.0 (log-transformed, good param names/stains) followed by
 // FCS3.0 (raw untransformed data, generic FL* names). Strategy:
@@ -1365,6 +1374,7 @@ async function parseLMD(buffer) {
   return { params, nEvents, nPar, data, meta, version: 'LMD/FCS3.0',
            rawData: lmdRawData, spillMatrix: lmdSpillMatrix, spillParamIdx: lmdSpillParamIdx };
 }
+/*@lite:end*/
 
 // Gauss-Jordan matrix inversion — returns inverse of n×n matrix A, or null if singular
 function matInvert(A, n) {
@@ -1448,6 +1458,7 @@ function recomputeCompensation(newSpillMatrix, fileId) {
   return true;
 }
 
+/*@lite:begin*/
 // ─── FCS PARSER ───────────────────────────────────────────────────────────────
 async function parseFCS(buffer) {
   const dv = new DataView(buffer);
@@ -1587,7 +1598,7 @@ async function parseFCS(buffer) {
   return { params, nEvents, nPar, data, meta: kv, version: fcsVer, compensated: !!fcsSpill,
            rawData: fcsRawData, spillMatrix: fcsSpillMatrix, spillParamIdx: fcsSpillParamIdx };
 }
-
+/*@lite:end*/
 // ─── TRANSFORM (log10) ────────────────────────────────────────────────────────
 const LOG10E = Math.LOG10E;  // 1/ln(10) ≈ 0.4343
 
@@ -1751,6 +1762,7 @@ function makeTransforms(plot, pad, pw, ph, W, H) {
   return { dataToCanvasX, dataToCanvasY, dispToCanvasX, dispToCanvasY, canvasToDispX, canvasToDispY, xRange, yRange, xls, yls };
 }
 
+/*@lite:begin*/
 // ─── FILE LOADING ─────────────────────────────────────────────────────────────
 function loadFCS(buffer, filename) {
   showProgress(5, 'Starting parser…');
@@ -1956,7 +1968,7 @@ async function loadFCSFallback(buffer, filename) {
     showToast('Error parsing file: ' + e.message);
   }
 }
-
+/*@lite:end*/
 function addFileToSession(fileObj) {
   // Seed per-file param ranges from OTflow cofactors
   if (fileObj.otflowCofactors) {
@@ -1991,8 +2003,9 @@ function addFileToSession(fileObj) {
     document.getElementById('settings-btn').style.display = '';
     document.getElementById('global-toolbar').style.display = 'flex';
     document.getElementById('status-bar').style.display = 'flex';
-    document.getElementById('export-btn').style.display = '';
-    document.getElementById('import-btn').style.display = '';
+    { const b = document.getElementById('export-btn'); if (b) b.style.display = ''; }
+    { const b = document.getElementById('import-btn'); if (b) b.style.display = ''; }
+    { const b = document.getElementById('share-btn'); if (b) b.style.display = ''; }
 
     // Reset tabs and plots
     tabs = []; activeTabId = null; tabIdCounter = 0;
@@ -2207,6 +2220,11 @@ function showFileContextMenu(fileId, cx, cy) {
       onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
       🔍 View Metadata
     </div>
+    ${_gateClipboard ? `<div class="ctx-item" onclick="pasteGate(${(getFileById(fileId) || {})._rootPopId});document.getElementById('file-ctx-menu')?.remove()"
+      style="padding:6px 14px;font-size:11px;cursor:pointer;color:var(--text)"
+      onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
+      📋 Paste gate here
+    </div>` : ''}
     <div class="ctx-item" onclick="removeFile(${fileId});document.getElementById('file-ctx-menu')?.remove()"
       style="padding:6px 14px;font-size:11px;cursor:pointer;color:#e06c75"
       onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
@@ -2262,30 +2280,29 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   row.className = 'pop-tree-node';
   row.dataset.popid = popId;
 
-  // Build indent with tree lines
-  const indentWrap = document.createElement('div');
-  indentWrap.className = 'tree-indent';
-  indentWrap.style.flexShrink = '0';
+  // Indent by depth (14px per level), as in FlowNg2
+  row.style.paddingLeft = `${6 + (isRoot ? 0 : prefixLines.length) * 14}px`;
 
-  if (!isRoot) {
-    // For each ancestor level, draw a vertical continuation or blank
-    prefixLines.slice(0, -1).forEach(hasSibling => {
-      if (hasSibling) {
-        const vline = document.createElement('div');
-        vline.className = 'tree-line-v';
-        indentWrap.appendChild(vline);
-      } else {
-        const blank = document.createElement('div');
-        blank.style.cssText = 'width:15px;flex-shrink:0';
-        indentWrap.appendChild(blank);
-      }
+  // Grip: drag above/below a sibling to reorder (decides who wins shared cells)
+  if (pop.gateInfo) {
+    const grip = document.createElement('span');
+    grip.className = 'pop-grip';
+    grip.textContent = '⠿';
+    grip.title = 'Drag above/below a sibling to reorder; the one lower in the tree wins shared cells';
+    grip.draggable = true;
+    grip.addEventListener('dragstart', e => {
+      e.stopPropagation();
+      _siblingDrag = popId;
+      e.dataTransfer.setData('siblingId', String(popId));
+      e.dataTransfer.effectAllowed = 'move';
     });
-    // L-shaped connector for this node
-    const lline = document.createElement('div');
-    lline.className = 'tree-line-l';
-    indentWrap.appendChild(lline);
+    grip.addEventListener('dragend', e => {
+      e.stopPropagation();
+      _siblingDrag = null;
+      document.querySelectorAll('.pop-tree-node').forEach(r => { r.style.borderTop = ''; r.style.borderBottom = ''; });
+    });
+    row.appendChild(grip);
   }
-  row.appendChild(indentWrap);
 
   // Swatch
   const swatch = document.createElement('div');
@@ -2305,32 +2322,48 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   }
   row.appendChild(nameEl);
 
-  // Dot-boost badge (shown when dotBoost > 0)
-  if (pop.dotBoost > 0) {
-    const boostBadge = document.createElement('span');
-    boostBadge.style.cssText = 'font-size:9px;color:#f5a623;flex-shrink:0;margin-left:2px';
-    boostBadge.title = 'Dot size boost — double-click to cycle';
-    boostBadge.textContent = `+${pop.dotBoost}`;
-    row.appendChild(boostBadge);
-  }
-
-  // Count
+  // Count and % of parent
   const countEl = document.createElement('div');
   countEl.className = 'pop-count-small';
   countEl.textContent = popCount(pop).toLocaleString();
   row.appendChild(countEl);
+  if (pop.gateInfo) {
+    const parentPop = populations.find(p => p.id === pop.parentId);
+    const pctEl = document.createElement('div');
+    pctEl.className = 'pop-pct-small';
+    pctEl.textContent = `${(100 * popCount(pop) / (parentPop ? popCount(parentPop) || 1 : 1)).toFixed(1)}%`;
+    pctEl.title = '% of parent';
+    row.appendChild(pctEl);
+
+    // "+" draws this population as exact events (dots) on plots that show it
+    const plus = document.createElement('button');
+    plus.className = 'pop-plus-btn' + (pop.dotBoost > 0 ? ' on' : '');
+    plus.textContent = '+';
+    plus.title = pop.dotBoost > 0 ? 'Drawn as exact events (dots) — click to return to density'
+                                  : 'Draw this population as exact events (dots)';
+    plus.addEventListener('click', e => { e.stopPropagation(); cycleDotBoost(popId); });
+    plus.addEventListener('dblclick', e => e.stopPropagation());
+    row.appendChild(plus);
+
+    const del = document.createElement('button');
+    del.className = 'pop-del-btn';
+    del.textContent = '×';
+    del.title = 'Delete this gate and its children';
+    del.addEventListener('click', e => { e.stopPropagation(); deleteGateFromTree(popId); });
+    del.addEventListener('dblclick', e => e.stopPropagation());
+    row.appendChild(del);
+  }
 
   // Events
   if (popId !== 0) {
     // Right-click or Shift+click opens color/name picker
     const openPicker = e => { e.preventDefault(); e.stopPropagation(); showColorPicker(popId, e.clientX, e.clientY); };
-    swatch.addEventListener('contextmenu', openPicker);
-    row.addEventListener('contextmenu', openPicker);
+    const openMenu = e => { e.preventDefault(); e.stopPropagation(); showGateMenu(popId, e.clientX, e.clientY); };
+    swatch.addEventListener('contextmenu', openMenu);
+    row.addEventListener('contextmenu', openMenu);
     row.addEventListener('click', e => { if (e.shiftKey) openPicker(e); });
 
-    // Double-click cycles dot-size boost (0 → 2 → 4 → 8 → 0 px)
-    row.addEventListener('dblclick', e => { e.preventDefault(); cycleDotBoost(popId); });
-    row.title = 'Click name to navigate to gate plot · Dbl-click to cycle dot size boost · Shift-click or right-click to edit color/name · Drag to reparent';
+    row.title = 'Click name to navigate to gate plot · Right-click for rename/color/copy/paste/delete · Drag row onto another to re-parent';
 
     // Drag to reparent — suppress on right-click so context menu fires reliably
     row.draggable = true;
@@ -2348,6 +2381,26 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
       document.querySelectorAll('.pop-tree-node').forEach(r => r.classList.remove('drag-over-node'));
     });
   }
+
+  // Sibling reordering: drop above/below this row when it shares the dragged gate's parent
+  row.addEventListener('dragover', e => {
+    if (!e.dataTransfer.types.includes('siblingid')) return;
+    const dragged = populations.find(p => p.id === _siblingDrag);
+    if (!dragged || dragged.parentId !== pop.parentId || dragged.id === popId) return;
+    e.preventDefault(); e.stopPropagation();
+    const r = row.getBoundingClientRect(), before = e.clientY < r.top + r.height / 2;
+    row.style.borderTop = before ? '2px solid rgba(120,170,255,0.9)' : '';
+    row.style.borderBottom = before ? '' : '2px solid rgba(120,170,255,0.9)';
+  });
+  row.addEventListener('dragleave', () => { row.style.borderTop = ''; row.style.borderBottom = ''; });
+  row.addEventListener('drop', e => {
+    if (!e.dataTransfer.types.includes('siblingid')) return;
+    e.preventDefault(); e.stopPropagation();
+    const r = row.getBoundingClientRect(), before = e.clientY < r.top + r.height / 2;
+    row.style.borderTop = ''; row.style.borderBottom = '';
+    reorderSibling(_siblingDrag, popId, before);
+    _siblingDrag = null;
+  });
 
   // All nodes can be drop targets (including root)
   row.addEventListener('dragover', e => {
@@ -2386,7 +2439,9 @@ function reparentGate(gateId, newParentId) {
   if (descendants.map(g => g.id).includes(newParentId)) {
     showToast('Cannot reparent a gate onto one of its own descendants'); return;
   }
+  pushUndo();
   gate.parentId = newParentId;
+  { const gf = getFileById(gate.fileId); if (gf) _syncPrecedenceFromTree(gf); }
   // Evaluate synchronously so counts and dot colors are correct immediately
   evalGate(gate);
   descendants.forEach(g => evalGate(g));
@@ -2397,109 +2452,59 @@ function reparentGate(gateId, newParentId) {
   showToast(`Moved "${gate.name}" under "${populations.find(p=>p.id===newParentId)?.name}"`);
 }
 
+// Draw/ownership order comes from the population tree: among siblings, the one lower in the
+// tree wins a shared cell (deepest gate always wins). colorPrecedence is derived from that
+// order — index 0 = highest priority — so drawing and template export keep working unchanged.
+function _syncPrecedenceFromTree(fileObj) {
+  const order = [];
+  const walk = pid => fileObj.populations
+    .filter(p => p.gateInfo && p.parentId === pid)
+    .forEach(g => { order.push(g.id); walk(g.id); });
+  const root = fileObj.populations.find(p => p._isAll);
+  if (root) walk(root.id);
+  fileObj.populations.filter(p => p.gateInfo && !order.includes(p.id)).forEach(p => order.push(p.id));
+  fileObj.colorPrecedence = order.reverse();
+}
+
 function renderPrecedenceList() {
-  // Use the focused file's colorPrecedence; fall back to last loaded file
-  const focusedFile = getFileById(_focusedFileId) || fcsFiles[fcsFiles.length - 1];
-  const section = document.getElementById('precedence-section');
+  fcsFiles.forEach(_syncPrecedenceFromTree);
+  const focused = getFileById(_focusedFileId) || fcsFiles[fcsFiles.length - 1];
+  if (focused) colorPrecedence = focused.colorPrecedence;
+}
 
-  if (!focusedFile) { section.style.display = 'none'; return; }
+let _siblingDrag = null;
+// Moves a gate above/below a sibling (same parent) — which also decides who wins shared cells.
+function reorderSibling(dragId, targetId, before) {
+  const drag = populations.find(p => p.id === dragId), tgt = populations.find(p => p.id === targetId);
+  if (!drag || !tgt || dragId === targetId || drag.parentId !== tgt.parentId || drag.fileId !== tgt.fileId) return;
+  const f = getFileById(drag.fileId); if (!f) return;
+  pushUndo();
+  const arr = f.populations;
+  const dragObj = arr.find(p => p.id === dragId);
+  arr.splice(arr.indexOf(dragObj), 1);
+  const ti = arr.findIndex(p => p.id === targetId);
+  arr.splice(before ? ti : ti + 1, 0, dragObj);
+  _syncPrecedenceFromTree(f);
+  rebuildPopulationsView();
+  renderPopList(); renderAllPlots();
+}
 
-  const gates = focusedFile.populations.filter(p => !p._isAll);
-  section.style.display = gates.length ? '' : 'none';
-  if (!gates.length) return;
-
-  // Sync ALL files' colorPrecedence so that rendering is correct regardless of
-  // which file the precedence panel is currently focused on.  Without this, a
-  // gate created while _focusedFileId points to a different file would be absent
-  // from its own file's colorPrecedence → indexOf returns -1 → sort key 9999 →
-  // drawn first → overridden by every ancestor gate.
-  fcsFiles.forEach(fileObj => {
-    const fileGates = fileObj.populations.filter(p => !p._isAll && p.gateInfo);
-    const fileGateIds = new Set(fileGates.map(g => g.id));
-    fileObj.colorPrecedence = fileObj.colorPrecedence.filter(id => fileGateIds.has(id));
-    fileGates.forEach(g => { if (!fileObj.colorPrecedence.includes(g.id)) fileObj.colorPrecedence.unshift(g.id); });
+// Template import: order each sibling group so the highest-priority name ends up last (wins).
+function _reorderSiblingsByPrecedence(fileObj, names) {
+  if (!names || !names.length) return;
+  const key = p => { const i = names.indexOf(p.name); return i < 0 ? Infinity : i; };
+  const groups = new Map();
+  fileObj.populations.forEach((p, i) => {
+    if (!p.gateInfo) return;
+    if (!groups.has(p.parentId)) groups.set(p.parentId, { slots: [], items: [] });
+    const g = groups.get(p.parentId); g.slots.push(i); g.items.push(p);
   });
-
-  // Sync this file's colorPrecedence for the UI list (already done above, kept for clarity)
-  const gateIds = new Set(gates.map(g => g.id));
-  // Keep global shim in sync for any legacy references
-  colorPrecedence = focusedFile.colorPrecedence;
-
-  const el = document.getElementById('precedence-list');
-  el.innerHTML = '';
-  let dragSrc = null;
-
-  focusedFile.colorPrecedence.forEach((popId, idx) => {
-    const pop = populations.find(p => p.id === popId); if (!pop) return;
-    const row = document.createElement('div');
-    row.className = 'prec-item';
-    row.dataset.id = popId;
-    row.draggable = true;
-
-    const swatchClass = pop.noColor ? 'prec-swatch no-color' : 'prec-swatch';
-    const swatchBg = pop.noColor ? '' : `style="background:${pop.color}"`;
-    const emphBadge = pop.emphasized
-      ? `<span style="font-size:9px;color:#f5a623;margin-left:4px" title="Emphasized (+4px). Double-click to remove.">+4px</span>`
-      : '';
-    row.innerHTML = `
-      <span style="color:var(--text2);font-size:9px;min-width:12px">${idx+1}</span>
-      <div class="${swatchClass}" ${swatchBg} title="Right-click to change color" data-pid="${popId}"></div>
-      <div style="flex:1;font-size:11px;${pop.emphasized ? 'font-weight:600;' : ''}overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${pop.name}${emphBadge}</div>
-      <div style="font-size:10px;color:var(--text2)">${popCount(pop).toLocaleString()}</div>`;
-
-    const precPicker = e => { e.preventDefault(); e.stopPropagation(); showColorPicker(popId, e.clientX, e.clientY); };
-    row.querySelector('.prec-swatch').addEventListener('contextmenu', precPicker);
-    row.addEventListener('contextmenu', precPicker);
-    row.addEventListener('mousedown', e => { if (e.button !== 0) row.draggable = false; });
-    row.addEventListener('mouseup',   () => { row.draggable = true; });
-    row.addEventListener('dblclick', () => {
-      const p = populations.find(q => q.id === popId); if (!p) return;
-      p.emphasized = !p.emphasized;
-      // mirror into per-file populations
-      const fp = focusedFile.populations.find(q => q.id === popId);
-      if (fp) fp.emphasized = p.emphasized;
-      renderPrecedenceList();
-      renderAllPlots();
-    });
-
-    row.addEventListener('dragstart', e => {
-      dragSrc = row;
-      row.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-    });
-    row.addEventListener('dragend', () => {
-      row.classList.remove('dragging');
-      el.querySelectorAll('.prec-item').forEach(r => r.classList.remove('drag-over'));
-    });
-    row.addEventListener('dragover', e => {
-      e.preventDefault();
-      if (row !== dragSrc) row.classList.add('drag-over');
-    });
-    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
-    row.addEventListener('drop', e => {
-      e.preventDefault();
-      if (!dragSrc || dragSrc === row) return;
-      const fromId = parseInt(dragSrc.dataset.id);
-      const toId   = parseInt(row.dataset.id);
-      const fi = focusedFile.colorPrecedence.indexOf(fromId);
-      const ti = focusedFile.colorPrecedence.indexOf(toId);
-      focusedFile.colorPrecedence.splice(fi, 1);
-      focusedFile.colorPrecedence.splice(ti, 0, fromId);
-      colorPrecedence = focusedFile.colorPrecedence; // keep shim in sync
-      renderPrecedenceList();
-      renderAllPlots();
-    });
-
-    el.appendChild(row);
+  groups.forEach(g => {
+    const sorted = g.items.map((p, i) => ({ p, i })).sort((a, b) => key(b.p) - key(a.p) || a.i - b.i).map(o => o.p);
+    g.slots.forEach((slot, k) => { fileObj.populations[slot] = sorted[k]; });
   });
 }
 
-
-// ─── PARAMETER SORT ───────────────────────────────────────────────────────────
-// Sort by $PnS (longName) when available, fall back to $PnN (name).
-// Groups: FS* first, SS* second, natural-sorted fluorescent middle, TIME last.
-// Detection uses BOTH name and longName so FSC-A (name) and FS INT LIN (longName)
-// are both caught as scatter parameters.
 function sortedParamIndices() {
   const fcsFile = getContextFile();
   if (!fcsFile) return [];
@@ -2666,7 +2671,7 @@ function renderPlotCard(plot) {
 
   card.innerHTML = `
     <div class="plot-header" id="plot-hdr-${plot.id}">
-      <div class="plot-drag-handle" title="Drag to reorder plot">⠿</div>
+      <div class="plot-drag-handle" title="Drag to reorder plots, or drop on a tab to move this plot there">⠿</div>
       <span id="file-dot-${plot.id}"
         style="width:8px;height:8px;border-radius:50%;flex-shrink:0;
                display:${fcsFiles.length > 1 ? 'inline-block' : 'none'};
@@ -2674,12 +2679,13 @@ function renderPlotCard(plot) {
         title="${fcsFile ? fcsFile.filename : ''}"></span>
       <span style="color:var(--text2);font-size:10px;flex-shrink:0">Pop:</span>
       <select id="pop-sel-${plot.id}" onchange="changePop(${plot.id},this.value)"
+        title="Population shown on this plot. Every gate under it is drawn in its own colour."
         style="flex:1;min-width:0;font-size:10px;padding:2px 4px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:4px"
         onmousedown="event.stopPropagation()">${popOpts()}</select>
-      <input type="range" min="2" max="20" step="1" value="${Math.round(plot.dotSize*2)}" id="res-${plot.id}"
-        oninput="changeDotSize(${plot.id},this.value)" onmousedown="event.stopPropagation()"
-        style="width:44px;height:12px;cursor:pointer;flex-shrink:0" title="Dot size — affects individual dots and gate overlay dots">
-      <span id="res-val-${plot.id}" style="font-size:9px;color:var(--text2);flex-shrink:0;min-width:22px">${plot.dotSize}px</span>
+      <span id="res-val-${plot.id}" style="font-size:10px;color:var(--text2);flex-shrink:0;min-width:24px;text-align:right" title="Density bins per axis">${plot.bins || 256}</span>
+      <input type="range" min="32" max="512" step="32" value="${plot.bins || 256}" id="res-${plot.id}"
+        oninput="changeBins(${plot.id},this.value)" onmousedown="event.stopPropagation()"
+        style="width:56px;height:12px;cursor:pointer;flex-shrink:0" title="Density bins per axis (lower = chunkier, higher = finer)">
       <span id="event-count-${plot.id}" style="font-size:9px;color:var(--text2);flex-shrink:0;margin-left:2px"></span>
     </div>
     <div class="plot-canvas-wrap" style="position:relative">
@@ -2792,7 +2798,7 @@ function renderPlotCard(plot) {
 
   const canvas = document.getElementById(`canvas-${plot.id}`);
   canvas.addEventListener('click',     e => onCanvasClick(e, canvas, plot));
-  canvas.addEventListener('dblclick',  e => { if (plot.mode==='gate' && plot.gatePoints.length>=3) finalizeGate(plot); });
+  canvas.addEventListener('dblclick',  e => { if ((plot.mode==='gate' || plot.mode==='autocomp') && plot.gatePoints.length>=3) finalizeGate(plot); });
   canvas.addEventListener('contextmenu', e => { e.preventDefault(); showAxisRangeModal(plot, e.clientX, e.clientY); });
   canvas.addEventListener('mousedown', e => { _markInteraction(); onCanvasMouseDown(e, canvas, plot); });
   canvas.addEventListener('mousemove', e => { _markInteraction(); onCanvasMouseMove(e, canvas, plot); });
@@ -2825,14 +2831,14 @@ function buildAxisControls(plot) {
   };
 
   xDiv.innerHTML = `
-    <select id="x-sel-${pid}" onchange="changeAxis(${pid},'x',this.value)"
+    <select id="x-sel-${pid}" title="X axis parameter" onchange="changeAxis(${pid},'x',this.value)"
       style="font-size:10px;padding:2px 4px;background:#fff;color:#222;border:1px solid #ccc;border-radius:4px;max-width:140px">${pOpts(plot.xParam)}</select>
     <button id="btn-xlog-${pid}" onclick="toggleAxisScale(${pid},'x')" title="Cycle: LOG → LIN → ASINH(300)"
       style="font-size:9px;padding:2px 5px;border-radius:3px;cursor:pointer;${scaleBtnStyle(xScaleLabel)}">${xScaleLabel}</button>`;
 
   const yDiv = document.getElementById(`yaxis-ctrl-${pid}`);
   yDiv.innerHTML = `<div style="transform:rotate(-90deg);white-space:nowrap;display:flex;gap:3px;align-items:center">
-    <select id="y-sel-${pid}" onchange="changeAxis(${pid},'y',this.value)"
+    <select id="y-sel-${pid}" title="Y axis parameter" onchange="changeAxis(${pid},'y',this.value)"
       style="font-size:10px;padding:2px 4px;background:#fff;color:#222;border:1px solid #ccc;border-radius:4px;max-width:140px">${pOpts(plot.yParam)}</select>
     <button id="btn-ylog-${pid}" onclick="toggleAxisScale(${pid},'y')" title="Cycle: LOG → LIN → ASINH(300)"
       style="font-size:9px;padding:2px 5px;border-radius:3px;cursor:pointer;${scaleBtnStyle(yScaleLabel)}">${yScaleLabel}</button>
@@ -2856,6 +2862,9 @@ function setMode(id, mode) {
   plot._editGate = null; plot._dragGate = null; plot._dragVertex = -1;
   const txt =
     mode==='gate'   ? 'Click to add gate points' :
+    mode==='autocomp' ? 'Click points around a population that should be flat in this pair; click the first point to fit spillover' :
+    mode==='quad'   ? 'Click to place the quadrant crosshair; drag it afterwards with Select or Edit' :
+    mode==='rectgate' ? 'Drag to draw a rectangle' :
     mode==='edit'   ? 'Click a gate to select; drag to move' :
     mode==='delete' ? 'Click a gate to delete it' :
     mode==='zoom'   ? (plot.zoomX ? 'Zoomed — click ⛶ again to reset' : 'Drag to zoom in') :
@@ -2867,7 +2876,7 @@ function setMode(id, mode) {
 function setGlobalMode(mode) {
   globalMode = mode;
   // Update global toolbar button highlights
-  ['pan','gate','edit','delete','spill','zoom'].forEach(m => {
+  ['pan','gate','rectgate','quad','edit','delete','spill','autocomp'].forEach(m => {
     const btn = document.getElementById(`gbtn-${m}`);
     if (btn) btn.classList.toggle('active', m === mode);
   });
@@ -2888,7 +2897,7 @@ function updateGlobalModeFromSelection() {
   if (sel.length === 1) {
     const m = sel[0].mode;
     globalMode = m;
-    ['pan','gate','edit','delete','spill','zoom'].forEach(mode => {
+    ['pan','gate','rectgate','quad','edit','delete','spill','autocomp'].forEach(mode => {
       const btn = document.getElementById(`gbtn-${mode}`);
       if (btn) btn.classList.toggle('active', mode === m);
     });
@@ -2986,26 +2995,16 @@ function changePop(id, val, propagate=true) {
   }
 }
 
-function changeDotSize(id, val) {
-  const plot = plots.find(p=>p.id===id); if(!plot) return;
-  const newDotSize = parseFloat(val) / 2;
-
-  // If multiple plots are selected, apply change to all of them
+function changeBins(id, val) {
+  const plot = plots.find(p => p.id === id); if (!plot) return;
+  const bins = parseInt(val);
   const selectedPlots = getSelectedPlots();
-  const targetPlots = selectedPlots.length > 1 ? selectedPlots : [plot];
-
-  for (const targetPlot of targetPlots) {
-    targetPlot.dotSize = newDotSize;
-    const threshold = targetPlot._densityThreshold != null ? targetPlot._densityThreshold : _globalDensityThreshold;
-    const pop = populations.find(p => p.id === targetPlot.inputPop);
-    const inHeatmapMode = pop && threshold > 0 && popCount(pop) > threshold;
-    const label = document.getElementById(`res-val-${targetPlot.id}`);
-    if (label) label.textContent = targetPlot.dotSize + ' px';
-    const slider = document.getElementById(`res-${targetPlot.id}`);
-    if (slider) slider.title = inHeatmapMode
-      ? `Dot size ${targetPlot.dotSize}px — affects gate overlay dots only (population renders as heatmap)`
-      : `Dot size ${targetPlot.dotSize}px`;
-    renderPlot(targetPlot);
+  const targets = selectedPlots.length > 1 ? selectedPlots : [plot];
+  for (const t of targets) {
+    t.bins = bins;
+    const label = document.getElementById(`res-val-${t.id}`); if (label) label.textContent = bins;
+    const slider = document.getElementById(`res-${t.id}`); if (slider) slider.value = bins;
+    renderPlot(t);
   }
 }
 
@@ -3112,7 +3111,7 @@ function renderPlot(plot) {
       return bi - ai; // highest precedence (lowest index) goes to END
     });
 
-  const glOk = drawDotsWebGL(ctx, plot, tf, pad, pw, ph, pop, renderPop, data, nPar, allColoredGates, orderedGates);
+  const glOk = drawDensityNg2(ctx, plot, tf, pad, pw, ph, pop, renderPop, fcsFile, orderedGates);
 
   if (!glOk) {
     // 2D Canvas fallback
@@ -3169,16 +3168,14 @@ function renderPlot(plot) {
     ctx.restore();
   }
 
-  // ── 3. Grid (drawn on top of dots) ───────────────────────────────────────
+  // ── 3. Grid at the axis ticks (drawn on top of the density) ───────────────
+  const xTicks = _axisTicks(tf.xls, plot.xParam, tf.xRange.min, tf.xRange.max, pw, 52);
+  const yTicks = _axisTicks(tf.yls, plot.yParam, tf.yRange.min, tf.yRange.max, ph, 26);
   if (document.getElementById('showgrid').checked) {
-    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
     ctx.lineWidth = 1;
-    for (let i = 0; i <= 5; i++) {
-      const x = pad.left + i*pw/5;
-      const y = pad.top  + i*ph/5;
-      ctx.beginPath(); ctx.moveTo(x, pad.top);    ctx.lineTo(x, pad.top+ph); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(pad.left, y);   ctx.lineTo(pad.left+pw, y); ctx.stroke();
-    }
+    xTicks.forEach(k => { const x = Math.round(pad.left + k.t * pw) + 0.5; ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + ph); ctx.stroke(); });
+    yTicks.forEach(k => { const y = Math.round(pad.top + ph - k.t * ph) + 0.5; ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + pw, y); ctx.stroke(); });
   }
 
   // ── 4. Overlays: clip to plot area ────────────────────────────────────────
@@ -3191,6 +3188,7 @@ function renderPlot(plot) {
   populations.forEach(pop2 => {
     if (!pop2.gateInfo || pop2.parentId !== plot.inputPop) return;
     if (pop2.gateInfo.xParam !== plot.xParam || pop2.gateInfo.yParam !== plot.yParam) return;
+    if (pop2.gateInfo.quad) return;   // quadrants are drawn as one crosshair below
     const isDragging = plot._dragGate === pop2.id;
     const pts = isDragging ? plot._dragPts : pop2.gateInfo.rawPts;
     const isEditing = plot._editGate === pop2.id;
@@ -3215,6 +3213,36 @@ function renderPlot(plot) {
     ctx.font = 'bold 11px monospace';
     ctx.fillText(pop2.name, tf.dataToCanvasX(p0.rx)+4, tf.dataToCanvasY(p0.ry)-4);
   });
+
+  // Quadrant crosshairs: one per group, with each quadrant's name and % of parent in its corner
+  {
+    const seen = new Set();
+    populations.forEach(g => {
+      const qi = g.gateInfo && g.gateInfo.quad;
+      if (!qi || seen.has(qi.gid) || g.parentId !== plot.inputPop) return;
+      if (g.gateInfo.xParam !== plot.xParam || g.gateInfo.yParam !== plot.yParam) return;
+      seen.add(qi.gid);
+      const cxp = tf.dataToCanvasX(qi.cx), cyp = tf.dataToCanvasY(qi.cy);
+      const active = plot._dragQuad === qi.gid;
+      ctx.strokeStyle = '#222'; ctx.lineWidth = active ? 2.5 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cxp, pad.top); ctx.lineTo(cxp, pad.top + ph);
+      ctx.moveTo(pad.left, cyp); ctx.lineTo(pad.left + pw, cyp);
+      ctx.stroke();
+      ctx.fillStyle = '#222'; ctx.fillRect(cxp - 3, cyp - 3, 6, 6);
+      const parentN = popCount(populations.find(p => p.id === g.parentId) || g) || 1;
+      ctx.font = 'bold 10px monospace';
+      populations.filter(m => m.gateInfo && m.gateInfo.quad && m.gateInfo.quad.gid === qi.gid).forEach(m => {
+        const q = m.gateInfo.quad.q;
+        const label = `${m.name} ${(100 * m.indices.length / parentN).toFixed(1)}%`;
+        ctx.textAlign = (q === 1 || q === 2) ? 'right' : 'left';
+        const lx = (q === 1 || q === 2) ? pad.left + pw - 4 : pad.left + 4;
+        const ly = (q === 1 || q === 4) ? pad.top + 12 : pad.top + ph - 6;
+        ctx.fillStyle = '#222'; ctx.fillText(label, lx, ly);
+      });
+      ctx.textAlign = 'left';
+    });
+  }
 
   // In-progress gate
   if (plot.gatePoints.length > 0) {
@@ -3265,32 +3293,22 @@ function renderPlot(plot) {
   ctx.strokeRect(pad.left, pad.top, pw, ph);
 
   // ── 6. Tick labels ────────────────────────────────────────────────────────
-  const xR = tf.xRange, yR = tf.yRange;
-  const N = 5;
-  ctx.font = '9px monospace';
   ctx.fillStyle = '#fff';
-
-  ctx.textAlign = 'center';
-  for (let i = 0; i <= N; i++) {
-    const dispVal = xR.min + i*(xR.max-xR.min)/N;
-    const cx = tf.dispToCanvasX(dispVal);
-    const rawVal = fromDisplay(dispVal, plot.xParam, tf.xls);
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx, pad.top+ph); ctx.lineTo(cx, pad.top+ph+4); ctx.stroke();
-    ctx.fillText(fmtTick(rawVal, tf.xls), cx, pad.top+ph+14);
-  }
-
-  ctx.textAlign = 'right';
-  for (let i = 0; i <= N; i++) {
-    const dispVal = yR.min + i*(yR.max-yR.min)/N;
-    const cy = tf.dispToCanvasY(dispVal);
-    const rawVal = fromDisplay(dispVal, plot.yParam, tf.yls);
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(pad.left, cy); ctx.lineTo(pad.left-4, cy); ctx.stroke();
-    ctx.fillText(fmtTick(rawVal, tf.yls), pad.left-6, cy+3);
-  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+  xTicks.forEach(k => {
+    const cx = pad.left + k.t * pw;
+    ctx.beginPath(); ctx.moveTo(cx, pad.top + ph); ctx.lineTo(cx, pad.top + ph + 4); ctx.stroke();
+    _drawTickLabel(ctx, k, cx, pad.top + ph + 16, 'center');
+  });
+  yTicks.forEach(k => {
+    const cy = pad.top + ph - k.t * ph;
+    ctx.beginPath(); ctx.moveTo(pad.left, cy); ctx.lineTo(pad.left - 4, cy); ctx.stroke();
+    _drawTickLabel(ctx, k, pad.left - 7, cy + 3, 'right');
+  });
+  ctx.textAlign = 'left';
 
   document.getElementById(`event-count-${plot.id}`).textContent = `${popCount(pop).toLocaleString()} events`;
+  updateCofactorHandles(plot);
 
   // ── Spill-mode badge: show the spillover coefficient being adjusted ────────
   if (plot._spillDragging && getFileForPlot(plot)) {
@@ -3339,6 +3357,91 @@ function renderPlot(plot) {
       ctx.restore();
     }
   }
+}
+
+// ─── FlowNg2-style axis ticks ────────────────────────────────────────────────
+// Log/asinh axes label a gridline at each power of ten (asinh also labels zero and the negative
+// decades); linear axes use 1/2/5 x 10^k steps. Labels print as mantissa x 10^k with a raised exponent.
+const TICK_FONT = '10px system-ui, sans-serif';
+const TICK_SUP_FONT = '7px system-ui, sans-serif';
+
+function _tickDivisions(extentPx, minSpacingPx) {
+  return Math.min(5, Math.max(2, Math.floor(extentPx / minSpacingPx)));
+}
+
+// scale: 'log' | 'asinh' | 'lin'. Returns [{ t (0..1 along the axis), raw, kind }]
+function _axisTicks(scale, paramIdx, dMin, dMax, extentPx, minSpacingPx) {
+  const span = dMax - dMin;
+  if (!(span > 0)) return [];
+  const toT = raw => (toDisplay(raw, paramIdx, scale) - dMin) / span;
+  if (scale === 'lin') {
+    const roughStep = span / _tickDivisions(extentPx, minSpacingPx);
+    const mag = 10 ** Math.floor(Math.log10(roughStep));
+    const norm = roughStep / mag;
+    const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+    const ticks = [];
+    for (let raw = Math.ceil(dMin / step) * step; raw <= dMax + step * 1e-6; raw += step) {
+      ticks.push({ t: (raw - dMin) / span, raw: Math.abs(raw) < step * 1e-9 ? 0 : raw });
+    }
+    const maxAbs = Math.max(0, ...ticks.map(k => Math.abs(k.raw)));
+    if (maxAbs >= 10000 || (maxAbs > 0 && maxAbs < 0.01)) ticks.forEach(k => { if (k.raw !== 0) k.kind = 'sci'; });
+    return ticks;
+  }
+  const EPS = 1e-6, cands = [];
+  if (scale === 'asinh') cands.push({ t: toT(0), raw: 0 });
+  const rawMin = fromDisplay(dMin, paramIdx, scale), rawMax = fromDisplay(dMax, paramIdx, scale);
+  const addDecades = (lo, hi, sign) => {
+    if (hi <= 0) return;
+    const kLo = Math.floor(Math.log10(Math.max(lo, EPS))), kHi = Math.ceil(Math.log10(Math.max(hi, EPS)));
+    for (let k = kLo; k <= kHi; k++) {
+      const raw = sign * 10 ** k, t = toT(raw);
+      if (t >= -EPS && t <= 1 + EPS) cands.push({ t: Math.min(Math.max(t, 0), 1), raw, kind: 'decade' });
+    }
+  };
+  addDecades(Math.max(rawMin, 0), Math.max(rawMax, 0), 1);
+  if (scale === 'asinh') addDecades(Math.max(-rawMax, 0), Math.max(-rawMin, 0), -1);
+  cands.sort((a, b) => a.t - b.t);
+  const px = cands.map(c => c.t * extentPx);
+  const zeroIdx = cands.findIndex(c => c.raw === 0);
+  const anchor = zeroIdx >= 0 ? zeroIdx : 0;
+  const kept = new Set([anchor]);
+  let last = px[anchor];
+  for (let i = anchor + 1; i < cands.length; i++) if (px[i] - last >= minSpacingPx) { kept.add(i); last = px[i]; }
+  last = px[anchor];
+  for (let i = anchor - 1; i >= 0; i--) if (last - px[i] >= minSpacingPx) { kept.add(i); last = px[i]; }
+  const out = [...kept].sort((a, b) => a - b).map(i => cands[i]);
+  if (out.length >= 2) return out;
+  // Fallback: even divisions
+  const n = _tickDivisions(extentPx, minSpacingPx);
+  return Array.from({ length: n + 1 }, (_, i) => ({ t: i / n, raw: fromDisplay(dMin + (i / n) * span, paramIdx, scale) }));
+}
+
+function _formatTick(raw) {
+  if (raw === 0) return '0';
+  const a = Math.abs(raw);
+  if (a < 0.01 || a >= 100000) return raw.toExponential(1);
+  if (a >= 1000) return raw.toFixed(0);
+  if (a >= 10) return raw.toFixed(1);
+  return raw.toFixed(2);
+}
+
+// Draws one tick label; power-of-ten kinds get a real superscript exponent.
+function _drawTickLabel(ctx, tick, x, y, align) {
+  if (tick.kind !== 'decade' && tick.kind !== 'sci') {
+    ctx.font = TICK_FONT; ctx.textAlign = align; ctx.fillText(_formatTick(tick.raw), x, y); return;
+  }
+  const sign = tick.raw < 0 ? '-' : '', abs = Math.abs(tick.raw);
+  let exp = Math.floor(Math.log10(abs));
+  let man = Math.round((abs / 10 ** exp) * 100) / 100;
+  if (man >= 10) { man = 1; exp += 1; }
+  const manText = man === 1 && tick.kind === 'decade' ? '' : `${man}×`;
+  if (exp === 0) { ctx.font = TICK_FONT; ctx.textAlign = align; ctx.fillText(`${sign}${man}`, x, y); return; }
+  const base = `${sign}${manText}10`, expText = String(exp);
+  ctx.font = TICK_FONT; const bw = ctx.measureText(base).width;
+  ctx.font = TICK_SUP_FONT; const ew = ctx.measureText(expText).width;
+  const total = bw + ew, x0 = align === 'left' ? x : align === 'right' ? x - total : x - total / 2;
+  ctx.font = TICK_FONT; ctx.textAlign = 'left'; ctx.fillText(base, x0, y);
+  ctx.font = TICK_SUP_FONT; ctx.fillText(expText, x0 + bw, y - 4);
 }
 
 function fmtTick(v, scale) {
@@ -3696,6 +3799,145 @@ function hexToRgba(hex) {
 function hexToRgba255(hex) {
   const v = parseInt(hex.slice(1), 16);
   return [v>>16&255, v>>8&255, v&255];
+}
+
+
+// ─── FlowNg2-style density renderer ──────────────────────────────────────────
+// Every plot is a binned density. Each bin is coloured by the populations that own its
+// events (count-weighted blend of their colours, in linear light), and the ramp runs from
+// that base colour toward white as the count rises. Populations with a "+" boost are
+// additionally drawn as exact dots on top.
+const NG2_RAMP_GAMMA = 2.5;
+const NG2_MIN_SATURATION = 0.55;
+const NG2_UNGATED_BASE = 0.38;   // achromatic base for an ungated view
+const NG2_NO_COLOR = 0.58;       // achromatic base for a "No Color" gate
+const NG2_MAX_CLASSES = 31;
+
+function _ng2Hsl(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (d === 0) return { h: 0, s: 0, l };
+  const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  let h;
+  if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (mx === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+  return { h, s, l };
+}
+function _ng2Hue(p, q, t) {
+  if (t < 0) t += 1; if (t > 1) t -= 1;
+  if (t < 1/6) return p + (q - p) * 6 * t;
+  if (t < 1/2) return q;
+  if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+  return p;
+}
+function _ng2Rgb(h, s, l) {
+  if (s === 0) return [l, l, l];
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  return [_ng2Hue(p, q, h + 1/3), _ng2Hue(p, q, h), _ng2Hue(p, q, h - 1/3)];
+}
+const _ng2ToLin = c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+const _ng2ToSrgb = c => c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+
+// Hex colour -> linear-light ramp anchor (saturation floored unless achromatic).
+function _ng2Anchor(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  const { h, s, l } = _ng2Hsl(((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255);
+  return _ng2Rgb(h, s === 0 ? 0 : Math.max(NG2_MIN_SATURATION, s), l).map(_ng2ToLin);
+}
+const _ng2GrayAnchor = g => { const c = _ng2ToLin(g); return [c, c, c]; };
+
+function drawDensityNg2(ctx, plot, tf, pad, pw, ph, pop, renderPop, fcsFile, orderedGates) {
+  const { data, nPar, nEvents } = fcsFile;
+  const nb = Math.max(16, Math.min(512, plot.bins || 256));
+  const xr = tf.xRange, yr = tf.yRange;
+  const xSpan = xr.max - xr.min, ySpan = yr.max - yr.min;
+
+  // Plot area background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(pad.left, pad.top, pw, ph);
+  if (!(xSpan > 0) || !(ySpan > 0)) return true;
+
+  // Owning class per event: later (higher-precedence) gates overwrite earlier ones.
+  // Deepest gate wins; among equal depth the existing colour-precedence order decides.
+  const depthOf = g => { let d = 0, c = g; while (c && c.parentId != null && d < 64) { c = populations.find(q => q.id === c.parentId); d++; } return d; };
+  const classes = orderedGates
+    .filter(g => g.id !== renderPop.id)
+    .map((g, i) => ({ g, i, d: depthOf(g) }))
+    .sort((a, b) => a.d - b.d || a.i - b.i)
+    .map(o => o.g)
+    .slice(-NG2_MAX_CLASSES);
+  const owner = new Int8Array(nEvents).fill(-1);
+  classes.forEach((g, k) => { const ix = g.indices; for (let i = 0; i < ix.length; i++) owner[ix[i]] = k; });
+  const viewBase = (renderPop.id !== 0 && !renderPop._isAll && renderPop.color && !renderPop.noColor)
+    ? _ng2Anchor(renderPop.color) : _ng2GrayAnchor(NG2_UNGATED_BASE);
+  const anchors = classes.map(g => (g.noColor || !g.color) ? _ng2GrayAnchor(NG2_NO_COLOR) : _ng2Anchor(g.color));
+  anchors.push(viewBase);                 // plane K = ungated remainder
+  const planes = anchors.length;
+
+  const counts = new Float32Array(nb * nb * planes);
+  const totals = new Float32Array(nb * nb);
+  const n = popCount(renderPop);
+  const xs = tf.xls, ys = tf.yls, xp = plot.xParam, yp = plot.yParam;
+  const xk = nb / xSpan, yk = nb / ySpan;
+  for (let i = 0; i < n; i++) {
+    const e = popGetIndex(renderPop, i);
+    const bx = Math.floor((toDisplay(data[e * nPar + xp], xp, xs) - xr.min) * xk);
+    const by = Math.floor((toDisplay(data[e * nPar + yp], yp, ys) - yr.min) * yk);
+    if (bx < 0 || bx >= nb || by < 0 || by >= nb) continue;
+    const cell = by * nb + bx;
+    const o = owner[e];
+    counts[cell * planes + (o < 0 ? planes - 1 : o)]++;
+    totals[cell]++;
+  }
+  let maxTotal = 0;
+  for (let c = 0; c < totals.length; c++) if (totals[c] > maxTotal) maxTotal = totals[c];
+
+  const img = new ImageData(nb, nb);
+  const px = img.data, logMax = Math.log1p(maxTotal) || 1;
+  for (let by = 0; by < nb; by++) {
+    for (let bx = 0; bx < nb; bx++) {
+      const cell = by * nb + bx, tot = totals[cell];
+      if (!tot) continue;
+      let r = 0, g = 0, b = 0;
+      for (let k = 0; k < planes; k++) {
+        const c = counts[cell * planes + k]; if (!c) continue;
+        const a = anchors[k]; r += a[0] * c; g += a[1] * c; b += a[2] * c;
+      }
+      r /= tot; g /= tot; b /= tot;
+      const ramp = Math.pow(Math.log1p(tot) / logMax, NG2_RAMP_GAMMA);
+      r += (1 - r) * ramp; g += (1 - g) * ramp; b += (1 - b) * ramp;
+      const o = ((nb - 1 - by) * nb + bx) * 4;     // canvas y runs top-down
+      px[o] = Math.round(_ng2ToSrgb(r) * 255);
+      px[o + 1] = Math.round(_ng2ToSrgb(g) * 255);
+      px[o + 2] = Math.round(_ng2ToSrgb(b) * 255);
+      px[o + 3] = 255;
+    }
+  }
+  const off = document.createElement('canvas'); off.width = nb; off.height = nb;
+  off.getContext('2d').putImageData(img, 0, 0);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(pad.left, pad.top, pw, ph); ctx.clip();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, pad.left, pad.top, pw, ph);
+
+  // Emphasised ("+") populations as exact dots, drawn last.
+  const ds = plot.dotSize || 1.5;
+  const dotPops = [...classes, renderPop].filter(g => Math.max(g.emphasized ? 4 : 0, g.dotBoost || 0) > 0);
+  dotPops.forEach(g => {
+    const boost = Math.max(g.emphasized ? 4 : 0, g.dotBoost || 0);
+    const rad = (ds + boost) / 2;
+    ctx.fillStyle = (g.noColor || !g.color || g._isAll) ? 'rgba(90,90,90,0.9)' : g.color;
+    const ix = popIndicesArray(g), step = Math.max(1, Math.ceil(ix.length / 30000));
+    ctx.beginPath();
+    for (let i = 0; i < ix.length; i += step) {
+      const e = ix[i];
+      const cx = tf.dataToCanvasX(data[e * nPar + xp]), cy = tf.dataToCanvasY(data[e * nPar + yp]);
+      ctx.moveTo(cx + rad, cy); ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    }
+    ctx.fill();
+  });
+  ctx.restore();
+  return true;
 }
 
 function drawDotsWebGL(ctx, plot, tf, pad, pw, ph, pop, renderPop, data, nPar, allColoredGates, orderedGates) {
@@ -4248,6 +4490,13 @@ function canvasCoords(e, canvas) {
 function hitTestGate(cx, cy, gate, tf, plot) {
   // Returns: { type: 'vertex', index } | { type: 'body' } | null
   if (!gate.gateInfo) return null;
+  if (gate.gateInfo.quad) {
+    // Quadrant gates are grabbed by their crosshair only (their rectangles span the whole plot).
+    const q = gate.gateInfo.quad;
+    const qx = tf.dataToCanvasX(q.cx), qy = tf.dataToCanvasY(q.cy);
+    if (Math.hypot(cx - qx, cy - qy) < 10 || Math.abs(cx - qx) < 4 || Math.abs(cy - qy) < 4) return { type: 'quad' };
+    return null;
+  }
   const pts = gate.gateInfo.rawPts;
   // Check vertices first (8px hit radius)
   for (let i = 0; i < pts.length; i++) {
@@ -4280,6 +4529,7 @@ function onCanvasMouseDown(e, canvas, plot) {
       const initVal = zone === 'top'
         ? _spillFile.spillMatrix[iy][ix]   // Y→X: how much Y spills into X detector
         : _spillFile.spillMatrix[ix][iy];  // X→Y: how much X spills into Y detector
+      pushUndo();
       plot._spillDragging    = true;
       plot._spillZone        = zone;
       plot._spillDragStart   = { cx, cy };
@@ -4306,7 +4556,7 @@ function onCanvasMouseDown(e, canvas, plot) {
     plot._zoomRect  = { x: cx, y: cy, w: 0, h: 0 };
     return;
   }
-  if (plot.mode !== 'edit') return;
+  if (plot.mode !== 'edit' && plot.mode !== 'pan') return;
   const { cx, cy } = canvasCoords(e, canvas);
   const tf = plot._tf; if (!tf) return;
 
@@ -4324,12 +4574,20 @@ function onCanvasMouseDown(e, canvas, plot) {
   for (const gate of childGates) {
     const hit = hitTestGate(cx, cy, gate, tf, plot);
     if (!hit) continue;
+    if (hit.type === 'quad') {
+      pushUndo();
+      plot._dragQuad = gate.gateInfo.quad.gid;
+      e.preventDefault();
+      renderPlot(plot);
+      return;
+    }
+    pushUndo();
     plot._editGate  = gate.id;
     plot._dragGate  = gate.id;
     plot._dragStart = { cx, cy };
     plot._dragRawStart = gate.gateInfo.rawPts.map(p => ({...p}));
     plot._dragPts   = gate.gateInfo.rawPts.map(p => ({...p}));
-    plot._dragVertex = hit.type === 'vertex' ? hit.index : -1;
+    plot._dragVertex = (hit.type === 'vertex' && plot.mode === 'edit') ? hit.index : -1;
     e.preventDefault();
     renderPlot(plot);
     return;
@@ -4381,7 +4639,19 @@ function onCanvasMouseMove(e, canvas, plot) {
     renderPlot(plot);
     return;
   }
-  if (plot.mode !== 'edit' || !plot._dragGate) return;
+  if (plot._dragQuad != null) {
+    const { cx, cy } = canvasCoords(e, canvas);
+    const tf = plot._tf; if (!tf) return;
+    _quadSetCenter(plot._dragQuad,
+      fromDisplay(tf.canvasToDispX(cx), plot.xParam, tf.xls),
+      fromDisplay(tf.canvasToDispY(cy), plot.yParam, tf.yls), true);
+    if (!plot._rafPending) {
+      plot._rafPending = true;
+      requestAnimationFrame(() => { plot._rafPending = false; renderAllPlots(); });
+    }
+    return;
+  }
+  if ((plot.mode !== 'edit' && plot.mode !== 'pan') || !plot._dragGate) return;
   const { cx, cy } = canvasCoords(e, canvas);
   const tf = plot._tf; if (!tf) return;
 
@@ -4446,7 +4716,7 @@ function onCanvasHover(e, canvas, plot) {
     return;
   }
 
-  if (plot.mode !== 'edit' || plot._dragGate) return;
+  if ((plot.mode !== 'edit' && plot.mode !== 'pan') || plot._dragGate || plot._dragQuad != null) return;
   const { cx, cy } = canvasCoords(e, canvas);
   const tf = plot._tf; if (!tf) return;
   const childGates = populations.filter(p =>
@@ -4456,7 +4726,7 @@ function onCanvasHover(e, canvas, plot) {
   for (const gate of childGates) {
     const hit = hitTestGate(cx, cy, gate, tf, plot);
     if (!hit) continue;
-    canvas.style.cursor = hit.type === 'vertex' ? 'crosshair' : 'move';
+    canvas.style.cursor = (hit.type === 'vertex' && plot.mode === 'edit') ? 'crosshair' : 'move';
     return;
   }
   canvas.style.cursor = 'default';
@@ -4482,7 +4752,7 @@ function onCanvasMouseUp(e, canvas, plot) {
       const newMatrix = _sfUp.spillMatrix.map(row => [...row]);
       if (plot._spillZone === 'top')  newMatrix[iy][ix] = plot._spillCurrentVal;
       else                            newMatrix[ix][iy] = plot._spillCurrentVal;
-      if (recomputeCompensation(newMatrix, plot.fileId)) renderAllPlots();
+      if (recomputeCompensation(newMatrix, plot.fileId)) reevaluateAllGates(_sfUp);
     }
     plot._spillDragging   = false;
     plot._spillZone       = null;
@@ -4549,7 +4819,18 @@ function onCanvasMouseUp(e, canvas, plot) {
     return;
   }
 
+  if (plot._dragQuad != null) {
+    const gid = plot._dragQuad;
+    plot._dragQuad = null;
+    _quadGroup(gid).forEach(g => { evalGateAsync(g); getDescendantGates(g.id).forEach(d => evalGateAsync(d)); });
+    renderPopList(); updateAllPopSelects(); renderAllPlots();
+    return;
+  }
   if (!plot._dragGate) return;
+  if (plot._dragPts && plot._dragRawStart &&
+      JSON.stringify(plot._dragPts) === JSON.stringify(plot._dragRawStart) && _undoStack.length) {
+    _undoStack.pop(); updateUndoButtons();   // a click without movement isn't an edit
+  }
   // Full eval on release — dispatch to worker so the main thread stays unblocked.
   // evalGateAsync falls back to synchronous evalGate if the worker isn't ready.
   const gate = populations.find(p => p.id === plot._dragGate);
@@ -4575,7 +4856,16 @@ function onCanvasClick(e, canvas, plot) {
     for (const gate of childGates) {
       const hit = hitTestGate(cx, cy, gate, tf, plot);
       if (!hit) continue;
+      if (hit.type === 'quad') {
+        if (!confirm('Delete this quadrant (Q1-Q4) and all its children?')) return;
+        pushUndo();
+        _quadGroup(gate.gateInfo.quad.gid).forEach(g => deleteGateAndDescendants(g.id));
+        renderPopList(); updateAllPopSelects(); renderAllPlots();
+        showToast('Deleted quadrant');
+        return;
+      }
       if (!confirm(`Delete gate "${gate.name}" and all its children?`)) return;
+      pushUndo();
       deleteGateAndDescendants(gate.id);
       renderPopList(); updateAllPopSelects(); renderAllPlots();
       showToast(`Deleted "${gate.name}"`);
@@ -4583,7 +4873,14 @@ function onCanvasClick(e, canvas, plot) {
     }
     return;
   }
-  if (plot.mode !== 'gate') return;
+  if (plot.mode === 'quad') {
+    const { cx, cy } = canvasCoords(e, canvas);
+    const tf = plot._tf; if (!tf) return;
+    createQuadrant(plot, fromDisplay(tf.canvasToDispX(cx), plot.xParam, tf.xls), fromDisplay(tf.canvasToDispY(cy), plot.yParam, tf.yls));
+    setGlobalMode('pan');
+    return;
+  }
+  if (plot.mode !== 'gate' && plot.mode !== 'autocomp') return;
   const rect = canvas.getBoundingClientRect();
   // Scale mouse → canvas pixels
   const cx = (e.clientX - rect.left) * canvas.width / rect.width;
@@ -4613,10 +4910,163 @@ function onCanvasClick(e, canvas, plot) {
   renderPlot(plot);
 }
 
+// Quadrant gates are exact half-plane tests in display space (a polygon can't express
+// "everything below zero" on a log axis). q: 1=UR 2=LR 3=LL 4=UL, clockwise from upper right.
+function _quadInside(q, dx, dy, cdx, cdy) {
+  if (q === 1) return dx >= cdx && dy >= cdy;
+  if (q === 2) return dx >= cdx && dy <  cdy;
+  if (q === 3) return dx <  cdx && dy <  cdy;
+  return dx < cdx && dy >= cdy;
+}
+const _QUAD_BIG = 1e12;
+function _quadPts(q, cx, cy) {
+  const B = _QUAD_BIG;
+  const [x0, x1] = (q === 1 || q === 2) ? [cx, B] : [-B, cx];
+  const [y0, y1] = (q === 1 || q === 4) ? [cy, B] : [-B, cy];
+  return [{rx: x0, ry: y0}, {rx: x1, ry: y0}, {rx: x1, ry: y1}, {rx: x0, ry: y1}];
+}
+
 // Fast gate eval for use during live drag — runs PIP on the LOD subsample (~100K
 // events) rather than the full population. Because renderAllPlots() during drag
 // already uses the same LOD subsample, the colored-dot overlay matches what is
 // visible on screen. Falls back to full evalGate if no LOD sample exists yet.
+function _quadGroup(gid) {
+  return populations.filter(p => p.gateInfo && p.gateInfo.quad && p.gateInfo.quad.gid === gid);
+}
+
+// Moves a quadrant crosshair: all four gates follow one centre.
+function _quadSetCenter(gid, rx, ry, lod) {
+  _quadGroup(gid).forEach(g => {
+    const q = g.gateInfo.quad;
+    q.cx = rx; q.cy = ry;
+    g.gateInfo.rawPts = _quadPts(q.q, rx, ry);
+    if (lod) { evalGateLOD(g); getDescendantGates(g.id).forEach(d => evalGateLOD(d)); }
+  });
+}
+
+function createQuadrant(plot, rx, ry) {
+  const fcsFile = getFileForPlot(plot); if (!fcsFile) return;
+  _contextFileId = fcsFile.fileId; _paramRanges = fcsFile.paramRanges;
+  pushUndo();
+  const xScale = plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin';
+  const yScale = plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin';
+  const gid = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const taken = new Set(fcsFile.populations.map(p => p.name));
+  const made = [];
+  for (let q = 1; q <= 4; q++) {
+    let name = `Q${q}`; for (let n = 2; taken.has(name); n++) name = `Q${q} (${n})`;
+    taken.add(name);
+    const color = GATE_COLORS[fcsFile.populations.filter(p => !p._isAll).length % GATE_COLORS.length];
+    const pop = {
+      id: popIdCounter++, name, color, indices: new Int32Array(0),
+      parentId: plot.inputPop, fileId: fcsFile.fileId,
+      gateInfo: { rawPts: _quadPts(q, rx, ry), xParam: plot.xParam, yParam: plot.yParam, xScale, yScale,
+                  quad: { gid, q, cx: rx, cy: ry } }
+    };
+    fcsFile.populations.push(pop);
+    fcsFile.colorPrecedence.unshift(pop.id);
+    made.push(pop);
+  }
+  rebuildPopulationsView();
+  renderPopList(); updateAllPopSelects(); renderAllPlots();
+  made.forEach(g => evalGateAsync(g));
+}
+
+// ─── ARCSINH COFACTOR HANDLES ────────────────────────────────────────────────
+// A selected plot in Select mode shows a small marker on each arcsinh axis. Dragging it sets the
+// channel's cofactor (geometric scale, 1 to 100,000) with the zero point pinned at 20% of the
+// axis; ticks and gate outlines follow live, gates are re-evaluated on release, and every plot of
+// that channel follows because the cofactor is per file and channel. Esc mid-drag puts it back.
+const CF_MIN = 1, CF_MAX = 100000, CF_DECADES = 5;
+const _cfToFrac = c => Math.log10(Math.min(Math.max(c, CF_MIN), CF_MAX)) / CF_DECADES;
+function _fracToCf(f) {
+  const c = 10 ** (Math.min(Math.max(f, 0), 1) * CF_DECADES);
+  return Math.min(Math.max(c >= 10 ? Math.round(c) : Math.round(c * 100) / 100, CF_MIN), CF_MAX);
+}
+function _asinhZeroFloor(cf, max) {
+  const dMax = Math.asinh(max / cf) * LOG10E;
+  return Math.sinh(-(0.2 / 0.8) * dMax / LOG10E) * cf;
+}
+let _cfDrag = null;
+
+function updateCofactorHandles(plot) {
+  const card = document.getElementById(`plot-card-${plot.id}`);
+  const canvas = document.getElementById(`canvas-${plot.id}`);
+  const wrap = card && card.querySelector('.plot-canvas-wrap');
+  if (!wrap || !canvas) return;
+  const show = card.classList.contains('selected') && plot.mode === 'pan' && plot._pad;
+  const f = getFileForPlot(plot);
+  ['x', 'y'].forEach(axis => {
+    let h = wrap.querySelector(`.cf-handle-${axis}`);
+    const asinh = axis === 'x' ? plot.xAsinh : plot.yAsinh;
+    if (!show || !asinh || !f) { if (h) h.style.display = 'none'; return; }
+    if (!h) {
+      h = document.createElement('div');
+      h.className = `cf-handle cf-handle-${axis}`;
+      h.title = "Drag to set this axis's arcsinh cofactor";
+      h.innerHTML = '<i></i>';
+      h.addEventListener('mousedown', e => beginCofactorDrag(plot, axis, e));
+      h.addEventListener('click', e => e.stopPropagation());
+      wrap.appendChild(h);
+    }
+    _contextFileId = f.fileId; _paramRanges = f.paramRanges;
+    const param = axis === 'x' ? plot.xParam : plot.yParam;
+    const k = canvas.clientWidth / canvas.width, pad = plot._pad;
+    const frac = _cfToFrac(getAsinhCofactor(param));
+    h.style.display = 'block';
+    if (axis === 'x') { h.style.left = `${(pad.left + frac * plot._pw) * k}px`; h.style.top = `${(pad.top + plot._ph) * k}px`; }
+    else              { h.style.left = `${pad.left * k}px`; h.style.top = `${(pad.top + (1 - frac) * plot._ph) * k}px`; }
+  });
+}
+
+function beginCofactorDrag(plot, axis, e) {
+  if (e.button !== 0) return;
+  e.preventDefault(); e.stopPropagation();
+  const f = getFileForPlot(plot); if (!f) return;
+  _contextFileId = f.fileId; _paramRanges = f.paramRanges;
+  const param = axis === 'x' ? plot.xParam : plot.yParam;
+  const prev = f.paramRanges.has(param) ? { ...f.paramRanges.get(param) } : null;
+  pushUndo();
+  _cfDrag = { plot, axis, f, param, prev, frozenMax: getRawRangeGlobal(param, 'asinh').rawMax, changed: false };
+  plot._lodActive = true;
+  const canvas = document.getElementById(`canvas-${plot.id}`);
+  const move = ev => {
+    const r = canvas.getBoundingClientRect(), pad = plot._pad;
+    const cx = (ev.clientX - r.left) * canvas.width / r.width, cy = (ev.clientY - r.top) * canvas.height / r.height;
+    const frac = axis === 'x' ? (cx - pad.left) / plot._pw : 1 - (cy - pad.top) / plot._ph;
+    const cf = _fracToCf(frac);
+    const pr = { ...(f.paramRanges.get(param) || {}), asinhCofactor: cf, rawMax: _cfDrag.frozenMax,
+                 rawMin: _asinhZeroFloor(cf, _cfDrag.frozenMax) };
+    delete pr.minPercentile;
+    f.paramRanges.set(param, pr);
+    _cfDrag.changed = true;
+    if (!_cfDrag.raf) _cfDrag.raf = requestAnimationFrame(() => { if (_cfDrag) _cfDrag.raf = 0; markAllDirty(); renderAllPlots(); });
+  };
+  const finish = commit => {
+    window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+    window.removeEventListener('keydown', key, true);
+    const d = _cfDrag; _cfDrag = null; if (!d) return;
+    plot._lodActive = false;
+    if (commit && d.changed) {
+      invalidateSpatialCache(false);
+      reevaluateAllGates(f);
+    } else {
+      if (d.prev) f.paramRanges.set(param, d.prev); else f.paramRanges.delete(param);
+      if (!commit || !d.changed) { _undoStack.pop(); updateUndoButtons(); }
+      markAllDirty(); renderAllPlots();
+    }
+    plots.forEach(updateCofactorHandles);
+  };
+  const up = () => finish(true);
+  const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); } };
+  window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+  window.addEventListener('keydown', key, true);
+}
+
+// Handles follow selection and mode changes (both only touch class names).
+new MutationObserver(() => plots.forEach(updateCofactorHandles))
+  .observe(document.getElementById('canvas-area'), { attributes: true, attributeFilter: ['class'], subtree: true });
+
 function evalGateLOD(gate) {
   const pop = populations.find(p => p.id === gate.parentId);
   if (!pop) return;
@@ -4652,6 +5102,8 @@ function evalGateLOD(gate) {
     if (pt.dy < dyMin) dyMin = pt.dy; if (pt.dy > dyMax) dyMax = pt.dy;
   }
 
+  const quadC = gate.gateInfo.quad
+    ? { dx: toDisplay(gate.gateInfo.quad.cx, xP, xScale), dy: toDisplay(gate.gateInfo.quad.cy, yP, yScale) } : null;
   const n = lodIndices.length;
   const result = [];
   for (let li = 0; li < n; li++) {
@@ -4664,7 +5116,8 @@ function evalGateLOD(gate) {
     if (ySC === 1) dy = Math.log10(dy < 1 ? 1 : dy); else if (ySC === 2) dy = Math.asinh(dy / yCF) * LOG10E;
     if (dy < dyMin || dy > dyMax) continue;
     let inside = false;
-    for (let i = 0, j = nPts - 1; i < nPts; j = i++) {
+    if (quadC) inside = _quadInside(gate.gateInfo.quad.q, dx, dy, quadC.dx, quadC.dy);
+    else for (let i = 0, j = nPts - 1; i < nPts; j = i++) {
       const xi = dispPts[i].dx, yi = dispPts[i].dy;
       const xj = dispPts[j].dx, yj = dispPts[j].dy;
       if (((yi > dy) !== (yj > dy)) && dx < (xj - xi) * (dy - yi) / (yj - yi) + xi)
@@ -4697,6 +5150,8 @@ function evalGate(gate, { invalidate = true } = {}) {
     if (pt.dy < dyMin) dyMin = pt.dy; if (pt.dy > dyMax) dyMax = pt.dy;
   }
 
+  const quadC = gate.gateInfo.quad
+    ? { dx: toDisplay(gate.gateInfo.quad.cx, xP, xScale), dy: toDisplay(gate.gateInfo.quad.cy, yP, yScale) } : null;
   // Build (or reuse cached) spatial index — dispX/dispY already computed inside
   const idx = buildSpatialIndex(pop, xP, yP, xScale, yScale);
   const candidates = spatialQuery(idx, dxMin, dxMax, dyMin, dyMax);
@@ -4723,7 +5178,8 @@ function evalGate(gate, { invalidate = true } = {}) {
     if (ei < 0) continue;
     const dx = dispX[ei], dy = dispY[ei];
     let inside = false;
-    for (let i = 0, j = nPts - 1; i < nPts; j = i++) {
+    if (quadC) inside = _quadInside(gate.gateInfo.quad.q, dx, dy, quadC.dx, quadC.dy);
+    else for (let i = 0, j = nPts - 1; i < nPts; j = i++) {
       const xi = dispPts[i].dx, yi = dispPts[i].dy;
       const xj = dispPts[j].dx, yj = dispPts[j].dy;
       if (((yi > dy) !== (yj > dy)) && dx < (xj - xi) * (dy - yi) / (yj - yi) + xi)
@@ -4739,15 +5195,84 @@ function evalGate(gate, { invalidate = true } = {}) {
   markAllDirty();
 }
 
+// Robust slope of ys on xs (FlowNg2's auto-compensation fit): equal-count bins in x, median y
+// per bin, then a count-weighted least-squares line through the bin medians.
+function _robustSlope(xs, ys, nBins, minBin) {
+  const n = xs.length; if (!n) return null;
+  const order = Uint32Array.from({ length: n }, (_, i) => i).sort((a, b) => xs[a] - xs[b]);
+  const median = a => { a.sort((p, q) => p - q); const m = a.length; return m % 2 ? a[(m - 1) / 2] : (a[m / 2 - 1] + a[m / 2]) / 2; };
+  const bx = [], by = [], bw = [];
+  for (let b = 0; b < nBins; b++) {
+    const start = Math.floor(b * n / nBins), end = Math.floor((b + 1) * n / nBins);
+    if (end <= start || end - start < minBin) continue;
+    const xv = [], yv = [];
+    for (let i = start; i < end; i++) { xv.push(xs[order[i]]); yv.push(ys[order[i]]); }
+    bx.push(median(xv)); by.push(median(yv)); bw.push(end - start);
+  }
+  if (bx.length < 2) return null;
+  const wsum = bw.reduce((a, b) => a + b, 0);
+  const xm = bx.reduce((a, x, i) => a + x * bw[i], 0) / wsum;
+  const ym = by.reduce((a, y, i) => a + y * bw[i], 0) / wsum;
+  let cov = 0, vr = 0;
+  for (let i = 0; i < bx.length; i++) { cov += bw[i] * (bx[i] - xm) * (by[i] - ym); vr += bw[i] * (bx[i] - xm) ** 2; }
+  return vr < 1e-9 ? null : cov / vr;
+}
+
+// Autocomp: fits the one spillover coefficient (X's contribution to Y's detector) that flattens
+// the population inside the drawn polygon, over up to 3 rounds in linear space.
+function autoCompensate(plot) {
+  const pts = plot.gatePoints; plot.gatePoints = [];
+  const f = getFileForPlot(plot), spi = getSpilloverIndices(plot);
+  if (!f || !f.spillMatrix || !f.rawData || !spi) {
+    showToast('Autocomp needs two fluorescence axes that are in the spillover matrix', 4000);
+    renderPlot(plot); return;
+  }
+  _contextFileId = f.fileId; _paramRanges = f.paramRanges;
+  const xSc = plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin', ySc = plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin';
+  const poly = pts.map(p => ({ dx: toDisplay(p.rx, plot.xParam, xSc), dy: toDisplay(p.ry, plot.yParam, ySc) }));
+  const parent = populations.find(p => p.id === plot.inputPop);
+  const { data, nPar } = f, picked = [];
+  const n = parent ? popCount(parent) : 0;
+  for (let i = 0; i < n; i++) {
+    const e = popGetIndex(parent, i);
+    if (pointInPolygonDisp(toDisplay(data[e * nPar + plot.xParam], plot.xParam, xSc),
+                           toDisplay(data[e * nPar + plot.yParam], plot.yParam, ySc), poly)) picked.push(e);
+  }
+  if (picked.length < 100) { showToast(`Autocomp needs at least 100 events in the polygon (got ${picked.length})`, 4000); renderPlot(plot); return; }
+  pushUndo();
+  const { ix, iy } = spi;
+  const before = f.spillMatrix[ix][iy];
+  for (let iter = 0; iter < 3; iter++) {
+    const d = f.data, xs = new Float32Array(picked.length), ys = new Float32Array(picked.length);
+    picked.forEach((e, k) => { xs[k] = d[e * nPar + plot.xParam]; ys[k] = d[e * nPar + plot.yParam]; });
+    const slope = _robustSlope(xs, ys, 20, 5);
+    if (slope == null || Math.abs(slope) < 1e-4) break;
+    const m = f.spillMatrix.map(r => [...r]);
+    m[ix][iy] += slope;
+    if (!recomputeCompensation(m, f.fileId)) { showToast('Autocomp stopped: matrix became singular', 4000); break; }
+  }
+  if (f.spillMatrix[ix][iy] === before) {
+    _undoStack.pop(); updateUndoButtons();
+    showToast('Autocomp: that population is already flat (slope under 0.0001), so nothing changed', 5000);
+    setGlobalMode('pan');
+    return;
+  }
+  reevaluateAllGates(f);
+  showToast(`Autocomp: ${f.params[plot.xParam].name} → ${f.params[plot.yParam].name} spillover ${before.toFixed(4)} → ${f.spillMatrix[ix][iy].toFixed(4)}`, 5000);
+  setGlobalMode('pan');
+}
+
 function finalizeGate(plot) {
   const pts = plot.gatePoints; // [{rx, ry}] in raw data space
   if (pts.length < 3) return;
+  if (plot.mode === 'autocomp') { autoCompensate(plot); return; }
 
   const fcsFile = getFileForPlot(plot);
   if (!fcsFile) return;
   _contextFileId = fcsFile.fileId;
   _paramRanges = fcsFile.paramRanges;
 
+  pushUndo();
   const xScale2 = plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin';
   const yScale2 = plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin';
   const color = GATE_COLORS[fcsFile.populations.filter(p => !p._isAll).length % GATE_COLORS.length];
@@ -4822,6 +5347,10 @@ function eventInGate(rx, ry, gateInfo) {
   const xsc = xScale || 'lin', ysc = yScale || 'lin';
   const dx = toDisplay(rx, xParam, xsc);
   const dy = toDisplay(ry, yParam, ysc);
+  if (gateInfo.quad) {
+    return _quadInside(gateInfo.quad.q, dx, dy,
+      toDisplay(gateInfo.quad.cx, xParam, xsc), toDisplay(gateInfo.quad.cy, yParam, ysc));
+  }
   const dispPts = rawPts.map(pt => ({
     dx: toDisplay(pt.rx, xParam, xsc),
     dy: toDisplay(pt.ry, yParam, ysc)
@@ -4911,16 +5440,109 @@ function changeFile(plotId, newFileId, propagate=true) {
 // Cycles the per-gate dot-size boost: 0 → 2 → 4 → 8 → 0 (px above plot dot size).
 // When boost > 0 the gate events are re-drawn on top at the larger size so rare
 // populations pop visually without changing any per-plot dot size setting.
-const _DOT_BOOST_STEPS = [0, 2, 4, 8];
+// "+" toggle: a population is either part of the density or additionally drawn as exact dots.
+const _DOT_BOOST_ON = 4;
 function cycleDotBoost(popId) {
   const pop = populations.find(p => p.id === popId); if (!pop) return;
-  const cur = pop.dotBoost || 0;
-  const next = _DOT_BOOST_STEPS[(_DOT_BOOST_STEPS.indexOf(cur) + 1) % _DOT_BOOST_STEPS.length];
+  const next = (pop.dotBoost || 0) > 0 ? 0 : _DOT_BOOST_ON;
   pop.dotBoost = next;
   const fp = getFileById(pop.fileId)?.populations.find(p => p.id === popId);
   if (fp) fp.dotBoost = next;
   renderPopList();
   renderAllPlots();
+}
+
+// ─── GATE RIGHT-CLICK MENU + COPY / CUT / PASTE ──────────────────────────────
+let _gateClipboard = null;
+
+function _openCtxMenu(x, y, items) {
+  document.getElementById('gate-ctx-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.id = 'gate-ctx-menu';
+  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:9999;background:#1b1d27;
+    border:1px solid #444;border-radius:6px;padding:4px 0;min-width:150px;box-shadow:0 4px 16px rgba(0,0,0,0.5)`;
+  items.forEach(it => {
+    const d = document.createElement('div');
+    d.textContent = it.label;
+    d.style.cssText = `padding:6px 14px;font-size:12px;color:${it.disabled ? '#667' : (it.danger ? '#e06c75' : '#ddd')};cursor:${it.disabled ? 'default' : 'pointer'}`;
+    if (!it.disabled) {
+      d.addEventListener('mouseenter', () => d.style.background = '#2a2c38');
+      d.addEventListener('mouseleave', () => d.style.background = '');
+      d.addEventListener('click', () => { menu.remove(); it.run(); });
+    }
+    menu.appendChild(d);
+  });
+  document.body.appendChild(menu);
+  const r = menu.getBoundingClientRect();
+  if (r.right > innerWidth) menu.style.left = `${innerWidth - r.width - 6}px`;
+  if (r.bottom > innerHeight) menu.style.top = `${innerHeight - r.height - 6}px`;
+  const close = e => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', close); } };
+  setTimeout(() => document.addEventListener('mousedown', close), 0);
+}
+
+function showGateMenu(popId, x, y) {
+  const pop = populations.find(p => p.id === popId); if (!pop) return;
+  const isQuad = !!(pop.gateInfo && pop.gateInfo.quad);
+  _openCtxMenu(x, y, [
+    { label: 'Rename / Color…', run: () => showColorPicker(popId, x, y) },
+    { label: 'Copy',  disabled: isQuad, run: () => copyGate(popId, false) },
+    { label: 'Cut',   disabled: isQuad, run: () => copyGate(popId, true) },
+    { label: 'Paste', disabled: !_gateClipboard, run: () => pasteGate(popId) },
+    { label: 'Delete', danger: true, run: () => deleteGateFromTree(popId) },
+  ]);
+}
+
+function copyGate(popId, cut) {
+  const pop = populations.find(p => p.id === popId); if (!pop || !pop.gateInfo || pop.gateInfo.quad) return;
+  const f = getFileById(pop.fileId), gi = pop.gateInfo;
+  _gateClipboard = {
+    name: pop.name, color: pop.color, noColor: !!pop.noColor,
+    xName: f.params[gi.xParam].name, yName: f.params[gi.yParam].name,
+    xScale: gi.xScale, yScale: gi.yScale, rawPts: gi.rawPts.map(q => ({ ...q })),
+  };
+  if (cut) deleteGateFromTree(popId, true);
+  showToast(`${cut ? 'Cut' : 'Copied'} "${pop.name}" — right-click a population and choose Paste`);
+}
+
+// Paste always creates a brand-new independent gate under the right-clicked population, in any loaded file.
+function pasteGate(targetId) {
+  const clip = _gateClipboard; if (!clip) return;
+  const target = populations.find(p => p.id === targetId); if (!target) return;
+  const f = getFileById(target.fileId); if (!f) return;
+  const xi = f.params.findIndex(p => p.name === clip.xName), yi = f.params.findIndex(p => p.name === clip.yName);
+  if (xi < 0 || yi < 0) { showToast(`Cannot paste: this file has no "${xi < 0 ? clip.xName : clip.yName}" parameter`, 4000); return; }
+  pushUndo();
+  const taken = new Set(f.populations.map(p => p.name));
+  let name = clip.name; for (let n = 2; taken.has(name); n++) name = `${clip.name} copy${n > 2 ? ' ' + n : ''}`;
+  const pop = {
+    id: popIdCounter++, name, color: clip.color, noColor: clip.noColor, indices: new Int32Array(0),
+    parentId: target.id, fileId: f.fileId,
+    gateInfo: { rawPts: clip.rawPts.map(q => ({ ...q })), xParam: xi, yParam: yi, xScale: clip.xScale, yScale: clip.yScale },
+  };
+  f.populations.push(pop);
+  rebuildPopulationsView();
+  _contextFileId = f.fileId; _paramRanges = f.paramRanges;
+  evalGate(pop);
+  _syncPrecedenceFromTree(f);
+  renderPopList(); updateAllPopSelects(); renderAllPlots();
+  showToast(`Pasted "${name}" under "${target.name}"`);
+}
+
+// Tree "×": delete a gate (a whole quadrant group for Q1-Q4) with its descendants.
+function deleteGateFromTree(popId, skipConfirm) {
+  const pop = populations.find(p => p.id === popId); if (!pop) return;
+  const group = pop.gateInfo && pop.gateInfo.quad ? _quadGroup(pop.gateInfo.quad.gid) : [pop];
+  const what = group.length > 1 ? 'this quadrant (Q1-Q4)' : `"${pop.name}"`;
+  if (!skipConfirm && !confirm(`Delete ${what} and all children?`)) return;
+  pushUndo();
+  group.forEach(g => deleteGateAndDescendants(g.id));
+  plots.forEach(pl => {
+    if (!populations.find(p => p.id === pl.inputPop)) {
+      const f = getFileForPlot(pl), root = f && f.populations.find(p => p._isAll);
+      if (root) pl.inputPop = root.id;
+    }
+  });
+  renderPopList(); renderPrecedenceList(); updateAllPopSelects(); renderAllPlots();
 }
 
 function highlightOrRecreateGatePlot(gateId) {
@@ -4972,6 +5594,94 @@ function highlightOrRecreateGatePlot(gateId) {
     }
   }, 100);
   showToast(`Created plot for "${gate.name}"`);
+}
+
+// ─── UNDO / REDO ─────────────────────────────────────────────────────────────
+// Snapshots cover every file's gate tree (event-index arrays are shared, never mutated in
+// place), colour precedence and spillover matrix. pushUndo() is called just BEFORE a change.
+const _undoStack = [], _redoStack = [];
+const UNDO_MAX = 50;
+
+function _clonePop(p) {
+  const c = { ...p };
+  if (p.gateInfo) {
+    c.gateInfo = { ...p.gateInfo, rawPts: p.gateInfo.rawPts.map(q => ({ ...q })) };
+    if (p.gateInfo.quad) c.gateInfo.quad = { ...p.gateInfo.quad };
+  }
+  return c;
+}
+function _snapshotState() {
+  return fcsFiles.map(f => ({
+    fileId: f.fileId,
+    pops: f.populations.map(_clonePop),
+    prec: [...f.colorPrecedence],
+    spill: f.spillMatrix ? f.spillMatrix.map(r => [...r]) : null,
+    ranges: [...f.paramRanges].map(([k, v]) => [k, { ...v }]),
+  }));
+}
+function _restoreState(snap) {
+  snap.forEach(sf => {
+    const f = getFileById(sf.fileId); if (!f) return;
+    f.populations = sf.pops.map(_clonePop);
+    f.colorPrecedence = [...sf.prec];
+    if (sf.ranges) f.paramRanges = new Map(sf.ranges.map(([k, v]) => [k, { ...v }]));
+    if (sf.spill && f.spillMatrix && JSON.stringify(sf.spill) !== JSON.stringify(f.spillMatrix)) {
+      recomputeCompensation(sf.spill.map(r => [...r]), f.fileId);
+      sendDataToComputeWorkerForFile(f);
+    }
+  });
+  rebuildPopulationsView();
+  plots.forEach(pl => {
+    if (!populations.find(p => p.id === pl.inputPop)) {
+      const f = getFileForPlot(pl), root = f && f.populations.find(p => p._isAll);
+      if (root) pl.inputPop = root.id;
+    }
+  });
+  const foc = getFileById(_focusedFileId) || fcsFiles[0];
+  if (foc) colorPrecedence = foc.colorPrecedence;
+  invalidateSpatialCache(true); markAllDirty();
+  renderPopList(); renderPrecedenceList(); updateAllPopSelects(); renderAllPlots();
+}
+function pushUndo() {
+  _undoStack.push(_snapshotState());
+  if (_undoStack.length > UNDO_MAX) _undoStack.shift();
+  _redoStack.length = 0;
+  updateUndoButtons();
+}
+function undo() {
+  if (!_undoStack.length) return;
+  _redoStack.push(_snapshotState());
+  _restoreState(_undoStack.pop());
+  updateUndoButtons();
+}
+function redo() {
+  if (!_redoStack.length) return;
+  _undoStack.push(_snapshotState());
+  _restoreState(_redoStack.pop());
+  updateUndoButtons();
+}
+function updateUndoButtons() {
+  const u = document.getElementById('undo-btn'), r = document.getElementById('redo-btn');
+  if (u) u.disabled = !_undoStack.length;
+  if (r) r.disabled = !_redoStack.length;
+}
+document.addEventListener('keydown', e => {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+});
+
+// Re-evaluates every gate (parents before children) after the compensated data changes.
+function reevaluateAllGates(fileObj) {
+  sendDataToComputeWorkerForFile(fileObj);
+  invalidateSpatialCache(false);
+  fileObj.populations.filter(p => p.gateInfo).forEach(g => evalGate(g, { invalidate: false }));
+  invalidateSpatialCache(true);
+  rebuildPopulationsView();
+  renderPopList(); updateAllPopSelects(); markAllDirty(); renderAllPlots();
 }
 
 function deleteGateAndDescendants(gateId) {
@@ -5026,6 +5736,8 @@ function addTab(name) {
   const id = tabIdCounter++;
   tabs.push({ id, name: name || `Tab ${id + 1}` });
   if (activeTabId === null) activeTabId = id;
+  const strip = document.getElementById('tab-strip');
+  if (strip) strip.style.display = 'flex';
   renderTabStrip();
   return id;
 }
@@ -5067,9 +5779,10 @@ function renderTabStrip() {
     el.className = 'tab-item' + (tab.id === activeTabId ? ' active' : '');
     el.dataset.tabId = tab.id;
     el.innerHTML = `
-      <span class="tab-label" ondblclick="renameTab(${tab.id})">${tab.name}</span>
-      <span class="tab-plot-count">${plotCount}</span>
-      <span class="tab-close" onclick="removeTab(${tab.id});event.stopPropagation()" title="Close tab">✕</span>`;
+      <button class="tab-main" title="Click to switch tabs. Right-click or double-click to rename. Drop a plot here to move it.">${tab.name} (${plotCount})</button>
+      <button class="tab-close" onclick="removeTab(${tab.id});event.stopPropagation()" title="Close tab">✕</button>`;
+    el.querySelector('.tab-main').addEventListener('dblclick', () => renameTab(tab.id));
+    el.querySelector('.tab-main').addEventListener('contextmenu', e => { e.preventDefault(); renameTab(tab.id); });
     el.addEventListener('click', () => switchTab(tab.id));
     // Accept plot drops
     el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drag-over-tab'); });
@@ -5089,7 +5802,7 @@ function renderTabStrip() {
   });
   strip.appendChild(addBtn || (() => {
     const b = document.createElement('div');
-    b.className = 'tab-add'; b.textContent = '＋';
+    b.className = 'tab-add'; b.textContent = '+ Tab';
     b.title = 'New tab'; b.onclick = () => addTab();
     return b;
   })());
@@ -5845,6 +6558,7 @@ function showColorPicker(popId, mx, my) {
   // Apply button
   overlay.querySelector('#cpk-apply-btn').addEventListener('click', () => {
     const nameVal = overlay.querySelector('#gate-rename-input').value.trim();
+    pushUndo();
     if (nameVal) pop.name = nameVal;
     if (selectedHex === null) {
       pop.noColor = true;
@@ -6014,6 +6728,7 @@ function showAbout() {
   overlay.addEventListener('keydown', e => { if (e.key === 'Escape') overlay.remove(); });
 }
 
+/*@lite:begin*/
 function exportGates() {
   showExportNameDialog();
 }
@@ -6063,6 +6778,17 @@ function doExportTemplate() {
   const overlay = document.getElementById('export-name-modal');
   if (overlay) overlay.remove();
 
+  const template = _buildTemplateV3(tmplName);
+  const safe = tmplName.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
+  const blob = new Blob([JSON.stringify(template, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `${safe}_FlowNgtmplt.json`; a.click();
+  const gateCount = fcsFiles.reduce((n, f) => n + f.populations.filter(p => p.gateInfo).length, 0);
+  showToast(`Template "${tmplName}" exported — ${fcsFiles.length} file(s), ${gateCount} gate(s), ${template.plots.length} plot(s)`);
+}
+
+// Snapshot of the current gates/plots/ranges for all loaded files as a v3 template.
+function _buildTemplateV3(tmplName) {
   function buildGateTree(fileObj, popId, parentName) {
     return fileObj.populations
       .filter(p => p.gateInfo && p.parentId === popId)
@@ -6076,6 +6802,8 @@ function doExportTemplate() {
         xScale:     p.gateInfo.xScale || 'lin',
         yScale:     p.gateInfo.yScale || 'lin',
         rawPts:     p.gateInfo.rawPts,
+        quad:       p.gateInfo.quad || undefined,
+        dots:       (p.dotBoost > 0) || undefined,
         children:   buildGateTree(fileObj, p.id, p.name)
       }));
   }
@@ -6119,26 +6847,334 @@ function doExportTemplate() {
       xAsinh:       pl.xAsinh || false,
       yAsinh:       pl.yAsinh || false,
       dotSize:      pl.dotSize,
+      bins:         pl.bins || 256,
       tabName:      tabNameById[pl.tabId] || 'Tab 1'
     };
   }).filter(Boolean);
 
-  const template = {
+  return {
     version:  3,
     name:     tmplName,
     exported: new Date().toISOString(),
     files:    filesArr,
     plots:    plotSnapshots
   };
+}
+/*@lite:end*/
+// ─── SHAREABLE HTML EXPORT / BUNDLE LOAD ─────────────────────────────────────
+// A shareable HTML is this app plus a script#flowng-bundle JSON block holding the
+// event data (gzip+base64), compensation, and the author's gates/plots. On open, the
+// bundle is rebuilt into normal editable file objects, so recipients can regate freely.
 
-  const safe = tmplName.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
-  const blob = new Blob([JSON.stringify(template, null, 2)], {type:'application/json'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = `${safe}_FlowNgtmplt.json`; a.click();
-  const gateCount = fcsFiles.reduce((n, f) => n + f.populations.filter(p => p.gateInfo).length, 0);
-  showToast(`Template "${tmplName}" exported — ${fcsFiles.length} file(s), ${gateCount} gate(s), ${plotSnapshots.length} plot(s)`);
+// Pristine copy of this document (taken before any bundle is injected) used as the export base.
+let _authorTemplate = null;   // template to restore with "Reset to author's gates"
+let _bundleInfo = null;
+
+/*@lite:begin*/
+const _SAFE_META_KEYS = /^(\$CYT|\$DATE|\$BTIM|\$ETIM|\$TOT|\$PAR|\$MODE|\$DATATYPE|\$BYTEORD|\$NEXTDATA|FCSVersion|\$FCSVersion|\$P\d+[NSRBEGVD])$/;
+
+function _docSource() {
+  const parts = Array.from(document.childNodes).map(n => {
+    if (n.nodeType === Node.DOCUMENT_TYPE_NODE) return '<!DOCTYPE html>';
+    if (n.nodeType === Node.COMMENT_NODE) return '<!--' + n.data + '-->';
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      // Serialize a clone without open dialogs or toast text so the shared file opens clean.
+      const c = n.cloneNode(true);
+      c.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+      const t = c.querySelector('#toast');
+      if (t) { t.textContent = ''; t.classList.remove('show'); }
+      return c.outerHTML;
+    }
+    return '';
+  });
+  return parts.join('\n');
 }
 
+async function _gzipB64(typedArray) {
+  const stream = new Blob([typedArray.buffer, ]).stream().pipeThrough(new CompressionStream('gzip'));
+  const gz = await new Response(stream).blob();
+  return await new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result.slice(fr.result.indexOf(',') + 1));
+    fr.onerror = rej;
+    fr.readAsDataURL(gz);
+  });
+}
+/*@lite:end*/
+async function _gunzipB64(b64) {
+  const resp = await fetch('data:application/octet-stream;base64,' + b64);
+  const stream = resp.body.pipeThrough(new DecompressionStream('gzip'));
+  return await new Response(stream).arrayBuffer();
+}
+
+/*@lite:begin*/
+function showShareDialog() {
+  if (!fcsFiles.length) { showToast('Load a file first'); return; }
+  const existing = document.getElementById('share-modal');
+  if (existing) existing.remove();
+  const total = fcsFiles.reduce((n, f) => n + f.nEvents, 0);
+  const overlay = document.createElement('div');
+  overlay.id = 'share-modal';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:420px">
+      <h2>🔗 Export Shareable HTML</h2>
+      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">
+        One self-contained HTML with the event data, compensation, gates and plots. Recipients can move and
+        redraw gates, and reset to your gates. The original FCS/LMD file is not included.</p>
+      <label style="font-size:11px;display:block;margin-bottom:8px">Name
+        <input id="share-name" type="text" style="width:100%" value="${(fcsFiles[0].filename||'FlowNG').replace(/\.[^.]+$/, '').replace(/"/g,'')}"></label>
+      <label style="font-size:11px;display:block;margin-bottom:8px">Max events per file (blank = all; ${total.toLocaleString()} total loaded)
+        <input id="share-maxev" type="number" min="1000" step="1000" style="width:100%" placeholder="all events" oninput="_updateShareEstimate()"></label>
+      <div id="share-estimate" style="font-size:11px;color:var(--text2);margin:-4px 0 8px"></div>
+      <div style="font-size:11px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span>Tube / file names shown in the shared file</span>
+          <a href="#" onclick="document.querySelectorAll('.share-fname').forEach((e,i)=>e.value='Sample '+(i+1));return false" style="color:var(--accent)">Use Sample 1, 2, …</a>
+        </div>
+        <div style="max-height:30vh;overflow:auto">${fcsFiles.map((f, i) => `<input class="share-fname" data-i="${i}" type="text" style="width:100%;margin-bottom:4px" value="${(f.filename || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">`).join('')}</div>
+      </div>
+      <label style="font-size:11px;display:block;margin-bottom:6px">
+        <input id="share-meta" type="checkbox"> Include full FCS header metadata (may contain patient/sample IDs)</label>
+      <label style="font-size:11px;display:block;margin-bottom:12px">
+        <input id="share-sterile" type="checkbox" checked> Locked viewer: recipients cannot load other files, import, or export</label>
+      <div id="share-status" style="font-size:11px;color:var(--text2);min-height:14px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="document.getElementById('share-modal').remove()">Cancel</button>
+        <button class="primary" id="share-go" onclick="doExportShareable()">Export</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  // Large files make huge HTML; default to a cap above 500k events per file.
+  if (fcsFiles.some(f => f.nEvents > 500000)) document.getElementById('share-maxev').value = 500000;
+  _updateShareEstimate();
+}
+
+// Rough output size: float32 events (x2 if raw copy kept), ~80% after gzip (float data compresses poorly), +33% base64.
+function _estimateShareBytes() {
+  const cap = parseInt(document.getElementById('share-maxev').value) || 0;
+  return fcsFiles.reduce((t, f) => {
+    const n = cap ? Math.min(cap, f.nEvents) : f.nEvents;
+    return t + n * f.nPar * 4 * (f.rawData ? 2 : 1) * 0.8 * 1.34;
+  }, 0);
+}
+
+function _updateShareEstimate() {
+  const el = document.getElementById('share-estimate');
+  if (!el) return;
+  const mb = _estimateShareBytes() / 1048576;
+  el.textContent = `Estimated file size: ~${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB` +
+    (mb > 200 ? ' — very large; set a lower event cap' : '');
+  el.style.color = mb > 200 ? '#f5a623' : '';
+}
+
+async function doExportShareable() {
+  const status = document.getElementById('share-status');
+  const go = document.getElementById('share-go');
+  const name = (document.getElementById('share-name').value.trim()) || 'FlowNG';
+  const maxEv = parseInt(document.getElementById('share-maxev').value) || 0;
+  const nameInputs = [...document.querySelectorAll('.share-fname')];
+  const usedNames = new Set();
+  const fullMeta = document.getElementById('share-meta').checked;
+  const sterile = document.getElementById('share-sterile').checked;
+  go.disabled = true;
+  const safe = name.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
+  const fileName = `${safe}_FlowNG_shared.html`;
+  // Ask where to save up front: the picker needs a fresh user gesture, which would expire during compression.
+  let handle = null;
+  if (window.showSaveFilePicker) {
+    try {
+      handle = await window.showSaveFilePicker({ suggestedName: fileName,
+        types: [{ description: 'HTML', accept: { 'text/html': ['.html'] } }] });
+    } catch (e) {
+      if (e && e.name === 'AbortError') { go.disabled = false; return; }
+      handle = null;   // picker unavailable; fall back to a normal download
+    }
+  }
+  try {
+    const template = _buildTemplateV3(name);
+    const files = [];
+    for (let fi = 0; fi < fcsFiles.length; fi++) {
+      const f = fcsFiles[fi];
+      status.textContent = `Compressing file ${fi + 1} of ${fcsFiles.length}…`;
+      await new Promise(r => setTimeout(r, 0));
+      const { nPar } = f;
+      const n = (maxEv && maxEv < f.nEvents) ? maxEv : f.nEvents;
+      const pick = (src) => {
+        if (n === f.nEvents) return src;
+        const out = new Float32Array(n * nPar);
+        for (let i = 0; i < n; i++) {
+          const e = Math.floor(i * f.nEvents / n);
+          out.set(src.subarray(e * nPar, (e + 1) * nPar), i * nPar);
+        }
+        return out;
+      };
+      const data = pick(f.data);
+      const rawData = f.rawData ? pick(f.rawData) : null;
+      let colMins = f.colMins, colMaxs = f.colMaxs;
+      if (n !== f.nEvents) {
+        colMins = new Float32Array(nPar).fill(Infinity); colMaxs = new Float32Array(nPar).fill(-Infinity);
+        for (let i = 0; i < n; i++) for (let p = 0; p < nPar; p++) {
+          const v = data[i * nPar + p];
+          if (v < colMins[p]) colMins[p] = v;
+          if (v > colMaxs[p]) colMaxs[p] = v;
+        }
+      }
+      let meta = f.meta || {};
+      if (!fullMeta) {
+        const kept = {};
+        Object.keys(meta).forEach(k => { if (_SAFE_META_KEYS.test(k)) kept[k] = meta[k]; });
+        meta = kept;
+      }
+      let fname = ((nameInputs[fi] && nameInputs[fi].value.trim()) || f.filename);
+      for (let n = 2, base = fname; usedNames.has(fname); n++) fname = `${base} (${n})`;
+      usedNames.add(fname);
+      template.files[fi].sourceFile = fname;
+      files.push({
+        filename: fname,
+        params: f.params, nEvents: n, nPar, totalEvents: f.nEvents,
+        meta, version: f.version, compensated: f.compensated,
+        colMins: Array.from(colMins), colMaxs: Array.from(colMaxs),
+        otflowCofactors: f.otflowCofactors ? Array.from(f.otflowCofactors) : null,
+        spillMatrix: f.spillMatrix || null, spillParamIdx: f.spillParamIdx || null,
+        data: await _gzipB64(data),
+        rawData: rawData ? await _gzipB64(rawData) : null,
+      });
+    }
+    status.textContent = 'Building HTML…';
+    await new Promise(r => setTimeout(r, 0));
+    const bundle = { format: 1, sterile, name, created: new Date().toISOString(), files, template };
+    const json = JSON.stringify(bundle).replace(/</g, '\\u003c');
+
+    // Tag strings are split so this source never contains a literal script tag of its own.
+    const OPEN = '<scr' + 'ipt', CLOSE = '</scr' + 'ipt>';
+    let src = _docSource();
+    const oldBundle = src.indexOf(OPEN + ' id="flowng-bundle" ');
+    if (oldBundle >= 0) {
+      const oldEnd = src.indexOf(CLOSE, oldBundle) + CLOSE.length;
+      src = src.slice(0, oldBundle) + src.slice(oldEnd).replace(/^\s+/, '');
+    }
+    // Locked viewer: physically remove the code and UI for loading, importing and exporting.
+    // Marker strings are split so this source never contains a literal marker of its own.
+    if (sterile) {
+      const jsMark = new RegExp('/\\*@li' + 'te:begin\\*/[\\s\\S]*?/\\*@li' + 'te:end\\*/\\n?', 'g');
+      const htmlMark = new RegExp('<!--@li' + 'te:begin-->[\\s\\S]*?<!--@li' + 'te:end-->\\n?', 'g');
+      src = src.replace(jsMark, '').replace(htmlMark, '');
+      // Open-file buttons inside drop-zone templates that the app rebuilds at runtime.
+      src = src.split('<button class="primary" onclick="document.getElementById(\'file-input\').click()">Open FCS File</button>').join('');
+    }
+    // Insert the bundle just before the loader hook at the end of <body>.
+    const insertAt = src.lastIndexOf(OPEN + ' id="flowng-bundle-loader"');
+    if (insertAt < 0) throw new Error('loader hook not found');
+    src = src.slice(0, insertAt) + `${OPEN} id="flowng-bundle" type="application/json">${json}${CLOSE}\n` + src.slice(insertAt);
+    src = src.replace(/<title>[\s\S]*?<\/title>/, `<title>${name.replace(/[<>&]/g, '')} — FlowNG</title>`);
+
+    const blob = new Blob([src], { type: 'text/html' });
+    const sizeMB = (blob.size / 1048576).toFixed(1);
+    let where;
+    if (handle) {
+      status.textContent = 'Writing file…';
+      const w = await handle.createWritable();
+      await w.write(blob);
+      await w.close();
+      where = `Saved "${handle.name}" (${sizeMB} MB) at the location you chose`;
+    } else {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = fileName; a.click();
+      where = `Downloaded "${fileName}" (${sizeMB} MB) to your browser's download folder`;
+    }
+    document.getElementById('share-modal').remove();
+    showToast(where, 10000);
+    console.log('[FlowNG] ' + where);
+  } catch (err) {
+    console.error(err);
+    status.textContent = 'Export failed: ' + err.message;
+    go.disabled = false;
+  }
+}
+/*@lite:end*/
+async function loadBundleIfPresent() {
+  const el = document.getElementById('flowng-bundle');
+  if (!el) return;
+  try {
+    const bundle = JSON.parse(el.textContent);
+    showProgress(5, 'Loading shared analysis…');
+    const fileMap = [];
+    for (let i = 0; i < bundle.files.length; i++) {
+      const b = bundle.files[i];
+      showProgress(5 + Math.round(90 * i / bundle.files.length), `Decoding ${b.filename}…`);
+      await new Promise(r => setTimeout(r, 0));
+      const data = new Float32Array(await _gunzipB64(b.data));
+      const rawData = b.rawData ? new Float32Array(await _gunzipB64(b.rawData)) : null;
+      const fileObj = {
+        fileId: fileIdCounter++,
+        params: b.params, nEvents: b.nEvents, nPar: b.nPar, meta: b.meta,
+        version: b.version, filename: b.filename, compensated: b.compensated,
+        data, colMins: Float32Array.from(b.colMins), colMaxs: Float32Array.from(b.colMaxs),
+        otflowCofactors: b.otflowCofactors ? Float32Array.from(b.otflowCofactors) : null,
+        rawData, spillMatrix: b.spillMatrix, spillParamIdx: b.spillParamIdx,
+        totalEvents: b.totalEvents,
+        populations: [], paramRanges: new Map(), colorPrecedence: [],
+        _computeWorker: null, _computeWorkerReady: false, _pendingGateCallbacks: new Map(),
+      };
+      fileObj.colPercentile05 = new Float32Array(fileObj.nPar);
+      for (let p = 0; p < fileObj.nPar; p++) {
+        const s = new Float32Array(fileObj.nEvents);
+        for (let e = 0; e < fileObj.nEvents; e++) s[e] = data[e * fileObj.nPar + p];
+        s.sort();
+        fileObj.colPercentile05[p] = s[Math.max(0, Math.ceil(s.length * 0.005) - 1)];
+      }
+      fcsFiles.push(fileObj);
+      fcsData = fcsFiles[0];
+      addFileToSession(fileObj);
+      fileMap.push(fileObj);
+    }
+    hideProgress();
+    _authorTemplate = bundle.template;
+    _bundleInfo = bundle;
+    _applyTemplateV3(bundle.template, fileMap);
+    const reset = document.getElementById('reset-author-btn');
+    if (reset) reset.style.display = '';
+    if (bundle.sterile) _applySterileMode();
+    const sub = bundle.files.filter(f => f.nEvents < f.totalEvents);
+    showToast(sub.length
+      ? `Shared analysis loaded — downsampled to ${sub.map(f => f.nEvents.toLocaleString()).join(', ')} events`
+      : 'Shared analysis loaded', 4000);
+  } catch (err) {
+    hideProgress();
+    console.error(err);
+    showToast('Failed to load shared analysis: ' + err.message, 6000);
+  }
+}
+
+// Locked viewer runtime guard. The loading/import/export code is stripped from the exported file
+// (see @lite markers); this hides leftover UI and stops dropped files from navigating the page.
+// Gating, plotting, compensation and reset-to-author stay available.
+function _applySterileMode() {
+  document.body.classList.add('sterile');
+  const st = document.createElement('style');
+  st.textContent = '#open-btn,#export-btn,#import-btn,#share-btn,#drop-zone{display:none !important}';
+  document.head.appendChild(st);
+  // Stop the browser navigating to / opening a dropped file, and stop the app seeing the drop.
+  ['dragover', 'drop'].forEach(ev => window.addEventListener(ev, e => {
+    // Only external file drags; in-app drags (reordering populations/plots) must keep working.
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) {
+      e.preventDefault(); e.stopPropagation();
+    }
+  }, true));
+}
+
+function resetToAuthorGates() {
+  if (!_authorTemplate) return;
+  if (!confirm("Discard your gates and plots and restore the author's version?")) return;
+  pushUndo();
+  const fileMap = _authorTemplate.files.map(tf =>
+    fcsFiles.find(f => f.filename === tf.sourceFile) || null);
+  _applyTemplateV3(_authorTemplate, fileMap);
+  showToast("Restored author's gates");
+}
+
+/*@lite:begin*/
 function importGates(templateJson) {
   let tmpl;
   try { tmpl = JSON.parse(templateJson); } catch(e) { showToast('Invalid JSON file'); return; }
@@ -6303,7 +7339,7 @@ function _importGatesV2(tmpl, fileObj) {
       if (!tabObj) { const tid = addTab(desiredTab); tabObj = tabs.find(t=>t.id===tid); }
       const id = plotIdCounter++;
       const plot = {
-        id, xParam: xi, yParam: yi, dotSize: ps.dotSize || 1.5,
+        id, xParam: xi, yParam: yi, dotSize: ps.dotSize || 1.5, bins: ps.bins || 256,
         inputPop: inputPopId, mode: 'pan', gatePoints: [],
         xLog: ps.xLog === true, yLog: ps.yLog === true,
         xAsinh: ps.xAsinh === true, yAsinh: ps.yAsinh === true,
@@ -6391,7 +7427,11 @@ function _doImportV3(indices) {
   });
 
   modal.remove();
-
+  _applyTemplateV3(tmpl, fileMap);
+}
+/*@lite:end*/
+// Applies a v3 template to already-loaded files. fileMap[i] is the fcsFile for tmpl.files[i].
+function _applyTemplateV3(tmpl, fileMap) {
   // Reset plots/tabs
   plots = []; plotIdCounter = 0;
   tabs = []; activeTabId = null; tabIdCounter = 0;
@@ -6442,12 +7482,15 @@ function _doImportV3(indices) {
         const ei = popGetIndex(parentPop, ii);
         const dx = toDisplay(data[ei*nPar+xi], xi, xScale);
         const dy = toDisplay(data[ei*nPar+yi], yi, yScale);
-        if (pointInPolygonDisp(dx, dy, dispPtsI)) gated.push(ei);
+        const inside = node.quad
+          ? _quadInside(node.quad.q, dx, dy, toDisplay(node.quad.cx, xi, xScale), toDisplay(node.quad.cy, yi, yScale))
+          : pointInPolygonDisp(dx, dy, dispPtsI);
+        if (inside) gated.push(ei);
       }
       const newPop = {
         id: popIdCounter++, name: node.name, color: node.color,
-        noColor: node.noColor || false, indices: gated,
-        parentId, gateInfo: { rawPts: pts, xParam: xi, yParam: yi, xScale, yScale },
+        noColor: node.noColor || false, indices: gated, dotBoost: node.dots ? _DOT_BOOST_ON : 0,
+        parentId, gateInfo: { rawPts: pts, xParam: xi, yParam: yi, xScale, yScale, ...(node.quad ? { quad: { ...node.quad } } : {}) },
         fileId: fileObj.fileId
       };
       fileObj.populations.push(newPop);
@@ -6457,17 +7500,9 @@ function _doImportV3(indices) {
 
     (tf.gates || []).forEach(node => importNode(node, rootPopId));
 
-    // Restore color precedence
-    if (tf.colorPrecedence) {
-      const newPrec = [];
-      tf.colorPrecedence.forEach(name => {
-        const p = fileObj.populations.find(pp => pp.name === name && !pp._isAll);
-        if (p) newPrec.push(p.id);
-      });
-      fileObj.populations.filter(p => !p._isAll && !newPrec.includes(p.id))
-        .forEach(p => newPrec.push(p.id));
-      fileObj.colorPrecedence = newPrec;
-    }
+    // Restore draw order: sibling order follows the saved precedence, then derive it back
+    _reorderSiblingsByPrecedence(fileObj, tf.colorPrecedence);
+    _syncPrecedenceFromTree(fileObj);
 
     // Restore param ranges
     if (tf.paramRanges) {
@@ -6502,7 +7537,7 @@ function _doImportV3(indices) {
     if (!tabObj) { const tid = addTab(desiredTab); tabObj = tabs.find(t=>t.id===tid); }
     const id = plotIdCounter++;
     const plot = {
-      id, xParam: xi, yParam: yi, dotSize: ps.dotSize || 1.5,
+      id, xParam: xi, yParam: yi, dotSize: ps.dotSize || 1.5, bins: ps.bins || 256,
       inputPop: inputPopId, mode: 'pan', gatePoints: [],
       xLog: ps.xLog === true, yLog: ps.yLog === true,
       xAsinh: ps.xAsinh === true, yAsinh: ps.yAsinh === true,
@@ -6615,6 +7650,7 @@ function copyMetadata() {
   );
 }
 
+/*@lite:begin*/
 // Wire up import file input
 document.getElementById('import-input').addEventListener('change', e => {
   const file = e.target.files[0]; if (!file) return;
@@ -6623,7 +7659,8 @@ document.getElementById('import-input').addEventListener('change', e => {
   reader.readAsText(file);
   e.target.value = '';
 });
-
+/*@lite:end*/
+/*@lite:begin*/
 // ─── DEMO DATA ────────────────────────────────────────────────────────────────
 function generateDemoData() {
   const nEvents = 12459;
@@ -6739,6 +7776,7 @@ dropBox.addEventListener('drop', e => {
     reader.readAsArrayBuffer(file);
   });
 });
+/*@lite:end*/
 </script>
 
 <script id="compute-worker-src" type="text/worker">
@@ -6862,7 +7900,8 @@ function spatialQueryW(idx, dxMin, dxMax, dyMin, dyMax) {
 // ── evalGate in worker ───────────────────────────────────────────────────
 function evalGateW(msg) {
   const { gateId, rawPts, xParam, yParam, xScale, yScale, xCofactor, yCofactor,
-          parentIndices, parentIsAll } = msg;
+          parentIndices, parentIsAll, quad } = msg;
+  const quadC = quad ? { dx: toDisplayW(quad.cx, xScale, xCofactor), dy: toDisplayW(quad.cy, yScale, yCofactor) } : null;
 
   // Pre-compute display-space polygon ONCE
   const dispPts = rawPts.map(pt => ({
@@ -6897,7 +7936,13 @@ function evalGateW(msg) {
     if (ei < 0) continue;
     const dx = dispX[ei], dy = dispY[ei];
     let inside = false;
-    for (let i=0, j=nPts-1; i<nPts; j=i++) {
+    if (quadC) {
+      const q = quad.q;
+      inside = q === 1 ? (dx >= quadC.dx && dy >= quadC.dy)
+             : q === 2 ? (dx >= quadC.dx && dy <  quadC.dy)
+             : q === 3 ? (dx <  quadC.dx && dy <  quadC.dy)
+             :           (dx <  quadC.dx && dy >= quadC.dy);
+    } else for (let i=0, j=nPts-1; i<nPts; j=i++) {
       const xi=dispPts[i].dx, yi=dispPts[i].dy;
       const xj=dispPts[j].dx, yj=dispPts[j].dy;
       if (((yi>dy)!==(yj>dy)) && dx<(xj-xi)*(dy-yi)/(yj-yi)+xi) inside=!inside;
@@ -6923,6 +7968,7 @@ self.addEventListener('message', (e) => {
 });
 </script>
 
+<!--@lite:begin-->
 <script id="parse-worker-src" type="text/worker">
 'use strict';
 
@@ -7699,5 +8745,7 @@ self.addEventListener('message', async (e) => {
 });
 
 </script>
+<!--@lite:end-->
+<script id="flowng-bundle-loader">loadBundleIfPresent();</script>
 </body>
 </html>
