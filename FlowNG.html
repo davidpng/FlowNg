@@ -740,18 +740,29 @@
       <span id="parse-label">Loading…</span>
     </div>
     <div class="header-actions" style="margin-left:auto;display:flex;gap:6px;align-items:center">
+<!--@lite:begin-->
       <button onclick="document.getElementById('file-input').click()" id="open-btn">📂 Open FCS File</button>
-      <button onclick="showGlobalSettingsDialog()" id="settings-btn" style="display:none" title="Global settings">⚙️ Settings</button>
+      
+<!--@lite:end-->
+<button onclick="showGlobalSettingsDialog()" id="settings-btn" style="display:none" title="Global settings">⚙️ Settings</button>
       <button onclick="addPlot()" id="add-plot-btn" style="display:none">+ Add Plot</button>
+<!--@lite:begin-->
       <button onclick="exportGates()" id="export-btn" style="display:none" title="Export template">↓ Export Template</button>
       <button onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Import template">↑ Import Template</button>
       <button onclick="showShareDialog()" id="share-btn" style="display:none" title="Export a self-contained HTML with data, gates and plots">🔗 Export Shareable HTML</button>
-      <button onclick="resetToAuthorGates()" id="reset-author-btn" style="display:none" title="Restore the gates and plots the author shared">↺ Reset to author's gates</button>
+      
+<!--@lite:end-->
+<button onclick="resetToAuthorGates()" id="reset-author-btn" style="display:none" title="Restore the gates and plots the author shared">↺ Reset to author's gates</button>
+<!--@lite:begin-->
       <input type="file" id="import-input" accept=".json" style="display:none">
-    </div>
+    
+<!--@lite:end-->
+</div>
   </div>
 </header>
+<!--@lite:begin-->
 <input type="file" id="file-input" accept=".fcs,.lmd,.LMD" multiple>
+<!--@lite:end-->
 
 <div class="main">
   <div class="sidebar" id="sidebar" style="display:none">
@@ -817,15 +828,19 @@
         <div class="drop-title">Drop an FCS file here</div>
         <div class="drop-sub">or click to browse</div>
         <br>
+<!--@lite:begin-->
         <button class="primary" onclick="document.getElementById('file-input').click()">Open FCS File</button>
         <br><br>
+<!--@lite:end-->
         <div class="drop-sub" style="font-size:10px">FCS 2.0, 3.0, 3.1 and Beckman Coulter LMD supported<br>All data processed locally in your browser</div>
       </div>
+<!--@lite:begin-->
       <div style="color:var(--text2);font-size:11px;max-width:400px;text-align:center;line-height:1.8">
         💡 No FCS file? Try the <strong style="color:var(--accent)">demo</strong> to explore the interface with synthetic data.
         <br><br>
         <button onclick="loadDemo()">Load Demo Data</button>
       </div>
+<!--@lite:end-->
       <div style="max-width:420px;margin-top:8px;padding:10px 16px;border-radius:8px;
                   background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.25);
                   text-align:center;font-size:10px;color:var(--text2);line-height:1.7">
@@ -1156,6 +1171,7 @@ function evalGateAsync(gate) {
   fileObj._computeWorker.postMessage(msg);
 }
 
+/*@lite:begin*/
 // ─── LMD PARSER (Beckman Coulter) ────────────────────────────────────────────
 // LMD files embed FCS2.0 (log-transformed, good param names/stains) followed by
 // FCS3.0 (raw untransformed data, generic FL* names). Strategy:
@@ -1367,6 +1383,7 @@ async function parseLMD(buffer) {
   return { params, nEvents, nPar, data, meta, version: 'LMD/FCS3.0',
            rawData: lmdRawData, spillMatrix: lmdSpillMatrix, spillParamIdx: lmdSpillParamIdx };
 }
+/*@lite:end*/
 
 // Gauss-Jordan matrix inversion — returns inverse of n×n matrix A, or null if singular
 function matInvert(A, n) {
@@ -1450,6 +1467,7 @@ function recomputeCompensation(newSpillMatrix, fileId) {
   return true;
 }
 
+/*@lite:begin*/
 // ─── FCS PARSER ───────────────────────────────────────────────────────────────
 async function parseFCS(buffer) {
   const dv = new DataView(buffer);
@@ -1589,7 +1607,7 @@ async function parseFCS(buffer) {
   return { params, nEvents, nPar, data, meta: kv, version: fcsVer, compensated: !!fcsSpill,
            rawData: fcsRawData, spillMatrix: fcsSpillMatrix, spillParamIdx: fcsSpillParamIdx };
 }
-
+/*@lite:end*/
 // ─── TRANSFORM (log10) ────────────────────────────────────────────────────────
 const LOG10E = Math.LOG10E;  // 1/ln(10) ≈ 0.4343
 
@@ -1753,6 +1771,7 @@ function makeTransforms(plot, pad, pw, ph, W, H) {
   return { dataToCanvasX, dataToCanvasY, dispToCanvasX, dispToCanvasY, canvasToDispX, canvasToDispY, xRange, yRange, xls, yls };
 }
 
+/*@lite:begin*/
 // ─── FILE LOADING ─────────────────────────────────────────────────────────────
 function loadFCS(buffer, filename) {
   showProgress(5, 'Starting parser…');
@@ -1958,7 +1977,7 @@ async function loadFCSFallback(buffer, filename) {
     showToast('Error parsing file: ' + e.message);
   }
 }
-
+/*@lite:end*/
 function addFileToSession(fileObj) {
   // Seed per-file param ranges from OTflow cofactors
   if (fileObj.otflowCofactors) {
@@ -1993,9 +2012,9 @@ function addFileToSession(fileObj) {
     document.getElementById('settings-btn').style.display = '';
     document.getElementById('global-toolbar').style.display = 'flex';
     document.getElementById('status-bar').style.display = 'flex';
-    document.getElementById('export-btn').style.display = '';
-    document.getElementById('import-btn').style.display = '';
-    document.getElementById('share-btn').style.display = '';
+    { const b = document.getElementById('export-btn'); if (b) b.style.display = ''; }
+    { const b = document.getElementById('import-btn'); if (b) b.style.display = ''; }
+    { const b = document.getElementById('share-btn'); if (b) b.style.display = ''; }
 
     // Reset tabs and plots
     tabs = []; activeTabId = null; tabIdCounter = 0;
@@ -6017,6 +6036,7 @@ function showAbout() {
   overlay.addEventListener('keydown', e => { if (e.key === 'Escape') overlay.remove(); });
 }
 
+/*@lite:begin*/
 function exportGates() {
   showExportNameDialog();
 }
@@ -6145,7 +6165,7 @@ function _buildTemplateV3(tmplName) {
     plots:    plotSnapshots
   };
 }
-
+/*@lite:end*/
 // ─── SHAREABLE HTML EXPORT / BUNDLE LOAD ─────────────────────────────────────
 // A shareable HTML is this app plus a script#flowng-bundle JSON block holding the
 // event data (gzip+base64), compensation, and the author's gates/plots. On open, the
@@ -6155,6 +6175,7 @@ function _buildTemplateV3(tmplName) {
 let _authorTemplate = null;   // template to restore with "Reset to author's gates"
 let _bundleInfo = null;
 
+/*@lite:begin*/
 const _SAFE_META_KEYS = /^(\$CYT|\$DATE|\$BTIM|\$ETIM|\$TOT|\$PAR|\$MODE|\$DATATYPE|\$BYTEORD|\$NEXTDATA|FCSVersion|\$FCSVersion|\$P\d+[NSRBEGVD])$/;
 
 function _docSource() {
@@ -6184,13 +6205,14 @@ async function _gzipB64(typedArray) {
     fr.readAsDataURL(gz);
   });
 }
-
+/*@lite:end*/
 async function _gunzipB64(b64) {
   const resp = await fetch('data:application/octet-stream;base64,' + b64);
   const stream = resp.body.pipeThrough(new DecompressionStream('gzip'));
   return await new Response(stream).arrayBuffer();
 }
 
+/*@lite:begin*/
 function showShareDialog() {
   if (!fcsFiles.length) { showToast('Load a file first'); return; }
   const existing = document.getElementById('share-modal');
@@ -6329,6 +6351,15 @@ async function doExportShareable() {
       const oldEnd = src.indexOf(CLOSE, oldBundle) + CLOSE.length;
       src = src.slice(0, oldBundle) + src.slice(oldEnd).replace(/^\s+/, '');
     }
+    // Locked viewer: physically remove the code and UI for loading, importing and exporting.
+    // Marker strings are split so this source never contains a literal marker of its own.
+    if (sterile) {
+      const jsMark = new RegExp('/\\*@li' + 'te:begin\\*/[\\s\\S]*?/\\*@li' + 'te:end\\*/\\n?', 'g');
+      const htmlMark = new RegExp('<!--@li' + 'te:begin-->[\\s\\S]*?<!--@li' + 'te:end-->\\n?', 'g');
+      src = src.replace(jsMark, '').replace(htmlMark, '');
+      // Open-file buttons inside drop-zone templates that the app rebuilds at runtime.
+      src = src.split('<button class="primary" onclick="document.getElementById(\'file-input\').click()">Open FCS File</button>').join('');
+    }
     // Insert the bundle just before the loader hook at the end of <body>.
     const insertAt = src.lastIndexOf(OPEN + ' id="flowng-bundle-loader"');
     if (insertAt < 0) throw new Error('loader hook not found');
@@ -6358,7 +6389,7 @@ async function doExportShareable() {
     go.disabled = false;
   }
 }
-
+/*@lite:end*/
 async function loadBundleIfPresent() {
   const el = document.getElementById('flowng-bundle');
   if (!el) return;
@@ -6413,17 +6444,14 @@ async function loadBundleIfPresent() {
   }
 }
 
-// Locked viewer: no loading other data, no template import, no export of any kind.
+// Locked viewer runtime guard. The loading/import/export code is stripped from the exported file
+// (see @lite markers); this hides leftover UI and stops dropped files from navigating the page.
 // Gating, plotting, compensation and reset-to-author stay available.
 function _applySterileMode() {
   document.body.classList.add('sterile');
   const st = document.createElement('style');
   st.textContent = '#open-btn,#export-btn,#import-btn,#share-btn,#drop-zone{display:none !important}';
   document.head.appendChild(st);
-  ['file-input', 'import-input'].forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
-  const deny = () => showToast('This shared file is a locked viewer', 3000);
-  ['loadFCS', 'loadFCSFallback', 'loadDemo', 'importGates', 'exportGates', 'doExportTemplate',
-   'showShareDialog', 'doExportShareable', 'showExportNameDialog'].forEach(n => { window[n] = deny; });
   // Stop the browser navigating to / opening a dropped file, and stop the app seeing the drop.
   ['dragover', 'drop'].forEach(ev => window.addEventListener(ev, e => {
     // Only external file drags; in-app drags (reordering populations/plots) must keep working.
@@ -6442,6 +6470,7 @@ function resetToAuthorGates() {
   showToast("Restored author's gates");
 }
 
+/*@lite:begin*/
 function importGates(templateJson) {
   let tmpl;
   try { tmpl = JSON.parse(templateJson); } catch(e) { showToast('Invalid JSON file'); return; }
@@ -6696,7 +6725,7 @@ function _doImportV3(indices) {
   modal.remove();
   _applyTemplateV3(tmpl, fileMap);
 }
-
+/*@lite:end*/
 // Applies a v3 template to already-loaded files. fileMap[i] is the fcsFile for tmpl.files[i].
 function _applyTemplateV3(tmpl, fileMap) {
   // Reset plots/tabs
@@ -6922,6 +6951,7 @@ function copyMetadata() {
   );
 }
 
+/*@lite:begin*/
 // Wire up import file input
 document.getElementById('import-input').addEventListener('change', e => {
   const file = e.target.files[0]; if (!file) return;
@@ -6930,7 +6960,8 @@ document.getElementById('import-input').addEventListener('change', e => {
   reader.readAsText(file);
   e.target.value = '';
 });
-
+/*@lite:end*/
+/*@lite:begin*/
 // ─── DEMO DATA ────────────────────────────────────────────────────────────────
 function generateDemoData() {
   const nEvents = 12459;
@@ -7046,6 +7077,7 @@ dropBox.addEventListener('drop', e => {
     reader.readAsArrayBuffer(file);
   });
 });
+/*@lite:end*/
 </script>
 
 <script id="compute-worker-src" type="text/worker">
@@ -7230,6 +7262,7 @@ self.addEventListener('message', (e) => {
 });
 </script>
 
+<!--@lite:begin-->
 <script id="parse-worker-src" type="text/worker">
 'use strict';
 
@@ -8006,6 +8039,7 @@ self.addEventListener('message', async (e) => {
 });
 
 </script>
+<!--@lite:end-->
 <script id="flowng-bundle-loader">loadBundleIfPresent();</script>
 </body>
 </html>
