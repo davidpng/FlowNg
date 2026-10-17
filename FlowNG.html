@@ -705,16 +705,16 @@
   <div class="header-right">
     <div class="global-toolbar" id="global-toolbar" style="display:none;align-items:center;gap:3px;flex-shrink:0;
       border-right:1px solid var(--border);padding-right:10px;margin-right:4px">
-      <button class="tool-btn active" id="gbtn-pan"      onclick="setGlobalMode('pan')"      title="Select and move gates"><i>↖</i>Select</button>
-      <button class="tool-btn"        id="gbtn-gate"     onclick="setGlobalMode('gate')"     title="Draw a polygon gate"><i>⬡</i>Polygon</button>
-      <button class="tool-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Draw a rectangular gate"><i>▭</i>Rect</button>
-      <button class="tool-btn"        id="gbtn-quad"     onclick="setGlobalMode('quad')"     title="Place a quadrant crosshair (Q1-Q4, clockwise from upper right)"><i>+</i>Quadrant</button>
-      <button class="tool-btn"        id="gbtn-edit"     onclick="setGlobalMode('edit')"     title="Edit gate vertices"><i>✎</i>Edit</button>
-      <button class="tool-btn"        id="gbtn-spill"    onclick="setGlobalMode('spill')"    title="Compensation: drag the top or right edge of a plot to adjust spillover"><i>⇔</i>Comp</button>
-      <button class="tool-btn"        id="gbtn-delete"   onclick="setGlobalMode('delete')"   title="Click a gate to delete it"><i>🗑</i>Delete</button>
-      <button class="tool-btn"        id="gbtn-autocomp" onclick="setGlobalMode('autocomp')" title="Autocomp: draw a polygon around a population that should sit flat; the spillover between the two axes is fitted automatically"><i>◎</i>Autocomp</button>
-      <button class="tool-btn" id="undo-btn" onclick="undo()" title="Undo (Ctrl/Cmd+Z)" disabled><i>↶</i>Undo</button>
-      <button class="tool-btn" id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z)" disabled><i>↷</i>Redo</button>
+      <button class="tool-btn active" id="gbtn-pan"      onclick="setGlobalMode('pan')"      title="Select: drag a gate to move it. With a plot selected, drag the blue marker on an arcsinh axis to change its cofactor."><i>↖</i>Select</button>
+      <button class="tool-btn"        id="gbtn-gate"     onclick="setGlobalMode('gate')"     title="Polygon: click points around a population, then click the first point (or double-click) to close the gate. Esc cancels."><i>⬡</i>Polygon</button>
+      <button class="tool-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Rect: drag a rectangle on a plot to create a gate."><i>▭</i>Rect</button>
+      <button class="tool-btn"        id="gbtn-quad"     onclick="setGlobalMode('quad')"     title="Quadrant: click to place a crosshair that creates Q1-Q4 (clockwise from upper right). Drag the crosshair with Select or Edit to move all four together."><i>+</i>Quadrant</button>
+      <button class="tool-btn"        id="gbtn-edit"     onclick="setGlobalMode('edit')"     title="Edit: drag a gate's corner points to reshape it, or drag its body to move it."><i>✎</i>Edit</button>
+      <button class="tool-btn"        id="gbtn-spill"    onclick="setGlobalMode('spill')"    title="Comp: on a plot whose two axes are both in the spillover matrix, drag the top edge (Y into X) or right edge (X into Y) to tune that coefficient. Gates are re-evaluated when you let go."><i>⇔</i>Comp</button>
+      <button class="tool-btn"        id="gbtn-delete"   onclick="setGlobalMode('delete')"   title="Delete: click a gate on a plot to remove it and its children (a quadrant is removed as a set)."><i>🗑</i>Delete</button>
+      <button class="tool-btn"        id="gbtn-autocomp" onclick="setGlobalMode('autocomp')" title="Autocomp: outline a population that should sit flat in this pair of axes (at least 100 events). The spillover coefficient between the two axes is fitted automatically. Undoable."><i>◎</i>Autocomp</button>
+      <button class="tool-btn" id="undo-btn" onclick="undo()" title="Undo the last gate, colour, order, compensation or cofactor change (Ctrl/Cmd+Z)" disabled><i>↶</i>Undo</button>
+      <button class="tool-btn" id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)" disabled><i>↷</i>Redo</button>
     </div>
     <div id="parse-progress" style="display:none;align-items:center;gap:8px;font-size:10px;color:var(--text2)">
       <div style="width:100px;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
@@ -724,18 +724,18 @@
     </div>
     <div class="header-actions" style="margin-left:auto;display:flex;gap:6px;align-items:center">
 <!--@lite:begin-->
-      <button onclick="document.getElementById('file-input').click()" id="open-btn">📂 Open FCS File</button>
+      <button onclick="document.getElementById('file-input').click()" id="open-btn" title="Open one or more FCS / LMD files (or drop them on the page)">📂 Open FCS File</button>
       
 <!--@lite:end-->
-<button onclick="showGlobalSettingsDialog()" id="settings-btn" style="display:none" title="Global settings">⚙️ Settings</button>
-      <button onclick="addPlot()" id="add-plot-btn" style="display:none">+ Add Plot</button>
+<button onclick="showGlobalSettingsDialog()" id="settings-btn" style="display:none" title="Global settings: set the lower display limit of every fluorescent axis from a data percentile">⚙️ Settings</button>
+      <button onclick="addPlot()" id="add-plot-btn" style="display:none" title="Add a plot to the current tab (for the selected file)">+ Add Plot</button>
 <!--@lite:begin-->
-      <button onclick="exportGates()" id="export-btn" style="display:none" title="Export template">↓ Export Template</button>
-      <button onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Import template">↑ Import Template</button>
-      <button onclick="showShareDialog()" id="share-btn" style="display:none" title="Export a self-contained HTML with data, gates and plots">🔗 Export Shareable HTML</button>
+      <button onclick="exportGates()" id="export-btn" style="display:none" title="Save gates, plots and axis settings as a JSON template (no event data)">↓ Export Template</button>
+      <button onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Apply a saved JSON template to the loaded file(s)">↑ Import Template</button>
+      <button onclick="showShareDialog()" id="share-btn" style="display:none" title="Export one self-contained HTML containing the event data, compensation, gates and plots (not the original FCS/LMD file)">🔗 Export Shareable HTML</button>
       
 <!--@lite:end-->
-<button onclick="resetToAuthorGates()" id="reset-author-btn" style="display:none" title="Restore the gates and plots the author shared">↺ Reset to author's gates</button>
+<button onclick="resetToAuthorGates()" id="reset-author-btn" style="display:none" title="Throw away your changes and restore the gates and plots exactly as the author shared them (undoable)">↺ Reset to author's gates</button>
 <!--@lite:begin-->
       <input type="file" id="import-input" accept=".json" style="display:none">
     
@@ -757,7 +757,7 @@
     <div class="sidebar-section">
       <h3>Display</h3>
       <div style="display:flex;flex-direction:column;gap:6px">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Draw grid lines at the axis ticks">
           <input type="checkbox" id="showgrid" onchange="renderAllPlots()" checked>
           <span>Show grid</span>
         </label>
@@ -777,6 +777,7 @@
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> undo · <kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Y</kbd> redo<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">PLOTS</div>
       <kbd>Click</kbd> header — select plot<br>
+      <kbd>Click</kbd> empty canvas — deselect all<br>
       <kbd>Shift</kbd>+<kbd>Click</kbd> — range-select plots<br>
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Click</kbd> — toggle selection<br>
       <kbd>Del</kbd>/<kbd>⌫</kbd> — remove selected plot(s)<br>
@@ -792,6 +793,8 @@
       <kbd>+</kbd> — also draw this population as exact events (dots)<br>
       <kbd>×</kbd> — delete gate and children<br>
       <kbd>Right-click</kbd> row — rename / color, copy, cut, paste, delete<br>
+      <kbd>Shift</kbd>+<kbd>Click</kbd> row — rename / color<br>
+      <kbd>Right-click</kbd> file row — paste a gate at the top level
       <kbd>Drag</kbd> row onto another — re-parent<br>
       <kbd>Drag</kbd> ⠿ above/below a sibling — reorder; the lower one wins shared cells<br>
       <kbd>Click</kbd> name — jump to the gate's plot<br>
@@ -803,7 +806,7 @@
 
   <div class="workspace">
     <div class="tab-strip" id="tab-strip" style="display:none">
-      <div class="tab-add" onclick="addTab()" title="Add a new tab">+ Tab</div>
+      <div class="tab-add" onclick="addTab()" title="Add a new tab (a separate page of plots)">+ Tab</div>
     </div>
     <div class="canvas-area" id="canvas-area">
     <div class="drop-zone" id="drop-zone">
@@ -2668,7 +2671,7 @@ function renderPlotCard(plot) {
 
   card.innerHTML = `
     <div class="plot-header" id="plot-hdr-${plot.id}">
-      <div class="plot-drag-handle" title="Drag to reorder plot">⠿</div>
+      <div class="plot-drag-handle" title="Drag to reorder plots, or drop on a tab to move this plot there">⠿</div>
       <span id="file-dot-${plot.id}"
         style="width:8px;height:8px;border-radius:50%;flex-shrink:0;
                display:${fcsFiles.length > 1 ? 'inline-block' : 'none'};
@@ -2676,6 +2679,7 @@ function renderPlotCard(plot) {
         title="${fcsFile ? fcsFile.filename : ''}"></span>
       <span style="color:var(--text2);font-size:10px;flex-shrink:0">Pop:</span>
       <select id="pop-sel-${plot.id}" onchange="changePop(${plot.id},this.value)"
+        title="Population shown on this plot. Every gate under it is drawn in its own colour."
         style="flex:1;min-width:0;font-size:10px;padding:2px 4px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:4px"
         onmousedown="event.stopPropagation()">${popOpts()}</select>
       <span id="res-val-${plot.id}" style="font-size:10px;color:var(--text2);flex-shrink:0;min-width:24px;text-align:right" title="Density bins per axis">${plot.bins || 256}</span>
@@ -2827,14 +2831,14 @@ function buildAxisControls(plot) {
   };
 
   xDiv.innerHTML = `
-    <select id="x-sel-${pid}" onchange="changeAxis(${pid},'x',this.value)"
+    <select id="x-sel-${pid}" title="X axis parameter" onchange="changeAxis(${pid},'x',this.value)"
       style="font-size:10px;padding:2px 4px;background:#fff;color:#222;border:1px solid #ccc;border-radius:4px;max-width:140px">${pOpts(plot.xParam)}</select>
     <button id="btn-xlog-${pid}" onclick="toggleAxisScale(${pid},'x')" title="Cycle: LOG → LIN → ASINH(300)"
       style="font-size:9px;padding:2px 5px;border-radius:3px;cursor:pointer;${scaleBtnStyle(xScaleLabel)}">${xScaleLabel}</button>`;
 
   const yDiv = document.getElementById(`yaxis-ctrl-${pid}`);
   yDiv.innerHTML = `<div style="transform:rotate(-90deg);white-space:nowrap;display:flex;gap:3px;align-items:center">
-    <select id="y-sel-${pid}" onchange="changeAxis(${pid},'y',this.value)"
+    <select id="y-sel-${pid}" title="Y axis parameter" onchange="changeAxis(${pid},'y',this.value)"
       style="font-size:10px;padding:2px 4px;background:#fff;color:#222;border:1px solid #ccc;border-radius:4px;max-width:140px">${pOpts(plot.yParam)}</select>
     <button id="btn-ylog-${pid}" onclick="toggleAxisScale(${pid},'y')" title="Cycle: LOG → LIN → ASINH(300)"
       style="font-size:9px;padding:2px 5px;border-radius:3px;cursor:pointer;${scaleBtnStyle(yScaleLabel)}">${yScaleLabel}</button>
@@ -5247,6 +5251,12 @@ function autoCompensate(plot) {
     m[ix][iy] += slope;
     if (!recomputeCompensation(m, f.fileId)) { showToast('Autocomp stopped: matrix became singular', 4000); break; }
   }
+  if (f.spillMatrix[ix][iy] === before) {
+    _undoStack.pop(); updateUndoButtons();
+    showToast('Autocomp: that population is already flat (slope under 0.0001), so nothing changed', 5000);
+    setGlobalMode('pan');
+    return;
+  }
   reevaluateAllGates(f);
   showToast(`Autocomp: ${f.params[plot.xParam].name} → ${f.params[plot.yParam].name} spillover ${before.toFixed(4)} → ${f.spillMatrix[ix][iy].toFixed(4)}`, 5000);
   setGlobalMode('pan');
@@ -5769,7 +5779,7 @@ function renderTabStrip() {
     el.className = 'tab-item' + (tab.id === activeTabId ? ' active' : '');
     el.dataset.tabId = tab.id;
     el.innerHTML = `
-      <button class="tab-main" title="Click to switch, right-click or double-click to rename, drop a plot here to move it">${tab.name} (${plotCount})</button>
+      <button class="tab-main" title="Click to switch tabs. Right-click or double-click to rename. Drop a plot here to move it.">${tab.name} (${plotCount})</button>
       <button class="tab-close" onclick="removeTab(${tab.id});event.stopPropagation()" title="Close tab">✕</button>`;
     el.querySelector('.tab-main').addEventListener('dblclick', () => renameTab(tab.id));
     el.querySelector('.tab-main').addEventListener('contextmenu', e => { e.preventDefault(); renameTab(tab.id); });

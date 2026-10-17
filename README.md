@@ -122,7 +122,79 @@ Supported formats: FCS 2.0, 3.0, 3.1, and Beckman Coulter LMD files
 
 **Keyboard**: `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y` redo, `Del` remove selected plot(s), `Esc` cancel a gate or deselect.
 
-The lower-left panel of the app lists these controls and updates with the viewer.
+**Hover for help.** The toolbar tools, header buttons, plot controls (population, axes, bins, grip, expand, swap), tabs, cofactor markers and tree controls (`+`, `×`, grip) all have tooltips: hold the pointer over one and it says what it does and what it needs (for example, Comp and Autocomp say that both axes must be in the spillover matrix).
+
+### Quick Instructions (the lower-left panel)
+
+The panel at the bottom of the left sidebar is a live cheat sheet that matches the controls below.
+
+**Toolbar**
+
+| Control | What it does |
+|---|---|
+| **Select** | Drag a gate to move it. With a plot selected, drag the blue marker on an arcsinh axis to change that channel's cofactor |
+| **Polygon** | Click points around a population; click the first point (or double-click) to close the gate |
+| **Rect** | Drag a rectangle |
+| **Quadrant** | Click to place a crosshair (Q1–Q4, clockwise from upper right); drag it with Select or Edit |
+| **Edit** | Drag gate corner points to reshape a gate |
+| **Comp** | Drag a plot's top or right edge to tune one spillover coefficient |
+| **Autocomp** | Outline a population that should sit flat; the spillover coefficient is fitted for you |
+| **Delete** | Click a gate to remove it |
+| **Undo / Redo** | `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y` |
+
+**Plots**
+
+| Control | What it does |
+|---|---|
+| Click a plot's header | Select that plot |
+| Click empty canvas | Deselect all |
+| `Shift`+click / `Ctrl`or`⌘`+click | Range-select / toggle plots; axis, population and bin changes then apply to every selected plot (the LOG/LIN/ASINH scale stays per plot) |
+| `Del` / `⌫` | Remove the selected plot(s) |
+| `Esc` | Cancel a gate you are drawing, and deselect all |
+| Drag ⠿ | Reorder plots, or drop one on a tab to move it there |
+| Right-click the plot | Set axis min/max and the arcsinh cofactor numerically |
+| Right-click the plot header | Switch the plot's source file (when several files are loaded) |
+| Bins slider | Density bins per axis (32–512) |
+
+**Tabs**: right-click or double-click a tab to rename it, `✕` closes it, `+ Tab` adds one.
+
+**Population tree**
+
+| Control | What it does |
+|---|---|
+| `+` | Also draw this population as exact events (dots) |
+| `×` | Delete the gate and its children (all of Q1–Q4 for a quadrant) |
+| Right-click a row | Rename / colour, Copy, Cut, Paste, Delete |
+| `Shift`+click a row | Rename / colour |
+| Right-click a file row | Paste a copied gate at the top level of that file |
+| Drag a row onto another | Re-parent the gate (onto the file row to un-parent) |
+| Drag ⠿ above or below a sibling | Reorder; the gate lower in the tree wins shared cells |
+| Click a gate's name | Jump to (or create) the plot where it was drawn |
+
+### Compensation, Step by Step
+
+Both tools need a file with a spillover matrix (an FCS `$SPILLOVER` keyword, or a Beckman Coulter LMD file) and a plot whose **two axes are both fluorescence channels in that matrix**. On any other pair the tooltip says so.
+
+**Comp — adjust one coefficient by hand**
+1. Choose **Comp** and make a plot with the two channels you want to compare (for example CD5 vs CD20).
+2. Drag the plot's **top edge** left or right to change how much the Y channel spills into X, or its **right edge** up or down to change how much X spills into Y. A badge shows the coefficient.
+3. The plot recompensates live. When you let go, every gate is re-evaluated, so counts and percentages in the tree update.
+4. **Undo** reverses it.
+
+**Autocomp — let FlowNG fit one coefficient**
+1. Make a plot of the two channels with the spill problem; set the plot's population to the cells you trust (for example Lymphs).
+2. Choose **Autocomp**.
+3. Click points around a population that should sit flat in this pair, such as the negative or single-positive cloud that currently slopes. Click the first point (or double-click) to close the outline. It needs at least 100 events inside.
+4. FlowNG takes the events in the outline, bins them by X into 20 equal-count bins, takes the median Y of each bin, and fits a weighted line through those medians. It adds that slope to the X→Y spillover coefficient and repeats up to three times (stopping when the slope falls under 0.0001). A toast reports the coefficient before and after; if the outlined population is already flat, nothing changes and nothing is added to the undo history.
+5. All gates are re-evaluated. **Undo** restores the old matrix and counts, and you can run Autocomp again on another pair to fix it one pair at a time.
+
+Autocomp fits one pair at a time from the population you outline; it is not the full AutoSpill algorithm that learns a whole matrix from single-stain controls. The outline is temporary and never becomes a gate.
+
+### Changing a Cofactor by Dragging
+Select a plot in **Select** mode. Each arcsinh axis shows a small blue marker. Drag it along the axis: the position is geometric (1 to 100,000), the ticks and gate outlines follow live, and the zero point stays pinned at 20% of the axis. On release every gate is re-evaluated and every plot of that channel adopts the new cofactor. `Esc` during the drag puts the old value back, and **Undo** reverses a committed change.
+
+### Copying Gates
+Right-click a gate row and choose **Copy** (or **Cut**), then right-click another row, in any loaded file, and choose **Paste**. The copy is a new independent gate under that row. It is matched to the target file by parameter name, so pasting into a file that lacks one of its channels is refused with a message. Quadrant gates cannot be copied.
 
 ### Plot Configuration
 
