@@ -394,6 +394,13 @@
   }
   .pop-count-small { font-size: 11px; color: #9aa; margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .pop-pct-small { font-size: 11px; color: #778; min-width: 36px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cf-handle { position: absolute; width: 20px; height: 20px; transform: translate(-50%,-50%); z-index: 12; display: none; }
+  .cf-handle i { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); background: #5a8dee; pointer-events: none; }
+  .cf-handle-x { cursor: ew-resize; }
+  .cf-handle-x i { width: 14px; height: 12px; clip-path: polygon(50% 0%, 100% 42%, 100% 100%, 0% 100%, 0% 42%); }
+  .cf-handle-y { cursor: ns-resize; }
+  .cf-handle-y i { width: 12px; height: 14px; clip-path: polygon(100% 50%, 58% 0%, 0% 0%, 0% 100%, 58% 100%); }
+  .pop-grip { cursor: grab; color: #667; font-size: 11px; flex-shrink: 0; user-select: none; }
   .pop-plus-btn, .pop-del-btn {
     border: none; background: transparent; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; flex-shrink: 0;
   }
@@ -747,11 +754,6 @@
       <h3>Populations</h3>
       <div id="pop-list"></div>
     </div>
-    <div class="sidebar-section" id="precedence-section" style="display:none">
-      <h3>Color Precedence</h3>
-      <div style="color:var(--text2);font-size:10px;margin-bottom:6px">Drag to reorder. Top gate wins.</div>
-      <div id="precedence-list"></div>
-    </div>
     <div class="sidebar-section">
       <h3>Display</h3>
       <div style="display:flex;flex-direction:column;gap:6px">
@@ -763,27 +765,38 @@
     </div>
     </div><!-- /sidebar-content -->
     <div class="kb-hints">
-      <div style="color:var(--text2);font-size:9px;font-weight:600;margin-bottom:4px;letter-spacing:0.5px">PLOT SELECTION</div>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin-bottom:4px;letter-spacing:0.5px">TOOLBAR</div>
+      <kbd>Select</kbd> — drag a gate to move it; with a plot selected, drag the blue marker on an arcsinh axis to set its cofactor<br>
+      <kbd>Polygon</kbd> — click points, click the first point (or double-click) to close<br>
+      <kbd>Rect</kbd> — drag a rectangle<br>
+      <kbd>Quadrant</kbd> — click to place a crosshair (Q1–Q4 clockwise from upper right); drag it with Select or Edit<br>
+      <kbd>Edit</kbd> — drag gate vertices<br>
+      <kbd>Comp</kbd> — drag a plot's top or right edge to tune spillover<br>
+      <kbd>Autocomp</kbd> — outline a population that should sit flat; spillover is fitted for you<br>
+      <kbd>Delete</kbd> — click a gate to remove it<br>
+      <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> undo · <kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Y</kbd> redo<br>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">PLOTS</div>
       <kbd>Click</kbd> header — select plot<br>
       <kbd>Shift</kbd>+<kbd>Click</kbd> — range-select plots<br>
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Click</kbd> — toggle selection<br>
-      <kbd>Click</kbd> canvas bg — deselect all<br>
-      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">PLOT MANAGEMENT</div>
       <kbd>Del</kbd>/<kbd>⌫</kbd> — remove selected plot(s)<br>
       <kbd>Esc</kbd> — cancel gate / deselect all<br>
-      <kbd>Drag</kbd> ⠿ — reorder plots<br>
-      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">CANVAS</div>
-      <kbd>Click</kbd> — add gate point<br>
-      <kbd>Click</kbd> first point — close gate (3+ pts)<br>
-      <kbd>Dbl-click</kbd> — finalize gate (3+ pts)<br>
-      <kbd>Right-click</kbd> header — switch source file<br>
+      <kbd>Drag</kbd> ⠿ — reorder plots; drop on a tab to move it<br>
       <kbd>Right-click</kbd> canvas — axis range / cofactor<br>
-      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">POPULATION LIST</div>
-      <kbd>Dbl-click</kbd> pop — cycle dot size boost<br>
-      <kbd>Shift</kbd>+<kbd>Click</kbd> pop — edit name / color<br>
-      <kbd>Right-click</kbd> pop — edit name / color<br>
+      <kbd>Right-click</kbd> header — switch source file<br>
+      <kbd>Slider</kbd> — density bins per axis<br>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">TABS</div>
+      <kbd>Right-click</kbd> or <kbd>Dbl-click</kbd> tab — rename<br>
+      <kbd>✕</kbd> — close tab · <kbd>+ Tab</kbd> — add a tab<br>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">POPULATION TREE</div>
+      <kbd>+</kbd> — also draw this population as exact events (dots)<br>
+      <kbd>×</kbd> — delete gate and children<br>
+      <kbd>Right-click</kbd> row — rename / color, copy, cut, paste, delete<br>
+      <kbd>Drag</kbd> row onto another — re-parent<br>
+      <kbd>Drag</kbd> ⠿ above/below a sibling — reorder; the lower one wins shared cells<br>
+      <kbd>Click</kbd> name — jump to the gate's plot<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">MULTI-SELECT (2+ plots)</div>
-      Axis / pop changes apply to all selected.<br>
+      Axis / pop / bin changes apply to all selected.<br>
       Scale (LOG/LIN/ASINH) is always per-plot.
     </div>
   </div>
@@ -2204,6 +2217,11 @@ function showFileContextMenu(fileId, cx, cy) {
       onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
       🔍 View Metadata
     </div>
+    ${_gateClipboard ? `<div class="ctx-item" onclick="pasteGate(${(getFileById(fileId) || {})._rootPopId});document.getElementById('file-ctx-menu')?.remove()"
+      style="padding:6px 14px;font-size:11px;cursor:pointer;color:var(--text)"
+      onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
+      📋 Paste gate here
+    </div>` : ''}
     <div class="ctx-item" onclick="removeFile(${fileId});document.getElementById('file-ctx-menu')?.remove()"
       style="padding:6px 14px;font-size:11px;cursor:pointer;color:#e06c75"
       onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
@@ -2262,6 +2280,27 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   // Indent by depth (14px per level), as in FlowNg2
   row.style.paddingLeft = `${6 + (isRoot ? 0 : prefixLines.length) * 14}px`;
 
+  // Grip: drag above/below a sibling to reorder (decides who wins shared cells)
+  if (pop.gateInfo) {
+    const grip = document.createElement('span');
+    grip.className = 'pop-grip';
+    grip.textContent = '⠿';
+    grip.title = 'Drag above/below a sibling to reorder; the one lower in the tree wins shared cells';
+    grip.draggable = true;
+    grip.addEventListener('dragstart', e => {
+      e.stopPropagation();
+      _siblingDrag = popId;
+      e.dataTransfer.setData('siblingId', String(popId));
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    grip.addEventListener('dragend', e => {
+      e.stopPropagation();
+      _siblingDrag = null;
+      document.querySelectorAll('.pop-tree-node').forEach(r => { r.style.borderTop = ''; r.style.borderBottom = ''; });
+    });
+    row.appendChild(grip);
+  }
+
   // Swatch
   const swatch = document.createElement('div');
   swatch.className = 'pop-swatch-tree' + (pop.noColor ? ' no-color' : '');
@@ -2316,11 +2355,12 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   if (popId !== 0) {
     // Right-click or Shift+click opens color/name picker
     const openPicker = e => { e.preventDefault(); e.stopPropagation(); showColorPicker(popId, e.clientX, e.clientY); };
-    swatch.addEventListener('contextmenu', openPicker);
-    row.addEventListener('contextmenu', openPicker);
+    const openMenu = e => { e.preventDefault(); e.stopPropagation(); showGateMenu(popId, e.clientX, e.clientY); };
+    swatch.addEventListener('contextmenu', openMenu);
+    row.addEventListener('contextmenu', openMenu);
     row.addEventListener('click', e => { if (e.shiftKey) openPicker(e); });
 
-    row.title = 'Click name to navigate to gate plot · Shift-click or right-click to edit color/name · Drag to reparent';
+    row.title = 'Click name to navigate to gate plot · Right-click for rename/color/copy/paste/delete · Drag row onto another to re-parent';
 
     // Drag to reparent — suppress on right-click so context menu fires reliably
     row.draggable = true;
@@ -2338,6 +2378,26 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
       document.querySelectorAll('.pop-tree-node').forEach(r => r.classList.remove('drag-over-node'));
     });
   }
+
+  // Sibling reordering: drop above/below this row when it shares the dragged gate's parent
+  row.addEventListener('dragover', e => {
+    if (!e.dataTransfer.types.includes('siblingid')) return;
+    const dragged = populations.find(p => p.id === _siblingDrag);
+    if (!dragged || dragged.parentId !== pop.parentId || dragged.id === popId) return;
+    e.preventDefault(); e.stopPropagation();
+    const r = row.getBoundingClientRect(), before = e.clientY < r.top + r.height / 2;
+    row.style.borderTop = before ? '2px solid rgba(120,170,255,0.9)' : '';
+    row.style.borderBottom = before ? '' : '2px solid rgba(120,170,255,0.9)';
+  });
+  row.addEventListener('dragleave', () => { row.style.borderTop = ''; row.style.borderBottom = ''; });
+  row.addEventListener('drop', e => {
+    if (!e.dataTransfer.types.includes('siblingid')) return;
+    e.preventDefault(); e.stopPropagation();
+    const r = row.getBoundingClientRect(), before = e.clientY < r.top + r.height / 2;
+    row.style.borderTop = ''; row.style.borderBottom = '';
+    reorderSibling(_siblingDrag, popId, before);
+    _siblingDrag = null;
+  });
 
   // All nodes can be drop targets (including root)
   row.addEventListener('dragover', e => {
@@ -2378,6 +2438,7 @@ function reparentGate(gateId, newParentId) {
   }
   pushUndo();
   gate.parentId = newParentId;
+  { const gf = getFileById(gate.fileId); if (gf) _syncPrecedenceFromTree(gf); }
   // Evaluate synchronously so counts and dot colors are correct immediately
   evalGate(gate);
   descendants.forEach(g => evalGate(g));
@@ -2388,110 +2449,59 @@ function reparentGate(gateId, newParentId) {
   showToast(`Moved "${gate.name}" under "${populations.find(p=>p.id===newParentId)?.name}"`);
 }
 
+// Draw/ownership order comes from the population tree: among siblings, the one lower in the
+// tree wins a shared cell (deepest gate always wins). colorPrecedence is derived from that
+// order — index 0 = highest priority — so drawing and template export keep working unchanged.
+function _syncPrecedenceFromTree(fileObj) {
+  const order = [];
+  const walk = pid => fileObj.populations
+    .filter(p => p.gateInfo && p.parentId === pid)
+    .forEach(g => { order.push(g.id); walk(g.id); });
+  const root = fileObj.populations.find(p => p._isAll);
+  if (root) walk(root.id);
+  fileObj.populations.filter(p => p.gateInfo && !order.includes(p.id)).forEach(p => order.push(p.id));
+  fileObj.colorPrecedence = order.reverse();
+}
+
 function renderPrecedenceList() {
-  // Use the focused file's colorPrecedence; fall back to last loaded file
-  const focusedFile = getFileById(_focusedFileId) || fcsFiles[fcsFiles.length - 1];
-  const section = document.getElementById('precedence-section');
+  fcsFiles.forEach(_syncPrecedenceFromTree);
+  const focused = getFileById(_focusedFileId) || fcsFiles[fcsFiles.length - 1];
+  if (focused) colorPrecedence = focused.colorPrecedence;
+}
 
-  if (!focusedFile) { section.style.display = 'none'; return; }
+let _siblingDrag = null;
+// Moves a gate above/below a sibling (same parent) — which also decides who wins shared cells.
+function reorderSibling(dragId, targetId, before) {
+  const drag = populations.find(p => p.id === dragId), tgt = populations.find(p => p.id === targetId);
+  if (!drag || !tgt || dragId === targetId || drag.parentId !== tgt.parentId || drag.fileId !== tgt.fileId) return;
+  const f = getFileById(drag.fileId); if (!f) return;
+  pushUndo();
+  const arr = f.populations;
+  const dragObj = arr.find(p => p.id === dragId);
+  arr.splice(arr.indexOf(dragObj), 1);
+  const ti = arr.findIndex(p => p.id === targetId);
+  arr.splice(before ? ti : ti + 1, 0, dragObj);
+  _syncPrecedenceFromTree(f);
+  rebuildPopulationsView();
+  renderPopList(); renderAllPlots();
+}
 
-  const gates = focusedFile.populations.filter(p => !p._isAll);
-  section.style.display = gates.length ? '' : 'none';
-  if (!gates.length) return;
-
-  // Sync ALL files' colorPrecedence so that rendering is correct regardless of
-  // which file the precedence panel is currently focused on.  Without this, a
-  // gate created while _focusedFileId points to a different file would be absent
-  // from its own file's colorPrecedence → indexOf returns -1 → sort key 9999 →
-  // drawn first → overridden by every ancestor gate.
-  fcsFiles.forEach(fileObj => {
-    const fileGates = fileObj.populations.filter(p => !p._isAll && p.gateInfo);
-    const fileGateIds = new Set(fileGates.map(g => g.id));
-    fileObj.colorPrecedence = fileObj.colorPrecedence.filter(id => fileGateIds.has(id));
-    fileGates.forEach(g => { if (!fileObj.colorPrecedence.includes(g.id)) fileObj.colorPrecedence.unshift(g.id); });
+// Template import: order each sibling group so the highest-priority name ends up last (wins).
+function _reorderSiblingsByPrecedence(fileObj, names) {
+  if (!names || !names.length) return;
+  const key = p => { const i = names.indexOf(p.name); return i < 0 ? Infinity : i; };
+  const groups = new Map();
+  fileObj.populations.forEach((p, i) => {
+    if (!p.gateInfo) return;
+    if (!groups.has(p.parentId)) groups.set(p.parentId, { slots: [], items: [] });
+    const g = groups.get(p.parentId); g.slots.push(i); g.items.push(p);
   });
-
-  // Sync this file's colorPrecedence for the UI list (already done above, kept for clarity)
-  const gateIds = new Set(gates.map(g => g.id));
-  // Keep global shim in sync for any legacy references
-  colorPrecedence = focusedFile.colorPrecedence;
-
-  const el = document.getElementById('precedence-list');
-  el.innerHTML = '';
-  let dragSrc = null;
-
-  focusedFile.colorPrecedence.forEach((popId, idx) => {
-    const pop = populations.find(p => p.id === popId); if (!pop) return;
-    const row = document.createElement('div');
-    row.className = 'prec-item';
-    row.dataset.id = popId;
-    row.draggable = true;
-
-    const swatchClass = pop.noColor ? 'prec-swatch no-color' : 'prec-swatch';
-    const swatchBg = pop.noColor ? '' : `style="background:${pop.color}"`;
-    const emphBadge = pop.emphasized
-      ? `<span style="font-size:9px;color:#f5a623;margin-left:4px" title="Emphasized (+4px). Double-click to remove.">+4px</span>`
-      : '';
-    row.innerHTML = `
-      <span style="color:var(--text2);font-size:9px;min-width:12px">${idx+1}</span>
-      <div class="${swatchClass}" ${swatchBg} title="Right-click to change color" data-pid="${popId}"></div>
-      <div style="flex:1;font-size:11px;${pop.emphasized ? 'font-weight:600;' : ''}overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${pop.name}${emphBadge}</div>
-      <div style="font-size:10px;color:var(--text2)">${popCount(pop).toLocaleString()}</div>`;
-
-    const precPicker = e => { e.preventDefault(); e.stopPropagation(); showColorPicker(popId, e.clientX, e.clientY); };
-    row.querySelector('.prec-swatch').addEventListener('contextmenu', precPicker);
-    row.addEventListener('contextmenu', precPicker);
-    row.addEventListener('mousedown', e => { if (e.button !== 0) row.draggable = false; });
-    row.addEventListener('mouseup',   () => { row.draggable = true; });
-    row.addEventListener('dblclick', () => {
-      const p = populations.find(q => q.id === popId); if (!p) return;
-      p.emphasized = !p.emphasized;
-      // mirror into per-file populations
-      const fp = focusedFile.populations.find(q => q.id === popId);
-      if (fp) fp.emphasized = p.emphasized;
-      renderPrecedenceList();
-      renderAllPlots();
-    });
-
-    row.addEventListener('dragstart', e => {
-      dragSrc = row;
-      row.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-    });
-    row.addEventListener('dragend', () => {
-      row.classList.remove('dragging');
-      el.querySelectorAll('.prec-item').forEach(r => r.classList.remove('drag-over'));
-    });
-    row.addEventListener('dragover', e => {
-      e.preventDefault();
-      if (row !== dragSrc) row.classList.add('drag-over');
-    });
-    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
-    row.addEventListener('drop', e => {
-      e.preventDefault();
-      if (!dragSrc || dragSrc === row) return;
-      const fromId = parseInt(dragSrc.dataset.id);
-      const toId   = parseInt(row.dataset.id);
-      const fi = focusedFile.colorPrecedence.indexOf(fromId);
-      const ti = focusedFile.colorPrecedence.indexOf(toId);
-      pushUndo();
-      focusedFile.colorPrecedence.splice(fi, 1);
-      focusedFile.colorPrecedence.splice(ti, 0, fromId);
-      colorPrecedence = focusedFile.colorPrecedence; // keep shim in sync
-      renderPrecedenceList();
-      renderAllPlots();
-    });
-
-    el.appendChild(row);
+  groups.forEach(g => {
+    const sorted = g.items.map((p, i) => ({ p, i })).sort((a, b) => key(b.p) - key(a.p) || a.i - b.i).map(o => o.p);
+    g.slots.forEach((slot, k) => { fileObj.populations[slot] = sorted[k]; });
   });
 }
 
-
-// ─── PARAMETER SORT ───────────────────────────────────────────────────────────
-// Sort by $PnS (longName) when available, fall back to $PnN (name).
-// Groups: FS* first, SS* second, natural-sorted fluorescent middle, TIME last.
-// Detection uses BOTH name and longName so FSC-A (name) and FS INT LIN (longName)
-// are both caught as scatter parameters.
 function sortedParamIndices() {
   const fcsFile = getContextFile();
   if (!fcsFile) return [];
@@ -3294,6 +3304,7 @@ function renderPlot(plot) {
   ctx.textAlign = 'left';
 
   document.getElementById(`event-count-${plot.id}`).textContent = `${popCount(pop).toLocaleString()} events`;
+  updateCofactorHandles(plot);
 
   // ── Spill-mode badge: show the spillover coefficient being adjusted ────────
   if (plot._spillDragging && getFileForPlot(plot)) {
@@ -4957,6 +4968,101 @@ function createQuadrant(plot, rx, ry) {
   made.forEach(g => evalGateAsync(g));
 }
 
+// ─── ARCSINH COFACTOR HANDLES ────────────────────────────────────────────────
+// A selected plot in Select mode shows a small marker on each arcsinh axis. Dragging it sets the
+// channel's cofactor (geometric scale, 1 to 100,000) with the zero point pinned at 20% of the
+// axis; ticks and gate outlines follow live, gates are re-evaluated on release, and every plot of
+// that channel follows because the cofactor is per file and channel. Esc mid-drag puts it back.
+const CF_MIN = 1, CF_MAX = 100000, CF_DECADES = 5;
+const _cfToFrac = c => Math.log10(Math.min(Math.max(c, CF_MIN), CF_MAX)) / CF_DECADES;
+function _fracToCf(f) {
+  const c = 10 ** (Math.min(Math.max(f, 0), 1) * CF_DECADES);
+  return Math.min(Math.max(c >= 10 ? Math.round(c) : Math.round(c * 100) / 100, CF_MIN), CF_MAX);
+}
+function _asinhZeroFloor(cf, max) {
+  const dMax = Math.asinh(max / cf) * LOG10E;
+  return Math.sinh(-(0.2 / 0.8) * dMax / LOG10E) * cf;
+}
+let _cfDrag = null;
+
+function updateCofactorHandles(plot) {
+  const card = document.getElementById(`plot-card-${plot.id}`);
+  const canvas = document.getElementById(`canvas-${plot.id}`);
+  const wrap = card && card.querySelector('.plot-canvas-wrap');
+  if (!wrap || !canvas) return;
+  const show = card.classList.contains('selected') && plot.mode === 'pan' && plot._pad;
+  const f = getFileForPlot(plot);
+  ['x', 'y'].forEach(axis => {
+    let h = wrap.querySelector(`.cf-handle-${axis}`);
+    const asinh = axis === 'x' ? plot.xAsinh : plot.yAsinh;
+    if (!show || !asinh || !f) { if (h) h.style.display = 'none'; return; }
+    if (!h) {
+      h = document.createElement('div');
+      h.className = `cf-handle cf-handle-${axis}`;
+      h.title = "Drag to set this axis's arcsinh cofactor";
+      h.innerHTML = '<i></i>';
+      h.addEventListener('mousedown', e => beginCofactorDrag(plot, axis, e));
+      h.addEventListener('click', e => e.stopPropagation());
+      wrap.appendChild(h);
+    }
+    _contextFileId = f.fileId; _paramRanges = f.paramRanges;
+    const param = axis === 'x' ? plot.xParam : plot.yParam;
+    const k = canvas.clientWidth / canvas.width, pad = plot._pad;
+    const frac = _cfToFrac(getAsinhCofactor(param));
+    h.style.display = 'block';
+    if (axis === 'x') { h.style.left = `${(pad.left + frac * plot._pw) * k}px`; h.style.top = `${(pad.top + plot._ph) * k}px`; }
+    else              { h.style.left = `${pad.left * k}px`; h.style.top = `${(pad.top + (1 - frac) * plot._ph) * k}px`; }
+  });
+}
+
+function beginCofactorDrag(plot, axis, e) {
+  if (e.button !== 0) return;
+  e.preventDefault(); e.stopPropagation();
+  const f = getFileForPlot(plot); if (!f) return;
+  _contextFileId = f.fileId; _paramRanges = f.paramRanges;
+  const param = axis === 'x' ? plot.xParam : plot.yParam;
+  const prev = f.paramRanges.has(param) ? { ...f.paramRanges.get(param) } : null;
+  pushUndo();
+  _cfDrag = { plot, axis, f, param, prev, frozenMax: getRawRangeGlobal(param, 'asinh').rawMax, changed: false };
+  plot._lodActive = true;
+  const canvas = document.getElementById(`canvas-${plot.id}`);
+  const move = ev => {
+    const r = canvas.getBoundingClientRect(), pad = plot._pad;
+    const cx = (ev.clientX - r.left) * canvas.width / r.width, cy = (ev.clientY - r.top) * canvas.height / r.height;
+    const frac = axis === 'x' ? (cx - pad.left) / plot._pw : 1 - (cy - pad.top) / plot._ph;
+    const cf = _fracToCf(frac);
+    const pr = { ...(f.paramRanges.get(param) || {}), asinhCofactor: cf, rawMax: _cfDrag.frozenMax,
+                 rawMin: _asinhZeroFloor(cf, _cfDrag.frozenMax) };
+    delete pr.minPercentile;
+    f.paramRanges.set(param, pr);
+    _cfDrag.changed = true;
+    if (!_cfDrag.raf) _cfDrag.raf = requestAnimationFrame(() => { if (_cfDrag) _cfDrag.raf = 0; markAllDirty(); renderAllPlots(); });
+  };
+  const finish = commit => {
+    window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+    window.removeEventListener('keydown', key, true);
+    const d = _cfDrag; _cfDrag = null; if (!d) return;
+    plot._lodActive = false;
+    if (commit && d.changed) {
+      invalidateSpatialCache(false);
+      reevaluateAllGates(f);
+    } else {
+      if (d.prev) f.paramRanges.set(param, d.prev); else f.paramRanges.delete(param);
+      if (!commit || !d.changed) { _undoStack.pop(); updateUndoButtons(); }
+      markAllDirty(); renderAllPlots();
+    }
+    plots.forEach(updateCofactorHandles);
+  };
+  const up = () => finish(true);
+  const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); } };
+  window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+  window.addEventListener('keydown', key, true);
+}
+
+// Handles follow selection and mode changes (both only touch class names).
+new MutationObserver(() => plots.forEach(updateCofactorHandles))
+  .observe(document.getElementById('canvas-area'), { attributes: true, attributeFilter: ['class'], subtree: true });
+
 function evalGateLOD(gate) {
   const pop = populations.find(p => p.id === gate.parentId);
   if (!pop) return;
@@ -5336,12 +5442,88 @@ function cycleDotBoost(popId) {
   renderAllPlots();
 }
 
+// ─── GATE RIGHT-CLICK MENU + COPY / CUT / PASTE ──────────────────────────────
+let _gateClipboard = null;
+
+function _openCtxMenu(x, y, items) {
+  document.getElementById('gate-ctx-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.id = 'gate-ctx-menu';
+  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:9999;background:#1b1d27;
+    border:1px solid #444;border-radius:6px;padding:4px 0;min-width:150px;box-shadow:0 4px 16px rgba(0,0,0,0.5)`;
+  items.forEach(it => {
+    const d = document.createElement('div');
+    d.textContent = it.label;
+    d.style.cssText = `padding:6px 14px;font-size:12px;color:${it.disabled ? '#667' : (it.danger ? '#e06c75' : '#ddd')};cursor:${it.disabled ? 'default' : 'pointer'}`;
+    if (!it.disabled) {
+      d.addEventListener('mouseenter', () => d.style.background = '#2a2c38');
+      d.addEventListener('mouseleave', () => d.style.background = '');
+      d.addEventListener('click', () => { menu.remove(); it.run(); });
+    }
+    menu.appendChild(d);
+  });
+  document.body.appendChild(menu);
+  const r = menu.getBoundingClientRect();
+  if (r.right > innerWidth) menu.style.left = `${innerWidth - r.width - 6}px`;
+  if (r.bottom > innerHeight) menu.style.top = `${innerHeight - r.height - 6}px`;
+  const close = e => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', close); } };
+  setTimeout(() => document.addEventListener('mousedown', close), 0);
+}
+
+function showGateMenu(popId, x, y) {
+  const pop = populations.find(p => p.id === popId); if (!pop) return;
+  const isQuad = !!(pop.gateInfo && pop.gateInfo.quad);
+  _openCtxMenu(x, y, [
+    { label: 'Rename / Color…', run: () => showColorPicker(popId, x, y) },
+    { label: 'Copy',  disabled: isQuad, run: () => copyGate(popId, false) },
+    { label: 'Cut',   disabled: isQuad, run: () => copyGate(popId, true) },
+    { label: 'Paste', disabled: !_gateClipboard, run: () => pasteGate(popId) },
+    { label: 'Delete', danger: true, run: () => deleteGateFromTree(popId) },
+  ]);
+}
+
+function copyGate(popId, cut) {
+  const pop = populations.find(p => p.id === popId); if (!pop || !pop.gateInfo || pop.gateInfo.quad) return;
+  const f = getFileById(pop.fileId), gi = pop.gateInfo;
+  _gateClipboard = {
+    name: pop.name, color: pop.color, noColor: !!pop.noColor,
+    xName: f.params[gi.xParam].name, yName: f.params[gi.yParam].name,
+    xScale: gi.xScale, yScale: gi.yScale, rawPts: gi.rawPts.map(q => ({ ...q })),
+  };
+  if (cut) deleteGateFromTree(popId, true);
+  showToast(`${cut ? 'Cut' : 'Copied'} "${pop.name}" — right-click a population and choose Paste`);
+}
+
+// Paste always creates a brand-new independent gate under the right-clicked population, in any loaded file.
+function pasteGate(targetId) {
+  const clip = _gateClipboard; if (!clip) return;
+  const target = populations.find(p => p.id === targetId); if (!target) return;
+  const f = getFileById(target.fileId); if (!f) return;
+  const xi = f.params.findIndex(p => p.name === clip.xName), yi = f.params.findIndex(p => p.name === clip.yName);
+  if (xi < 0 || yi < 0) { showToast(`Cannot paste: this file has no "${xi < 0 ? clip.xName : clip.yName}" parameter`, 4000); return; }
+  pushUndo();
+  const taken = new Set(f.populations.map(p => p.name));
+  let name = clip.name; for (let n = 2; taken.has(name); n++) name = `${clip.name} copy${n > 2 ? ' ' + n : ''}`;
+  const pop = {
+    id: popIdCounter++, name, color: clip.color, noColor: clip.noColor, indices: new Int32Array(0),
+    parentId: target.id, fileId: f.fileId,
+    gateInfo: { rawPts: clip.rawPts.map(q => ({ ...q })), xParam: xi, yParam: yi, xScale: clip.xScale, yScale: clip.yScale },
+  };
+  f.populations.push(pop);
+  rebuildPopulationsView();
+  _contextFileId = f.fileId; _paramRanges = f.paramRanges;
+  evalGate(pop);
+  _syncPrecedenceFromTree(f);
+  renderPopList(); updateAllPopSelects(); renderAllPlots();
+  showToast(`Pasted "${name}" under "${target.name}"`);
+}
+
 // Tree "×": delete a gate (a whole quadrant group for Q1-Q4) with its descendants.
-function deleteGateFromTree(popId) {
+function deleteGateFromTree(popId, skipConfirm) {
   const pop = populations.find(p => p.id === popId); if (!pop) return;
   const group = pop.gateInfo && pop.gateInfo.quad ? _quadGroup(pop.gateInfo.quad.gid) : [pop];
   const what = group.length > 1 ? 'this quadrant (Q1-Q4)' : `"${pop.name}"`;
-  if (!confirm(`Delete ${what} and all children?`)) return;
+  if (!skipConfirm && !confirm(`Delete ${what} and all children?`)) return;
   pushUndo();
   group.forEach(g => deleteGateAndDescendants(g.id));
   plots.forEach(pl => {
@@ -5424,6 +5606,7 @@ function _snapshotState() {
     pops: f.populations.map(_clonePop),
     prec: [...f.colorPrecedence],
     spill: f.spillMatrix ? f.spillMatrix.map(r => [...r]) : null,
+    ranges: [...f.paramRanges].map(([k, v]) => [k, { ...v }]),
   }));
 }
 function _restoreState(snap) {
@@ -5431,6 +5614,7 @@ function _restoreState(snap) {
     const f = getFileById(sf.fileId); if (!f) return;
     f.populations = sf.pops.map(_clonePop);
     f.colorPrecedence = [...sf.prec];
+    if (sf.ranges) f.paramRanges = new Map(sf.ranges.map(([k, v]) => [k, { ...v }]));
     if (sf.spill && f.spillMatrix && JSON.stringify(sf.spill) !== JSON.stringify(f.spillMatrix)) {
       recomputeCompensation(sf.spill.map(r => [...r]), f.fileId);
       sendDataToComputeWorkerForFile(f);
@@ -7298,17 +7482,9 @@ function _applyTemplateV3(tmpl, fileMap) {
 
     (tf.gates || []).forEach(node => importNode(node, rootPopId));
 
-    // Restore color precedence
-    if (tf.colorPrecedence) {
-      const newPrec = [];
-      tf.colorPrecedence.forEach(name => {
-        const p = fileObj.populations.find(pp => pp.name === name && !pp._isAll);
-        if (p) newPrec.push(p.id);
-      });
-      fileObj.populations.filter(p => !p._isAll && !newPrec.includes(p.id))
-        .forEach(p => newPrec.push(p.id));
-      fileObj.colorPrecedence = newPrec;
-    }
+    // Restore draw order: sibling order follows the saved precedence, then derive it back
+    _reorderSiblingsByPrecedence(fileObj, tf.colorPrecedence);
+    _syncPrecedenceFromTree(fileObj);
 
     // Restore param ranges
     if (tf.paramRanges) {

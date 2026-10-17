@@ -9,18 +9,20 @@
 ## Key Features
 
 ### 🎯 Interactive Gating
-- **Polygon gating**: Click to draw custom polygonal gates with full hierarchy support
-- **Rectangular gating**: Quick axis-aligned selections for rapid analysis
-- **Gate editing & deletion**: Modify gates after creation without re-drawing
-- **Hierarchical gate management**: Organize gates with parent-child relationships and precedence control
-- **19-color palette**: Automatically color-coded populations for easy identification
+- **Polygon, rectangle and quadrant gates**: a quadrant is one draggable crosshair whose Q1–Q4 populations (clockwise from the upper right) always follow its centre and partition the parent exactly
+- **Select, edit and delete**: drag a gate with Select, reshape it with Edit, remove it from the toolbar or the tree
+- **Population tree**: counts and % of parent on every row, drag a row onto another to re-parent, drag its grip to reorder siblings (the gate lower in the tree wins shared cells; a child always beats its ancestors)
+- **Right-click menu**: rename / colour, copy, cut, paste (into any loaded file, matched by parameter name) and delete
+- **Undo / redo**: gates, colours, order, compensation and cofactors (Ctrl/Cmd+Z, Shift+Z)
+- **Kelly 21-colour palette**, with a "No Color" option for gates that should not stand out
 
-### 📊 Visualization Modes
-- **Heatmap rendering** (GPU-accelerated): Fast 2D density heatmaps with inferno colormap for large populations
-- **Dot scatter plots**: Individual event rendering for smaller populations
-- **Adaptive rendering**: Automatically switches modes based on population size for optimal performance
-- **Grid overlay**: Reference grid on plots for precise axis reading
-- **Multi-tab support**: Organize and compare multiple plots simultaneously
+### 📊 Visualization
+- **Blended density plots**: every plot is a binned density. Each bin takes the count-weighted colour of the populations that own its events and bleaches toward white as it gets denser, so back-gated populations show up in their own colours
+- **"+" dot toggle**: draw any population additionally as exact events
+- **Bins slider** per plot (32–512 per axis)
+- **Decade ticks**: log and arcsinh axes label each power of ten with a raised exponent (arcsinh also labels zero and the negative decades)
+- **Axis cofactor handles**: select a plot, then drag the blue marker on an arcsinh axis to set that channel's cofactor live; gates are re-evaluated on release
+- **Tabs**: named tabs with plot counts, right-click to rename, drag a plot onto a tab to move it
 
 ### ⚙️ Advanced Analysis Capabilities
 - **Automatic arcsinh cofactor optimization**: Uses OTflow algorithm (Folcarelli et al., 2022) to automatically calculate optimal transformation cofactors for fluorescent parameters
@@ -31,7 +33,8 @@
 ### 🔗 Shareable HTML
 - **Export Shareable HTML** writes one self-contained HTML containing the event data (gzip), compensation, gates, plots and axis settings — not the original FCS/LMD file
 - Recipients open it with your gating applied and can move, redraw and add gates; **Reset to author's gates** restores yours
-- Options: cap events per file, anonymize file names, strip FCS header metadata (default; may contain patient IDs)
+- Options: cap events per file (large files default to 500,000), anonymize file names, strip FCS header metadata (default; may contain patient IDs), and **Locked viewer** (default on)
+- **Locked viewer** removes the FCS/LMD parsers, demo data, template import/export and the share code from the file, hides the open/import/export buttons and stops dropped files. Recipients can still gate, compensate, undo and reset to your gates. The embedded events can still be read with View Source or developer tools, so it limits casual reuse rather than preventing extraction
 
 ### 📁 File Format Support
 - **FCS 2.0, 3.0, 3.1** standard flow cytometry file format
@@ -45,8 +48,8 @@
 - **Transparent code**: GNU AGPLv3 licensed with full source visible in the HTML file
 
 ### 🚀 Performance & Technology
-- **WebGL GPU acceleration**: Fast heatmap rendering even with 10M+ events
 - **Web Workers**: Non-blocking FCS parsing and gate evaluation
+- **Level-of-detail rendering**: subsampled while you drag, refined when idle
 - **Background rendering queue**: Pre-renders off-tab plots when idle for instant tab switching
 - **Cross-browser compatibility**: Works on Chrome, Firefox, Safari, Edge on Windows, macOS, and Linux
 
@@ -71,16 +74,16 @@ Click the **Demo** button to load a sample PBMC dataset (9 parameters) for learn
 Supported formats: FCS 2.0, 3.0, 3.1, and Beckman Coulter LMD files
 
 ### 4. Create Your First Gate
-1. Click the **Polygon Gate** tool (⬡) in the toolbar
+1. Click **Polygon** in the toolbar
 2. Click points on the plot to outline your population
-3. Right-click or double-click to close the gate
-4. Your new population appears in the sidebar with event count
+3. Click the first point (or double-click) to close the gate
+4. Name it; it appears in the population tree with its count and % of parent
 
 ### 5. Explore & Analyze
-- **Pan**: Use the **Pan** tool (✥) to navigate plots
-- **View gates**: Expand the gating hierarchy in the left sidebar to see population counts
-- **Adjust colors**: Click any gate in the precedence list to change draw order
-- **Switch axes**: Right-click on any axis to select different parameters
+- **Select** moves a gate; **Edit** reshapes it; **Undo / Redo** reverse any change
+- **Gating tree**: expand it in the left sidebar; right-click a row for rename / colour / copy / paste / delete
+- **Switch axes**: use the dropdowns under and beside each plot; right-click the plot for axis range and cofactor
+- **Share**: **Export Shareable HTML** produces one file with the data and your gates (see below)
 
 ---
 
@@ -103,28 +106,23 @@ Supported formats: FCS 2.0, 3.0, 3.1, and Beckman Coulter LMD files
 - Save gating hierarchies as reusable templates for batch processing
 - Templates capture gate definitions, colors, and hierarchy for import into other files
 
-### Toolbar Modes
+### Toolbar
 
-| Mode | Icon | Function |
-|------|------|----------|
-| **Pan** | ✥ | Navigate and explore plots; scroll to zoom |
-| **Polygon Gate** | ⬡ | Click to draw custom polygonal gates |
-| **Rectangular Gate** | □ | Drag to create axis-aligned rectangular gates |
-| **Edit** | ✎ | Click and drag gate vertices to modify shape |
-| **Delete** | 🗑 | Click gates to delete them |
-| **Spillover Adjust** | ⇔ | Interactive spectral compensation coefficient tuning |
-| **Zoom** | ⛶ | Click and drag to zoom into regions |
+| Tool | Function |
+|------|----------|
+| **Select** | Drag a gate to move it; with a plot selected, drag an arcsinh axis marker to set its cofactor |
+| **Polygon** | Click to draw a polygon gate |
+| **Rect** | Drag to draw a rectangular gate |
+| **Quadrant** | Click to place a crosshair that creates Q1–Q4; drag the crosshair with Select or Edit |
+| **Edit** | Drag gate vertices to reshape |
+| **Comp** | Drag a plot's top or right edge to tune one spillover coefficient |
+| **Delete** | Click a gate to remove it |
+| **Autocomp** | Outline a population that should sit flat in the pair of axes; the spillover coefficient between them is fitted automatically |
+| **Undo / Redo** | Step back / forward through gate, colour, order, compensation and cofactor changes |
 
-**Keyboard Shortcuts** (visible in sidebar reference panel):
-- `Z`: Zoom mode
-- `P`: Pan mode  
-- `G`: Polygon gate
-- `R`: Rectangular gate
-- `E`: Edit mode
-- `D`: Delete mode
-- `S`: Spillover adjustment
-- `Esc`: Return to last mode
-- `+` / `-`: Adjust density threshold
+**Keyboard**: `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y` redo, `Del` remove selected plot(s), `Esc` cancel a gate or deselect.
+
+The lower-left panel of the app lists these controls and updates with the viewer.
 
 ### Plot Configuration
 
@@ -137,38 +135,28 @@ Supported formats: FCS 2.0, 3.0, 3.1, and Beckman Coulter LMD files
 
 **Global Settings**
 - Click the **Settings** (⚙) button to access:
-  - **Density Threshold**: Adjust heatmap/dot rendering threshold
-  - **Percentile Values**: Configure axis auto-ranging percentiles
-  - Cofactor values for fluorescent parameters
+  - **Min Value Percentile**: set each fluorescent axis's lower limit from that percentile of its data
 
 **Per-Plot Configuration**
-- Click **Axis Range** on any plot to:
-  - Set manual axis ranges (min/max)
-  - Adjust arcsinh cofactor for that plot
-  - Apply settings to all plots or individual plots
+- Right-click a plot to set manual axis ranges (min/max) and the arcsinh cofactor
+- Or select the plot and drag the blue marker on an arcsinh axis; the zero point stays pinned at 20% of the axis while you drag, and `Esc` puts the old value back
+- The cofactor is per file and channel, so every plot of that channel follows
 
 ### Gating Workflow
 
 **Creating Gates**
-1. Select a gating mode (Polygon or Rectangular)
-2. On the target plot, click vertices (polygon) or drag a rectangle
-3. Gates automatically evaluate on all populations in the gating hierarchy
-4. Population counts update in real-time in the sidebar
+1. Pick Polygon, Rect or Quadrant
+2. On the target plot, click vertices, drag a rectangle, or click to place the crosshair
+3. Gates evaluate against their parent population; counts and % of parent update in the tree
 
-**Gate Hierarchy**
-- Child gates filter parent populations (standard flow cytometry logic)
-- Reorder gates in the **Precedence List** sidebar to control draw order
-- Color-coded display distinguishes populations visually
-
-**Modifying Gates**
-- **Edit Mode**: Click-and-drag vertices to reshape existing gates
-- **Delete Mode**: Click a gate to remove it
-- **Color Adjustment**: Click the gate in the Precedence List to move it forward/backward
+**Gate Hierarchy and Colour**
+- Child gates filter their parent (standard flow cytometry logic); drag a tree row onto another to re-parent it, or onto "All Events" to un-parent it
+- A plot shows its population plus every gate under it. Each density bin is coloured by the populations that own its events: the deepest gate owns a cell, and among siblings the one lower in the tree wins, so dragging a row's grip (⠿) above or below a sibling changes who wins a shared region
+- Right-click a row to rename it, pick a colour or "No Color", copy / cut / paste a gate, or delete it. Paste always creates a new independent gate under the row you right-clicked, in any loaded file that has the same parameter names
+- Click **+** on a row to also draw that population as exact events
 
 **Population Analysis**
-- Event counts displayed next to each population in the sidebar
-- Percentages calculated relative to parent population
-- Populations update dynamically as gates are added/modified
+- Event count and % of parent next to each population
 
 ### Advanced Features
 
@@ -186,24 +174,18 @@ FlowNG uses the **OTflow algorithm** (Folcarelli et al., 2022) to automatically 
 4. Optimization applies to all plots if selected
 
 #### Spectral Compensation (Spillover Adjustment)
-For multi-color experiments with compensation matrices:
+For multi-colour experiments with compensation matrices:
 
 1. FCS files with `$SPILLOVER` keywords load compensation automatically
-2. Status bar indicates "Compensation Applied"
-3. Use **Spillover Adjust** tool (⇔) to:
-   - Fine-tune compensation coefficients interactively
-   - Drag adjustment handles to modify spillover percentages
-   - Live preview shows compensation effect immediately
-
-**Manual compensation:**
-- Drag compensation adjustment sliders in the toolbar
-- Watch spillover correction update in real-time on the plot
+2. **Comp**: drag a plot's top or right edge to adjust one coefficient; the plot updates live and every gate is re-evaluated when you let go
+3. **Autocomp**: outline a population that should sit flat in that pair of axes (at least 100 events). FlowNG fits the robust slope of Y on X inside the outline (equal-count bins, median Y per bin, weighted line) and adds it to the X→Y coefficient, repeating up to three times
+4. Both are undoable
 
 #### Level-of-Detail (LOD) Rendering
 For large datasets (>1M events):
 - Initial subsampled render appears instantly
 - Full-resolution render automatically upgrades when browser is idle
-- Maintains smooth interaction during zoom/pan operations
+- Maintains smooth interaction while dragging gates and axis handles
 - No user configuration needed—happens automatically
 
 #### Background Rendering Queue
@@ -215,9 +197,7 @@ For large datasets (>1M events):
 
 **Handling Large Datasets**
 - **Level-of-detail rendering**: Subsampled preview with automatic high-resolution upgrade
-- **GPU acceleration**: WebGL heatmap rendering handles 10M+ events
 - **Web Worker processing**: Gate evaluation and parsing off main thread
-- **Adaptive mode switching**: Automatically uses heatmap for large populations, dots for small
 
 **Typical Performance**
 - Files up to 10M events: Real-time interactive gating
@@ -230,8 +210,7 @@ For large datasets (>1M events):
 
 ### Technology Stack
 - **Pure JavaScript**: No external libraries or frameworks
-- **HTML5 Canvas**: 2D plot rendering and dot scatter plots
-- **WebGL**: GPU-accelerated density heatmaps
+- **HTML5 Canvas**: 2D plot rendering (binned, colour-blended density plus exact-event dots)
 - **Web Workers**: Asynchronous FCS parsing and gate evaluation
 - **Modern Browser APIs**: File API, Drag & Drop, requestIdleCallback
 
@@ -256,7 +235,6 @@ For large datasets (>1M events):
 ### Algorithm References
 - **OTflow cofactor optimization**: Folcarelli, M., et al. (2022). "Automatic compensation of spectral overlap in flow cytometry using machine learning." *Cytometry A*, 101(8), 701-713.
 - **Kernel Density Estimation**: Scott, D. W. (2015). *Multivariate Density Estimation: Theory, Practice, and Visualization*.
-- **Inferno colormap**: Viridis/Inferno from Matplotlib color vision research
 
 ---
 
@@ -291,7 +269,6 @@ FlowNG is a research and educational tool **not intended for clinical diagnostic
 
 ### Browser Requirements
 - Modern browser with ES6 support: Chrome/Edge 60+, Firefox 55+, Safari 12+
-- WebGL support required for heatmap rendering (fallback to dots if unavailable)
 - 4GB+ RAM recommended for files >100M events
 
 ### Current Limitations
@@ -316,7 +293,7 @@ FlowNG is a research and educational tool **not intended for clinical diagnostic
 - **Browser memory**: Close other applications if you have <4GB available RAM
 
 ### Plots Don't Display
-- **Density threshold**: Lower the density threshold slider to show dots instead of heatmap
+- **Few events**: a small population shows as faint single bins; click **+** on its tree row to draw exact events
 - **Axis scaling**: Verify axes are set appropriately for your data range
 - **Missing parameters**: Check that selected parameters exist in the file
 
@@ -327,7 +304,7 @@ FlowNG is a research and educational tool **not intended for clinical diagnostic
 
 ### Slow Performance
 - **Large files**: Use LOD rendering (enabled by default) to speed up interaction
-- **Heatmap threshold**: Increase density threshold to reduce rendering load
+- **Bins**: lower a plot's bins slider to make density rendering cheaper
 - **Browser memory**: Close other tabs and applications to free memory
 
 ---
@@ -342,7 +319,7 @@ FlowNG is a research and educational tool **not intended for clinical diagnostic
 | Edge | 79+ | ✅ Full support |
 | Opera | 47+ | ✅ Full support |
 
-**WebGL GPU acceleration** available on all modern browsers. If WebGL fails, dot scatter rendering is used automatically.
+Plots render on a 2D canvas, so no GPU features are required.
 
 ---
 
@@ -359,7 +336,7 @@ Licensed under **GNU Affero General Public License v3.0** (GNU AGPLv3). See LICE
 
 ### Acknowledgments
 - Flow cytometry parameter definitions: BD Biosciences, Beckman Coulter, Sony Biotechnology
-- Inferno colormap: Matplotlib Viridis team
+- Gate colours: Kelly's 22 colours of maximum contrast
 - FCS file format specification: ISAC
 
 ---
@@ -402,8 +379,11 @@ A: You can export gate templates for reuse on other files. Direct export of gate
 **Q: Does it work offline?**  
 A: Yes. After the initial page load, FlowNG requires no internet connection.
 
-**Q: What's the difference between heatmap and dot modes?**  
-A: **Heatmaps** (GPU-rendered) are fast for large populations (>threshold events). **Dots** show individual events clearly for smaller populations (<threshold events). Switching is automatic based on population size.
+**Q: How are populations coloured on a plot?**  
+A: Every plot is a binned density. Each bin takes the colour of the populations that own its events (the deepest gate owns a cell; among siblings the one lower in the tree wins) and bleaches toward white as it gets denser. Click **+** on a tree row to also draw that population as exact events.
+
+**Q: Can I send someone my analysis without the FCS file?**  
+A: Yes. **Export Shareable HTML** writes one HTML with the event data, compensation, gates and plots. Tick "Locked viewer" to remove the loading, importing and exporting code from the file so recipients can only gate and view.
 
 **Q: How do I optimize axis transformation cofactors?**  
 A: Right-click any plot axis, enable "Auto-optimize cofactors," and click Apply. FlowNG calculates optimal arcsinh cofactors using the OTflow algorithm.
@@ -417,7 +397,7 @@ A: Yes. Load multiple FCS files—each opens in a separate tab at the top of the
 
 ### Version 1.0 (Current)
 - Initial release with core gating and analysis features
-- WebGL GPU-accelerated heatmap rendering
+- Blended density rendering
 - Automatic cofactor optimization via OTflow algorithm
 - Spectral compensation with interactive spillover adjustment
 - Multi-tab support and background rendering queue
