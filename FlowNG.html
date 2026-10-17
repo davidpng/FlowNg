@@ -6161,7 +6161,14 @@ function _docSource() {
   const parts = Array.from(document.childNodes).map(n => {
     if (n.nodeType === Node.DOCUMENT_TYPE_NODE) return '<!DOCTYPE html>';
     if (n.nodeType === Node.COMMENT_NODE) return '<!--' + n.data + '-->';
-    if (n.nodeType === Node.ELEMENT_NODE) return n.outerHTML;
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      // Serialize a clone without open dialogs or toast text so the shared file opens clean.
+      const c = n.cloneNode(true);
+      c.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+      const t = c.querySelector('#toast');
+      if (t) { t.textContent = ''; t.classList.remove('show'); }
+      return c.outerHTML;
+    }
     return '';
   });
   return parts.join('\n');
