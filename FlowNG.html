@@ -598,6 +598,15 @@
   }
 
   /* ── Global mode toolbar ─────────────────────────── */
+  .tool-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    padding: 3px 9px; border-radius: 5px; border: 1px solid #444;
+    background: #22232e; color: #ddd; cursor: pointer; font-size: 10px; line-height: 1.2;
+  }
+  .tool-btn i { font-style: normal; font-size: 13px; }
+  .tool-btn:hover { background: #2d2f3d; }
+  .tool-btn.active { background: #3a4a6b; border-color: #5a6f9f; color: #fff; }
+  .tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .global-toolbar {
     display: none; /* shown after file load */
     align-items: center;
@@ -724,14 +733,12 @@
   <div class="header-right">
     <div class="global-toolbar" id="global-toolbar" style="display:none;align-items:center;gap:3px;flex-shrink:0;
       border-right:1px solid var(--border);padding-right:10px;margin-right:4px">
-      <span style="font-size:9px;color:var(--text2);white-space:nowrap">Mode:</span>
-      <button class="mode-btn active" id="gbtn-pan"    onclick="setGlobalMode('pan')"    title="Navigate (✥)">✥</button>
-      <button class="mode-btn"        id="gbtn-gate"   onclick="setGlobalMode('gate')"   title="Draw Gate (⬡)">⬡</button>
-      <button class="mode-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Draw Rectangular Gate (□)">□</button>
-      <button class="mode-btn"        id="gbtn-edit"   onclick="setGlobalMode('edit')"   title="Edit Gates (✎)">✎</button>
-      <button class="mode-btn"        id="gbtn-delete" onclick="setGlobalMode('delete')" title="Delete Gate (🗑)">🗑</button>
-      <button class="mode-btn"        id="gbtn-spill"  onclick="setGlobalMode('spill')"  title="Adjust Spillover — drag right/top edge of plot (⇔)">⇔</button>
-      <button class="mode-btn"        id="gbtn-zoom"   onclick="setGlobalMode('zoom')"   title="Zoom (⛶)">⛶</button>
+      <button class="tool-btn active" id="gbtn-pan"      onclick="setGlobalMode('pan')"      title="Select and move gates"><i>↖</i>Select</button>
+      <button class="tool-btn"        id="gbtn-gate"     onclick="setGlobalMode('gate')"     title="Draw a polygon gate"><i>⬡</i>Polygon</button>
+      <button class="tool-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Draw a rectangular gate"><i>▭</i>Rect</button>
+      <button class="tool-btn"        id="gbtn-edit"     onclick="setGlobalMode('edit')"     title="Edit gate vertices"><i>✎</i>Edit</button>
+      <button class="tool-btn"        id="gbtn-spill"    onclick="setGlobalMode('spill')"    title="Compensation: drag the top or right edge of a plot to adjust spillover"><i>⇔</i>Comp</button>
+      <button class="tool-btn"        id="gbtn-delete"   onclick="setGlobalMode('delete')"   title="Click a gate to delete it"><i>🗑</i>Delete</button>
     </div>
     <div id="parse-progress" style="display:none;align-items:center;gap:8px;font-size:10px;color:var(--text2)">
       <div style="width:100px;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
@@ -865,26 +872,29 @@
 <script>
 // 19-color palette with maximum contrast on white background
 // Based on Kelly's 22 colors of maximum contrast, excluding white-like variants
+// Kelly's 22 colours of maximum contrast, minus white (plots are on a white background) — as FlowNg2.
 const GATE_COLORS = [
-  '#e6194b', // vivid red
-  '#3cb44b', // vivid green
-  '#4363d8', // vivid blue
-  '#f58231', // vivid orange
-  '#911eb4', // vivid purple
-  '#42d4f4', // vivid cyan
-  '#f032e6', // vivid magenta
-  '#bfef45', // lime
-  '#fabed4', // pink
-  '#469990', // teal
-  '#dcbeff', // lavender
-  '#9a6324', // brown
-  '#800000', // maroon
-  '#808000', // olive
-  '#000075', // navy
-  '#ffff00', // vivid yellow
-  '#808080', // grey
-  '#000000', // black
-  '#ffb81c', // gold
+  '#222222', // black
+  '#f3c300', // vivid yellow
+  '#875692', // strong purple
+  '#f38400', // vivid orange
+  '#a1caf1', // very light blue
+  '#be0032', // vivid red
+  '#c2b280', // grayish yellow
+  '#848482', // medium gray
+  '#008856', // vivid green
+  '#e68fac', // strong purplish pink
+  '#0067a5', // strong blue
+  '#f99379', // strong yellowish pink
+  '#604e97', // strong violet
+  '#f6a600', // vivid orange yellow
+  '#b3446c', // strong purplish red
+  '#dcd300', // vivid greenish yellow
+  '#882d17', // strong reddish brown
+  '#8db600', // vivid yellowish green
+  '#654522', // deep yellowish brown
+  '#e25822', // vivid reddish orange
+  '#2b3d26', // dark olive green
 ];
 
 // Per-file identity colours — assigned by position in fcsFiles (alphabetically sorted).
@@ -2698,10 +2708,10 @@ function renderPlotCard(plot) {
       <select id="pop-sel-${plot.id}" onchange="changePop(${plot.id},this.value)"
         style="flex:1;min-width:0;font-size:10px;padding:2px 4px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:4px"
         onmousedown="event.stopPropagation()">${popOpts()}</select>
-      <input type="range" min="2" max="20" step="1" value="${Math.round(plot.dotSize*2)}" id="res-${plot.id}"
-        oninput="changeDotSize(${plot.id},this.value)" onmousedown="event.stopPropagation()"
-        style="width:44px;height:12px;cursor:pointer;flex-shrink:0" title="Dot size — affects individual dots and gate overlay dots">
-      <span id="res-val-${plot.id}" style="font-size:9px;color:var(--text2);flex-shrink:0;min-width:22px">${plot.dotSize}px</span>
+      <span id="res-val-${plot.id}" style="font-size:10px;color:var(--text2);flex-shrink:0;min-width:24px;text-align:right" title="Density bins per axis">${plot.bins || 256}</span>
+      <input type="range" min="32" max="512" step="32" value="${plot.bins || 256}" id="res-${plot.id}"
+        oninput="changeBins(${plot.id},this.value)" onmousedown="event.stopPropagation()"
+        style="width:56px;height:12px;cursor:pointer;flex-shrink:0" title="Density bins per axis (lower = chunkier, higher = finer)">
       <span id="event-count-${plot.id}" style="font-size:9px;color:var(--text2);flex-shrink:0;margin-left:2px"></span>
     </div>
     <div class="plot-canvas-wrap" style="position:relative">
@@ -2889,7 +2899,7 @@ function setMode(id, mode) {
 function setGlobalMode(mode) {
   globalMode = mode;
   // Update global toolbar button highlights
-  ['pan','gate','edit','delete','spill','zoom'].forEach(m => {
+  ['pan','gate','rectgate','quad','edit','delete','spill'].forEach(m => {
     const btn = document.getElementById(`gbtn-${m}`);
     if (btn) btn.classList.toggle('active', m === mode);
   });
@@ -2910,7 +2920,7 @@ function updateGlobalModeFromSelection() {
   if (sel.length === 1) {
     const m = sel[0].mode;
     globalMode = m;
-    ['pan','gate','edit','delete','spill','zoom'].forEach(mode => {
+    ['pan','gate','rectgate','quad','edit','delete','spill'].forEach(mode => {
       const btn = document.getElementById(`gbtn-${mode}`);
       if (btn) btn.classList.toggle('active', mode === m);
     });
@@ -3008,26 +3018,16 @@ function changePop(id, val, propagate=true) {
   }
 }
 
-function changeDotSize(id, val) {
-  const plot = plots.find(p=>p.id===id); if(!plot) return;
-  const newDotSize = parseFloat(val) / 2;
-
-  // If multiple plots are selected, apply change to all of them
+function changeBins(id, val) {
+  const plot = plots.find(p => p.id === id); if (!plot) return;
+  const bins = parseInt(val);
   const selectedPlots = getSelectedPlots();
-  const targetPlots = selectedPlots.length > 1 ? selectedPlots : [plot];
-
-  for (const targetPlot of targetPlots) {
-    targetPlot.dotSize = newDotSize;
-    const threshold = targetPlot._densityThreshold != null ? targetPlot._densityThreshold : _globalDensityThreshold;
-    const pop = populations.find(p => p.id === targetPlot.inputPop);
-    const inHeatmapMode = pop && threshold > 0 && popCount(pop) > threshold;
-    const label = document.getElementById(`res-val-${targetPlot.id}`);
-    if (label) label.textContent = targetPlot.dotSize + ' px';
-    const slider = document.getElementById(`res-${targetPlot.id}`);
-    if (slider) slider.title = inHeatmapMode
-      ? `Dot size ${targetPlot.dotSize}px — affects gate overlay dots only (population renders as heatmap)`
-      : `Dot size ${targetPlot.dotSize}px`;
-    renderPlot(targetPlot);
+  const targets = selectedPlots.length > 1 ? selectedPlots : [plot];
+  for (const t of targets) {
+    t.bins = bins;
+    const label = document.getElementById(`res-val-${t.id}`); if (label) label.textContent = bins;
+    const slider = document.getElementById(`res-${t.id}`); if (slider) slider.value = bins;
+    renderPlot(t);
   }
 }
 
@@ -3134,7 +3134,7 @@ function renderPlot(plot) {
       return bi - ai; // highest precedence (lowest index) goes to END
     });
 
-  const glOk = drawDotsWebGL(ctx, plot, tf, pad, pw, ph, pop, renderPop, data, nPar, allColoredGates, orderedGates);
+  const glOk = drawDensityNg2(ctx, plot, tf, pad, pw, ph, pop, renderPop, fcsFile, orderedGates);
 
   if (!glOk) {
     // 2D Canvas fallback
@@ -3718,6 +3718,145 @@ function hexToRgba(hex) {
 function hexToRgba255(hex) {
   const v = parseInt(hex.slice(1), 16);
   return [v>>16&255, v>>8&255, v&255];
+}
+
+
+// ─── FlowNg2-style density renderer ──────────────────────────────────────────
+// Every plot is a binned density. Each bin is coloured by the populations that own its
+// events (count-weighted blend of their colours, in linear light), and the ramp runs from
+// that base colour toward white as the count rises. Populations with a "+" boost are
+// additionally drawn as exact dots on top.
+const NG2_RAMP_GAMMA = 2.5;
+const NG2_MIN_SATURATION = 0.55;
+const NG2_UNGATED_BASE = 0.38;   // achromatic base for an ungated view
+const NG2_NO_COLOR = 0.58;       // achromatic base for a "No Color" gate
+const NG2_MAX_CLASSES = 31;
+
+function _ng2Hsl(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (d === 0) return { h: 0, s: 0, l };
+  const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  let h;
+  if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (mx === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+  return { h, s, l };
+}
+function _ng2Hue(p, q, t) {
+  if (t < 0) t += 1; if (t > 1) t -= 1;
+  if (t < 1/6) return p + (q - p) * 6 * t;
+  if (t < 1/2) return q;
+  if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+  return p;
+}
+function _ng2Rgb(h, s, l) {
+  if (s === 0) return [l, l, l];
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  return [_ng2Hue(p, q, h + 1/3), _ng2Hue(p, q, h), _ng2Hue(p, q, h - 1/3)];
+}
+const _ng2ToLin = c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+const _ng2ToSrgb = c => c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+
+// Hex colour -> linear-light ramp anchor (saturation floored unless achromatic).
+function _ng2Anchor(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  const { h, s, l } = _ng2Hsl(((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255);
+  return _ng2Rgb(h, s === 0 ? 0 : Math.max(NG2_MIN_SATURATION, s), l).map(_ng2ToLin);
+}
+const _ng2GrayAnchor = g => { const c = _ng2ToLin(g); return [c, c, c]; };
+
+function drawDensityNg2(ctx, plot, tf, pad, pw, ph, pop, renderPop, fcsFile, orderedGates) {
+  const { data, nPar, nEvents } = fcsFile;
+  const nb = Math.max(16, Math.min(512, plot.bins || 256));
+  const xr = tf.xRange, yr = tf.yRange;
+  const xSpan = xr.max - xr.min, ySpan = yr.max - yr.min;
+
+  // Plot area background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(pad.left, pad.top, pw, ph);
+  if (!(xSpan > 0) || !(ySpan > 0)) return true;
+
+  // Owning class per event: later (higher-precedence) gates overwrite earlier ones.
+  // Deepest gate wins; among equal depth the existing colour-precedence order decides.
+  const depthOf = g => { let d = 0, c = g; while (c && c.parentId != null && d < 64) { c = populations.find(q => q.id === c.parentId); d++; } return d; };
+  const classes = orderedGates
+    .filter(g => g.id !== renderPop.id)
+    .map((g, i) => ({ g, i, d: depthOf(g) }))
+    .sort((a, b) => a.d - b.d || a.i - b.i)
+    .map(o => o.g)
+    .slice(-NG2_MAX_CLASSES);
+  const owner = new Int8Array(nEvents).fill(-1);
+  classes.forEach((g, k) => { const ix = g.indices; for (let i = 0; i < ix.length; i++) owner[ix[i]] = k; });
+  const viewBase = (renderPop.id !== 0 && !renderPop._isAll && renderPop.color && !renderPop.noColor)
+    ? _ng2Anchor(renderPop.color) : _ng2GrayAnchor(NG2_UNGATED_BASE);
+  const anchors = classes.map(g => (g.noColor || !g.color) ? _ng2GrayAnchor(NG2_NO_COLOR) : _ng2Anchor(g.color));
+  anchors.push(viewBase);                 // plane K = ungated remainder
+  const planes = anchors.length;
+
+  const counts = new Float32Array(nb * nb * planes);
+  const totals = new Float32Array(nb * nb);
+  const n = popCount(renderPop);
+  const xs = tf.xls, ys = tf.yls, xp = plot.xParam, yp = plot.yParam;
+  const xk = nb / xSpan, yk = nb / ySpan;
+  for (let i = 0; i < n; i++) {
+    const e = popGetIndex(renderPop, i);
+    const bx = Math.floor((toDisplay(data[e * nPar + xp], xp, xs) - xr.min) * xk);
+    const by = Math.floor((toDisplay(data[e * nPar + yp], yp, ys) - yr.min) * yk);
+    if (bx < 0 || bx >= nb || by < 0 || by >= nb) continue;
+    const cell = by * nb + bx;
+    const o = owner[e];
+    counts[cell * planes + (o < 0 ? planes - 1 : o)]++;
+    totals[cell]++;
+  }
+  let maxTotal = 0;
+  for (let c = 0; c < totals.length; c++) if (totals[c] > maxTotal) maxTotal = totals[c];
+
+  const img = new ImageData(nb, nb);
+  const px = img.data, logMax = Math.log1p(maxTotal) || 1;
+  for (let by = 0; by < nb; by++) {
+    for (let bx = 0; bx < nb; bx++) {
+      const cell = by * nb + bx, tot = totals[cell];
+      if (!tot) continue;
+      let r = 0, g = 0, b = 0;
+      for (let k = 0; k < planes; k++) {
+        const c = counts[cell * planes + k]; if (!c) continue;
+        const a = anchors[k]; r += a[0] * c; g += a[1] * c; b += a[2] * c;
+      }
+      r /= tot; g /= tot; b /= tot;
+      const ramp = Math.pow(Math.log1p(tot) / logMax, NG2_RAMP_GAMMA);
+      r += (1 - r) * ramp; g += (1 - g) * ramp; b += (1 - b) * ramp;
+      const o = ((nb - 1 - by) * nb + bx) * 4;     // canvas y runs top-down
+      px[o] = Math.round(_ng2ToSrgb(r) * 255);
+      px[o + 1] = Math.round(_ng2ToSrgb(g) * 255);
+      px[o + 2] = Math.round(_ng2ToSrgb(b) * 255);
+      px[o + 3] = 255;
+    }
+  }
+  const off = document.createElement('canvas'); off.width = nb; off.height = nb;
+  off.getContext('2d').putImageData(img, 0, 0);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(pad.left, pad.top, pw, ph); ctx.clip();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, pad.left, pad.top, pw, ph);
+
+  // Emphasised ("+") populations as exact dots, drawn last.
+  const ds = plot.dotSize || 1.5;
+  const dotPops = [...classes, renderPop].filter(g => Math.max(g.emphasized ? 4 : 0, g.dotBoost || 0) > 0);
+  dotPops.forEach(g => {
+    const boost = Math.max(g.emphasized ? 4 : 0, g.dotBoost || 0);
+    const rad = (ds + boost) / 2;
+    ctx.fillStyle = (g.noColor || !g.color || g._isAll) ? 'rgba(90,90,90,0.9)' : g.color;
+    const ix = popIndicesArray(g), step = Math.max(1, Math.ceil(ix.length / 30000));
+    ctx.beginPath();
+    for (let i = 0; i < ix.length; i += step) {
+      const e = ix[i];
+      const cx = tf.dataToCanvasX(data[e * nPar + xp]), cy = tf.dataToCanvasY(data[e * nPar + yp]);
+      ctx.moveTo(cx + rad, cy); ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    }
+    ctx.fill();
+  });
+  ctx.restore();
+  return true;
 }
 
 function drawDotsWebGL(ctx, plot, tf, pad, pw, ph, pop, renderPop, data, nPar, allColoredGates, orderedGates) {
@@ -6153,6 +6292,7 @@ function _buildTemplateV3(tmplName) {
       xAsinh:       pl.xAsinh || false,
       yAsinh:       pl.yAsinh || false,
       dotSize:      pl.dotSize,
+      bins:         pl.bins || 256,
       tabName:      tabNameById[pl.tabId] || 'Tab 1'
     };
   }).filter(Boolean);
@@ -6635,7 +6775,7 @@ function _importGatesV2(tmpl, fileObj) {
       if (!tabObj) { const tid = addTab(desiredTab); tabObj = tabs.find(t=>t.id===tid); }
       const id = plotIdCounter++;
       const plot = {
-        id, xParam: xi, yParam: yi, dotSize: ps.dotSize || 1.5,
+        id, xParam: xi, yParam: yi, dotSize: ps.dotSize || 1.5, bins: ps.bins || 256,
         inputPop: inputPopId, mode: 'pan', gatePoints: [],
         xLog: ps.xLog === true, yLog: ps.yLog === true,
         xAsinh: ps.xAsinh === true, yAsinh: ps.yAsinh === true,
@@ -6838,7 +6978,7 @@ function _applyTemplateV3(tmpl, fileMap) {
     if (!tabObj) { const tid = addTab(desiredTab); tabObj = tabs.find(t=>t.id===tid); }
     const id = plotIdCounter++;
     const plot = {
-      id, xParam: xi, yParam: yi, dotSize: ps.dotSize || 1.5,
+      id, xParam: xi, yParam: yi, dotSize: ps.dotSize || 1.5, bins: ps.bins || 256,
       inputPop: inputPopId, mode: 'pan', gatePoints: [],
       xLog: ps.xLog === true, yLog: ps.yLog === true,
       xAsinh: ps.xAsinh === true, yAsinh: ps.yAsinh === true,
