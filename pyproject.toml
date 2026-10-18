@@ -1,0 +1,9 @@
+[project]
+name = "flowng-tools"
+version = "0.1.0"
+description = "Helper scripts for FlowNg (e.g. Kaluza template conversion)"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.uv]
+package = false

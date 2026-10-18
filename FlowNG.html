@@ -2119,7 +2119,7 @@ function renderPopList() {
     const rootPop = fileObj.populations.find(p => p._isAll);
     if (rootPop) {
       // Render children of root (the gates)
-      const children = fileObj.populations.filter(p => p.parentId === rootPop.id && p.gateInfo);
+      const children = fileObj.populations.filter(p => p.parentId === rootPop.id && isGateLike(p));
       children.forEach((child, ci) => {
         const isLast = ci === children.length - 1;
         buildTreeNode(tree, child.id, [!isLast], false, fileObj);
@@ -2274,7 +2274,7 @@ function showPlotFileMenu(plotId, cx, cy) {
 function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   const pop = populations.find(p => p.id === popId); if (!pop) return;
   const fileObjResolved = fileObj || getFileById(pop.fileId) || fcsFiles[0];
-  const children = populations.filter(p => p.parentId === popId && p.gateInfo && p.fileId === pop.fileId);
+  const children = populations.filter(p => p.parentId === popId && isGateLike(p) && p.fileId === pop.fileId);
 
   const row = document.createElement('div');
   row.className = 'pop-tree-node';
@@ -2284,7 +2284,7 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   row.style.paddingLeft = `${6 + (isRoot ? 0 : prefixLines.length) * 14}px`;
 
   // Grip: drag above/below a sibling to reorder (decides who wins shared cells)
-  if (pop.gateInfo) {
+  if (isGateLike(pop)) {
     const grip = document.createElement('span');
     grip.className = 'pop-grip';
     grip.textContent = '⠿';
@@ -2315,6 +2315,10 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   const nameEl = document.createElement('div');
   nameEl.className = 'pop-name-small';
   nameEl.textContent = pop.name;
+  if (pop.boolInfo) {
+    nameEl.title = 'Boolean population: ' + _boolText(pop.boolInfo.expr, fileObjResolved);
+    nameEl.textContent = '\u2234 ' + pop.name;
+  }
   if (pop.gateInfo) {
     nameEl.style.cursor = 'pointer';
     nameEl.title = 'Click to navigate to this gate\'s plot (for sequential gating)';
@@ -2327,7 +2331,7 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   countEl.className = 'pop-count-small';
   countEl.textContent = popCount(pop).toLocaleString();
   row.appendChild(countEl);
-  if (pop.gateInfo) {
+  if (isGateLike(pop)) {
     const parentPop = populations.find(p => p.id === pop.parentId);
     const pctEl = document.createElement('div');
     pctEl.className = 'pop-pct-small';
@@ -2370,6 +2374,7 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
     row.addEventListener('mousedown', e => { if (e.button !== 0) row.draggable = false; });
     row.addEventListener('mouseup',   () => { row.draggable = true; });
     row.addEventListener('dragstart', e => {
+      if (pop.boolInfo) { e.preventDefault(); return; }   // booleans stay at top level
       e.dataTransfer.setData('gateId', popId);
       e.dataTransfer.effectAllowed = 'move';
       setTimeout(() => row.classList.add('dragging-node'), 0);
@@ -2434,11 +2439,14 @@ function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
 
 function reparentGate(gateId, newParentId) {
   const gate = populations.find(p => p.id === gateId); if (!gate) return;
+  if (gate.boolInfo) { showToast('Boolean populations stay at the top level'); return; }
   // Prevent making a gate its own descendant
   const descendants = getDescendantGates(gateId);
   if (descendants.map(g => g.id).includes(newParentId)) {
     showToast('Cannot reparent a gate onto one of its own descendants'); return;
   }
+  { const gf0 = getFileById(gate.fileId);
+    if (gf0 && _upstreamIds(newParentId, gf0).has(gateId)) { showToast('Cannot move a gate under a population that depends on it'); return; } }
   pushUndo();
   gate.parentId = newParentId;
   { const gf = getFileById(gate.fileId); if (gf) _syncPrecedenceFromTree(gf); }
@@ -2458,11 +2466,11 @@ function reparentGate(gateId, newParentId) {
 function _syncPrecedenceFromTree(fileObj) {
   const order = [];
   const walk = pid => fileObj.populations
-    .filter(p => p.gateInfo && p.parentId === pid)
+    .filter(p => isGateLike(p) && p.parentId === pid)
     .forEach(g => { order.push(g.id); walk(g.id); });
   const root = fileObj.populations.find(p => p._isAll);
   if (root) walk(root.id);
-  fileObj.populations.filter(p => p.gateInfo && !order.includes(p.id)).forEach(p => order.push(p.id));
+  fileObj.populations.filter(p => isGateLike(p) && !order.includes(p.id)).forEach(p => order.push(p.id));
   fileObj.colorPrecedence = order.reverse();
 }
 
@@ -2495,7 +2503,7 @@ function _reorderSiblingsByPrecedence(fileObj, names) {
   const key = p => { const i = names.indexOf(p.name); return i < 0 ? Infinity : i; };
   const groups = new Map();
   fileObj.populations.forEach((p, i) => {
-    if (!p.gateInfo) return;
+    if (!isGateLike(p)) return;
     if (!groups.has(p.parentId)) groups.set(p.parentId, { slots: [], items: [] });
     const g = groups.get(p.parentId); g.slots.push(i); g.items.push(p);
   });
@@ -3084,7 +3092,7 @@ function renderPlot(plot) {
 
   // ── 2. Draw dots into offscreen GL canvas, blit onto main canvas ──────────
   const { data, nPar } = fcsFile;
-  const allColoredGates = getDescendantGates(plot.inputPop);
+  const allColoredGates = getColorGates(plot.inputPop);
   // Build the set of ancestor gate IDs for plot.inputPop.
   // Ancestor gates must NOT appear in orderedGates: they define which events are
   // *shown* on this plot but their color should never override the inputPop's own
@@ -3109,7 +3117,8 @@ function renderPlot(plot) {
       const ai = filePrecedence.indexOf(a.id) === -1 ? 9999 : filePrecedence.indexOf(a.id);
       const bi = filePrecedence.indexOf(b.id) === -1 ? 9999 : filePrecedence.indexOf(b.id);
       return bi - ai; // highest precedence (lowest index) goes to END
-    });
+    })
+    .map(_withEffColor);   // uncoloured gates inherit the nearest coloured ancestor's colour
 
   const glOk = drawDensityNg2(ctx, plot, tf, pad, pw, ph, pop, renderPop, fcsFile, orderedGates);
 
@@ -3125,7 +3134,7 @@ function renderPlot(plot) {
       if (pop2.noColor) return;
       pop2.indices.forEach(i => eventColor.set(i, pop2.color));
     });
-    const ungatedKey = (renderPop.id !== 0 && renderPop.color && !renderPop.noColor) ? renderPop.color : '#a0a0aa';
+    const ungatedKey = (renderPop.id !== 0 && _effColor(renderPop)) || '#a0a0aa';
     const colorBuckets = new Map();
     const renderIndices = popIndicesArray(renderPop);
     for (let ei = 0; ei < renderIndices.length; ei++) {
@@ -3868,8 +3877,8 @@ function drawDensityNg2(ctx, plot, tf, pad, pw, ph, pop, renderPop, fcsFile, ord
     .slice(-NG2_MAX_CLASSES);
   const owner = new Int8Array(nEvents).fill(-1);
   classes.forEach((g, k) => { const ix = g.indices; for (let i = 0; i < ix.length; i++) owner[ix[i]] = k; });
-  const viewBase = (renderPop.id !== 0 && !renderPop._isAll && renderPop.color && !renderPop.noColor)
-    ? _ng2Anchor(renderPop.color) : _ng2GrayAnchor(NG2_UNGATED_BASE);
+  const viewBaseColor = (renderPop.id !== 0 && !renderPop._isAll) ? _effColor(renderPop) : null;
+  const viewBase = viewBaseColor ? _ng2Anchor(viewBaseColor) : _ng2GrayAnchor(NG2_UNGATED_BASE);
   const anchors = classes.map(g => (g.noColor || !g.color) ? _ng2GrayAnchor(NG2_NO_COLOR) : _ng2Anchor(g.color));
   anchors.push(viewBase);                 // plane K = ungated remainder
   const planes = anchors.length;
@@ -4056,7 +4065,7 @@ function _drawDotsFull(gl, rend, plot, tf, pad, pw, ph, pop, data, nPar, allColo
 
   // Rebuild color half-floats if gate membership/colors changed
   if (plot._colKey !== colKey) {
-    const [ugR8, ugG8, ugB8] = hexToRgba255(pop.id !== 0 && pop.color && !pop.noColor ? pop.color : '#a0a0aa');
+    const [ugR8, ugG8, ugB8] = hexToRgba255((pop.id !== 0 && _effColor(pop)) || '#a0a0aa');
     // Use pooled colorLUT (Uint8, 4 bytes per event)
     const colorLUT = _pool.colorLUT(n);
     for (let i = 0; i < n; i++) {
@@ -5129,6 +5138,121 @@ function evalGateLOD(gate) {
   markAllDirty();
 }
 
+// ─── BOOLEAN POPULATIONS ─────────────────────────────────────────────────────
+// A boolean population has gateInfo:null and boolInfo:{expr}. expr is a leaf (population id) or
+// {op:'or'|'and'|'not', args:[expr...]}. It always sits directly under the file's root.
+function isGateLike(p) { return !!(p && (p.gateInfo || p.boolInfo)); }
+function _boolLeaves(expr, out = []) {
+  if (typeof expr === 'number') out.push(expr);
+  else if (expr && expr.args) expr.args.forEach(a => _boolLeaves(a, out));
+  return out;
+}
+function _boolText(expr, fileObj) {
+  if (typeof expr === 'number') {
+    const p = fileObj && fileObj.populations.find(q => q.id === expr);
+    return '"' + (p ? p.name : '?') + '"';
+  }
+  if (!expr) return '';
+  if (expr.op === 'not') return 'NOT ' + _boolText(expr.args[0], fileObj);
+  const sep = expr.op === 'and' ? ' AND ' : ' OR ';
+  return '(' + expr.args.map(a => _boolText(a, fileObj)).join(sep) + ')';
+}
+function _boolMask(expr, fileObj) {
+  const N = fileObj.nEvents;
+  if (typeof expr === 'number') {
+    const p = fileObj.populations.find(q => q.id === expr);
+    const m = new Uint8Array(N);
+    if (!p) return m;
+    if (p._isAll) m.fill(1);
+    else if (p.indices) for (let i = 0; i < p.indices.length; i++) m[p.indices[i]] = 1;
+    return m;
+  }
+  if (expr.op === 'not') {
+    const m = _boolMask(expr.args[0], fileObj);
+    for (let i = 0; i < N; i++) m[i] ^= 1;
+    return m;
+  }
+  const m = _boolMask(expr.args[0], fileObj);
+  for (let k = 1; k < expr.args.length; k++) {
+    const o = _boolMask(expr.args[k], fileObj);
+    if (expr.op === 'and') for (let i = 0; i < N; i++) m[i] &= o[i];
+    else for (let i = 0; i < N; i++) m[i] |= o[i];
+  }
+  return m;
+}
+function evalBool(pop) {
+  const f = getFileById(pop.fileId); if (!f || !pop.boolInfo || !pop.boolInfo.expr) return;
+  const m = _boolMask(pop.boolInfo.expr, f);
+  let n = 0; for (let i = 0; i < m.length; i++) n += m[i];
+  const out = new Int32Array(n);
+  for (let i = 0, k = 0; i < m.length; i++) if (m[i]) out[k++] = i;
+  pop.indices = out;
+  for (const key of [..._spatialCache.keys()]) if (String(key).startsWith(pop.id + ':')) _spatialCache.delete(key);
+  for (const key of [..._lodCache.keys()]) if (String(key).startsWith(pop.id + ':')) _lodCache.delete(key);
+  markAllDirty();
+}
+let _bulkEval = false, _boolDepth = 0;
+// After a gate (or boolean) changes: re-evaluate booleans that use it and the gates under them.
+function _bumpBoolDependents(changed) {
+  if (_bulkEval || _boolDepth > 20) return;
+  const f = getFileById(changed.fileId); if (!f) return;
+  _boolDepth++;
+  try {
+    f.populations.filter(b => b.boolInfo && _boolLeaves(b.boolInfo.expr).includes(changed.id)).forEach(b => {
+      evalBool(b);
+      const reeval = pid => f.populations.filter(g => g.gateInfo && g.parentId === pid).forEach(g => { evalGate(g); reeval(g.id); });
+      reeval(b.id);
+      _bumpBoolDependents(b);
+    });
+  } finally { _boolDepth--; }
+}
+// Dependency order (parents and boolean operands first) for whole-file re-evaluation.
+function _popsInEvalOrder(fileObj) {
+  const items = fileObj.populations.filter(isGateLike), byId = new Map(items.map(p => [p.id, p]));
+  const done = new Set(), out = [];
+  const visit = (p, stack) => {
+    if (done.has(p.id) || stack.has(p.id)) return;
+    stack.add(p.id);
+    const deps = p.boolInfo ? _boolLeaves(p.boolInfo.expr) : [];
+    if (p.parentId != null) deps.push(p.parentId);
+    deps.forEach(d => { const q = byId.get(d); if (q) visit(q, stack); });
+    stack.delete(p.id); done.add(p.id); out.push(p);
+  };
+  items.forEach(p => visit(p, new Set()));
+  return out;
+}
+function _upstreamIds(id, fileObj, seen = new Set()) {
+  if (seen.has(id)) return seen;
+  seen.add(id);
+  const p = fileObj.populations.find(q => q.id === id); if (!p) return seen;
+  if (p.parentId != null) _upstreamIds(p.parentId, fileObj, seen);
+  if (p.boolInfo) _boolLeaves(p.boolInfo.expr).forEach(l => _upstreamIds(l, fileObj, seen));
+  return seen;
+}
+// Gates whose colour paints a plot: descendant gates, plus booleans on whole-file plots.
+function getColorGates(popId) {
+  const pop = populations.find(p => p.id === popId), g = getDescendantGates(popId);
+  if (pop && pop._isAll) populations.forEach(p => { if (p.boolInfo && p.fileId === pop.fileId && p.indices) g.push(p); });
+  return g;
+}
+
+// A "no colour" population shows the colour of its nearest coloured ancestor (grey base if none).
+function _effColor(g) {
+  let c = g, depth = 0;
+  while (c && depth++ < 64) {
+    if (!c._isAll && !c.noColor && c.color) return c.color;
+    c = populations.find(q => q.id === c.parentId);
+  }
+  return null;
+}
+function _withEffColor(g) {
+  if (!g.noColor) return g;
+  const col = _effColor(g);
+  if (!col) return g;
+  const p = Object.create(g); p.color = col; p.noColor = false;
+  return p;
+}
+
 function evalGate(gate, { invalidate = true } = {}) {
   const pop = populations.find(p => p.id === gate.parentId);
   if (!pop) return;
@@ -5193,6 +5317,7 @@ function evalGate(gate, { invalidate = true } = {}) {
   // so the next mousemove reuses it instead of rebuilding from scratch.
   if (invalidate) invalidateSpatialCache(true);
   markAllDirty();
+  if (!_bulkEval) _bumpBoolDependents(gate);
 }
 
 // Robust slope of ys on xs (FlowNg2's auto-compensation fit): equal-count bins in x, median y
@@ -5485,8 +5610,8 @@ function showGateMenu(popId, x, y) {
   const isQuad = !!(pop.gateInfo && pop.gateInfo.quad);
   _openCtxMenu(x, y, [
     { label: 'Rename / Color…', run: () => showColorPicker(popId, x, y) },
-    { label: 'Copy',  disabled: isQuad, run: () => copyGate(popId, false) },
-    { label: 'Cut',   disabled: isQuad, run: () => copyGate(popId, true) },
+    { label: 'Copy',  disabled: isQuad || !!pop.boolInfo, run: () => copyGate(popId, false) },
+    { label: 'Cut',   disabled: isQuad || !!pop.boolInfo, run: () => copyGate(popId, true) },
     { label: 'Paste', disabled: !_gateClipboard, run: () => pasteGate(popId) },
     { label: 'Delete', danger: true, run: () => deleteGateFromTree(popId) },
   ]);
@@ -5608,6 +5733,7 @@ function _clonePop(p) {
     c.gateInfo = { ...p.gateInfo, rawPts: p.gateInfo.rawPts.map(q => ({ ...q })) };
     if (p.gateInfo.quad) c.gateInfo.quad = { ...p.gateInfo.quad };
   }
+  if (p.boolInfo) c.boolInfo = { expr: JSON.parse(JSON.stringify(p.boolInfo.expr)) };
   return c;
 }
 function _snapshotState() {
@@ -5678,7 +5804,9 @@ document.addEventListener('keydown', e => {
 function reevaluateAllGates(fileObj) {
   sendDataToComputeWorkerForFile(fileObj);
   invalidateSpatialCache(false);
-  fileObj.populations.filter(p => p.gateInfo).forEach(g => evalGate(g, { invalidate: false }));
+  _bulkEval = true;
+  try { _popsInEvalOrder(fileObj).forEach(p => p.boolInfo ? evalBool(p) : evalGate(p, { invalidate: false })); }
+  finally { _bulkEval = false; }
   invalidateSpatialCache(true);
   rebuildPopulationsView();
   renderPopList(); updateAllPopSelects(); markAllDirty(); renderAllPlots();
@@ -5686,6 +5814,9 @@ function reevaluateAllGates(fileObj) {
 
 function deleteGateAndDescendants(gateId) {
   const gate = populations.find(p => p.id === gateId);
+  // Booleans that use this population as an operand go with it
+  populations.filter(b => b.boolInfo && b.id !== gateId && _boolLeaves(b.boolInfo.expr).includes(gateId))
+    .forEach(b => deleteGateAndDescendants(b.id));
   // Recursively delete all children first, then the gate itself
   const children = populations.filter(p => p.parentId === gateId);
   children.forEach(c => deleteGateAndDescendants(c.id));
@@ -6469,6 +6600,25 @@ const PICKER_COLORS = [
   {name:'Grey',         hex:'#808080'},
   {name:'Black',        hex:'#000000'},
   {name:'Gold',         hex:'#ffb81c'},
+  // Kaluza template palette (so converted templates round-trip with recognisable swatches)
+  {name:'Kaluza Purple',      hex:'#cc00ff'},
+  {name:'Kaluza Orange',      hex:'#ff9000'},
+  {name:'Kaluza Red',         hex:'#ff0000'},
+  {name:'Kaluza Magenta',     hex:'#ff00ff'},
+  {name:'Kaluza Blue',        hex:'#0000ff'},
+  {name:'Kaluza Green',       hex:'#00ff00'},
+  {name:'Kaluza Dark Green',  hex:'#0c6a0c'},
+  {name:'Kaluza Sky Blue',    hex:'#00aaff'},
+  {name:'Kaluza Lilac',       hex:'#cb67e4'},
+  {name:'Kaluza Light Blue',  hex:'#67bbe4'},
+  {name:'Kaluza Pale Yellow', hex:'#e4e467'},
+  {name:'Kaluza Olive',       hex:'#6a6a0c'},
+  {name:'Kaluza Mustard',     hex:'#8f8f00'},
+  {name:'Kaluza Teal Blue',   hex:'#005f8f'},
+  {name:'Kaluza Brick',       hex:'#bc1515'},
+  {name:'Kaluza Leaf',        hex:'#15bc15'},
+  {name:'Kaluza Lime',        hex:'#84bc15'},
+  {name:'Kaluza Violet',      hex:'#72008f'},
 ];
 
 function showColorPicker(popId, mx, my) {
@@ -6504,8 +6654,8 @@ function showColorPicker(popId, mx, my) {
   }).join('');
 
   overlay.innerHTML = `
-    <div class="modal-box" style="width:260px;min-width:200px;gap:12px">
-      <h2 style="font-size:12px;margin:0">Edit Gate</h2>
+    <div class="modal-box" style="width:300px;min-width:200px;gap:12px">
+      <h2 style="font-size:12px;margin:0">${pop.boolInfo ? 'Edit Boolean Population' : 'Edit Gate'}</h2>
 
       <div style="display:flex;flex-direction:column;gap:4px">
         <label style="font-size:10px;color:var(--text2)">Name</label>
@@ -6515,9 +6665,13 @@ function showColorPicker(popId, mx, my) {
 
       <div style="display:flex;flex-direction:column;gap:6px">
         <label style="font-size:10px;color:var(--text2)">Color</label>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;align-items:center">
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:5px;align-items:center">
           ${noColorSwatch}
           ${colorSwatches}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="color" id="cpk-custom" value="${/^#[0-9a-f]{6}$/i.test(pop.color || '') ? pop.color : '#808080'}" style="width:32px;height:24px;padding:0;border:none;background:none">
+          <input class="modal-input" id="cpk-hex" placeholder="#rrggbb" maxlength="7" style="width:90px" value="${pop.noColor ? '' : (pop.color || '')}">
         </div>
       </div>
 
@@ -6553,6 +6707,19 @@ function showColorPicker(popId, mx, my) {
     el.addEventListener('click', () => {
       selectedHex = el.dataset.hex; updateSwatchHighlights();
     });
+  });
+
+  // Custom colour: native picker + hex box
+  const _cpkSet = hex => {
+    if (!/^#[0-9a-f]{6}$/i.test(hex)) return;
+    selectedHex = hex.toLowerCase(); updateSwatchHighlights();
+    overlay.querySelector('#cpk-custom').value = selectedHex;
+    overlay.querySelector('#cpk-hex').value = selectedHex;
+  };
+  overlay.querySelector('#cpk-custom').addEventListener('input', e => _cpkSet(e.target.value));
+  overlay.querySelector('#cpk-hex').addEventListener('input', e => {
+    const v = e.target.value.trim();
+    if (/^#[0-9a-f]{6}$/i.test(v)) { selectedHex = v.toLowerCase(); updateSwatchHighlights(); overlay.querySelector('#cpk-custom').value = selectedHex; }
   });
 
   // Apply button
@@ -6788,6 +6955,10 @@ function doExportTemplate() {
 }
 
 // Snapshot of the current gates/plots/ranges for all loaded files as a v3 template.
+function _boolExprToNames(expr, fileObj) {
+  if (typeof expr === 'number') { const p = fileObj.populations.find(q => q.id === expr); return p ? p.name : '?'; }
+  return { op: expr.op, args: expr.args.map(a => _boolExprToNames(a, fileObj)) };
+}
 function _buildTemplateV3(tmplName) {
   function buildGateTree(fileObj, popId, parentName) {
     return fileObj.populations
@@ -6820,10 +6991,18 @@ function _buildTemplateV3(tmplName) {
       if (pr.rawMin != null) prOut[p.name].rawMin = pr.rawMin;
       if (pr.rawMax != null) prOut[p.name].rawMax = pr.rawMax;
       if (pr.asinhCofactor != null) prOut[p.name].asinhCofactor = pr.asinhCofactor;
+      if (pr.minPercentile != null) prOut[p.name].minPercentile = pr.minPercentile;
+      if (!Object.keys(prOut[p.name]).length) delete prOut[p.name];
     });
     return {
       sourceFile: fileObj.filename || 'unknown',
       gates: buildGateTree(fileObj, rootPopId, fileObj.filename || 'All Events'),
+      booleans: fileObj.populations.filter(p => p.boolInfo).map(p => ({
+        name: p.name, color: p.color, noColor: p.noColor || false,
+        dots: (p.dotBoost > 0) || undefined,
+        expr: _boolExprToNames(p.boolInfo.expr, fileObj),
+        children: buildGateTree(fileObj, p.id, p.name)
+      })),
       colorPrecedence: fileObj.colorPrecedence
         .map(id => { const p = fileObj.populations.find(pp => pp.id === id); return p ? p.name : null; })
         .filter(Boolean),
@@ -6837,8 +7016,19 @@ function _buildTemplateV3(tmplName) {
     const fileObj = getFileForPlot(pl);
     if (!fileObj) return null;
     const fileIndex = fcsFiles.indexOf(fileObj);
+    // Zoom is held in display space; save it in raw units so it survives scale/cofactor changes.
+    let zoom;
+    if (pl.zoomX || pl.zoomY) {
+      _contextFileId = fileObj.fileId; _paramRanges = fileObj.paramRanges;
+      const sc = (asinh, log) => asinh ? 'asinh' : log ? 'log' : 'lin';
+      const xs = sc(pl.xAsinh, pl.xLog), ys = sc(pl.yAsinh, pl.yLog);
+      zoom = {};
+      if (pl.zoomX) zoom.x = { min: fromDisplay(pl.zoomX.min, pl.xParam, xs), max: fromDisplay(pl.zoomX.max, pl.xParam, xs) };
+      if (pl.zoomY) zoom.y = { min: fromDisplay(pl.zoomY.min, pl.yParam, ys), max: fromDisplay(pl.zoomY.max, pl.yParam, ys) };
+    }
     return {
       fileIndex,
+      zoom,
       xParamName:   fileObj.params[pl.xParam].name,
       yParamName:   fileObj.params[pl.yParam].name,
       inputPopName: (fileObj.populations.find(p => p.id === pl.inputPop) || {}).name || fileObj.filename,
@@ -7309,6 +7499,7 @@ function _importGatesV2(tmpl, fileObj) {
       if (pr.rawMin != null)        entry.rawMin = pr.rawMin;
       if (pr.rawMax != null)        entry.rawMax = pr.rawMax;
       if (pr.asinhCofactor != null) entry.asinhCofactor = pr.asinhCofactor;
+      if (pr.minPercentile != null) entry.minPercentile = pr.minPercentile;
       if (Object.keys(entry).length) fileObj.paramRanges.set(idx, entry);
     });
   }
@@ -7460,51 +7651,7 @@ function _applyTemplateV3(tmpl, fileMap) {
     const rootPop = fileObj.populations.find(p => p._isAll);
     const rootPopId = rootPop ? rootPop.id : 0;
 
-    // Clear existing non-root populations for this file before re-importing
-    fileObj.populations = fileObj.populations.filter(p => p._isAll);
-
-    function importNode(node, parentId) {
-      const xi = paramMap[node.xParamName];
-      const yi = paramMap[node.yParamName];
-      if (xi === undefined || yi === undefined) { totalSkipped++; return; }
-      const parentPop = fileObj.populations.find(p => p.id === parentId);
-      if (!parentPop) { totalSkipped++; return; }
-      const xScDef = defaultScale(xi);
-      const yScDef = defaultScale(yi);
-      const xScale = node.xScale || (xScDef.asinh ? 'asinh' : xScDef.log ? 'log' : 'lin');
-      const yScale = node.yScale || (yScDef.asinh ? 'asinh' : yScDef.log ? 'log' : 'lin');
-      const pts = node.rawPts;
-      const { data, nPar } = fileObj;
-      const gated = [];
-      const dispPtsI = pts.map(pt => ({ dx: toDisplay(pt.rx, xi, xScale), dy: toDisplay(pt.ry, yi, yScale) }));
-      const parentN = popCount(parentPop);
-      for (let ii = 0; ii < parentN; ii++) {
-        const ei = popGetIndex(parentPop, ii);
-        const dx = toDisplay(data[ei*nPar+xi], xi, xScale);
-        const dy = toDisplay(data[ei*nPar+yi], yi, yScale);
-        const inside = node.quad
-          ? _quadInside(node.quad.q, dx, dy, toDisplay(node.quad.cx, xi, xScale), toDisplay(node.quad.cy, yi, yScale))
-          : pointInPolygonDisp(dx, dy, dispPtsI);
-        if (inside) gated.push(ei);
-      }
-      const newPop = {
-        id: popIdCounter++, name: node.name, color: node.color,
-        noColor: node.noColor || false, indices: gated, dotBoost: node.dots ? _DOT_BOOST_ON : 0,
-        parentId, gateInfo: { rawPts: pts, xParam: xi, yParam: yi, xScale, yScale, ...(node.quad ? { quad: { ...node.quad } } : {}) },
-        fileId: fileObj.fileId
-      };
-      fileObj.populations.push(newPop);
-      totalImported++;
-      (node.children || []).forEach(child => importNode(child, newPop.id));
-    }
-
-    (tf.gates || []).forEach(node => importNode(node, rootPopId));
-
-    // Restore draw order: sibling order follows the saved precedence, then derive it back
-    _reorderSiblingsByPrecedence(fileObj, tf.colorPrecedence);
-    _syncPrecedenceFromTree(fileObj);
-
-    // Restore param ranges
+    // Restore param ranges FIRST: gate membership depends on cofactors / axis ranges
     if (tf.paramRanges) {
       Object.entries(tf.paramRanges).forEach(([pName, pr]) => {
         const idx = paramMap[pName];
@@ -7513,9 +7660,97 @@ function _applyTemplateV3(tmpl, fileMap) {
         if (pr.rawMin != null)        entry.rawMin = pr.rawMin;
         if (pr.rawMax != null)        entry.rawMax = pr.rawMax;
         if (pr.asinhCofactor != null) entry.asinhCofactor = pr.asinhCofactor;
+        if (pr.minPercentile != null) entry.minPercentile = pr.minPercentile;
         if (Object.keys(entry).length) fileObj.paramRanges.set(idx, entry);
       });
     }
+
+    // Clear existing non-root populations for this file before re-importing
+    fileObj.populations = fileObj.populations.filter(p => p._isAll);
+
+    // Pass 1: create shell populations (gates and booleans) so booleans can reference any gate by name.
+    const shells = [];   // {pop, node}
+    function makeShell(node, parentId) {
+      const xi = paramMap[node.xParamName];
+      const yi = paramMap[node.yParamName];
+      if (xi === undefined || yi === undefined) { totalSkipped++; return; }
+      const xScDef = defaultScale(xi);
+      const yScDef = defaultScale(yi);
+      const xScale = node.xScale || (xScDef.asinh ? 'asinh' : xScDef.log ? 'log' : 'lin');
+      const yScale = node.yScale || (yScDef.asinh ? 'asinh' : yScDef.log ? 'log' : 'lin');
+      const newPop = {
+        id: popIdCounter++, name: node.name, color: node.color,
+        noColor: node.noColor || false, indices: new Int32Array(0), dotBoost: node.dots ? _DOT_BOOST_ON : 0,
+        parentId, gateInfo: { rawPts: node.rawPts, xParam: xi, yParam: yi, xScale, yScale, ...(node.quad ? { quad: { ...node.quad } } : {}) },
+        fileId: fileObj.fileId
+      };
+      fileObj.populations.push(newPop);
+      shells.push({ pop: newPop, node });
+      (node.children || []).forEach(child => makeShell(child, newPop.id));
+    }
+    (tf.gates || []).forEach(node => makeShell(node, rootPopId));
+    (tf.booleans || []).forEach(bn => {
+      const bp = {
+        id: popIdCounter++, name: bn.name, color: bn.color, noColor: bn.noColor || false,
+        indices: new Int32Array(0), dotBoost: bn.dots ? _DOT_BOOST_ON : 0,
+        parentId: rootPopId, gateInfo: null, boolInfo: { expr: null }, fileId: fileObj.fileId
+      };
+      fileObj.populations.push(bp);
+      shells.push({ pop: bp, node: bn });
+      (bn.children || []).forEach(child => makeShell(child, bp.id));
+    });
+    // Resolve boolean expressions (names → ids); unresolved booleans are dropped with their subtrees
+    const nameToPop = new Map();
+    fileObj.populations.forEach(p => { if (!nameToPop.has(p.name)) nameToPop.set(p.name, p); });
+    const toIds = e => {
+      if (typeof e === 'string') { const p = nameToPop.get(e); if (!p) throw new Error(e); return p.id; }
+      return { op: e.op, args: e.args.map(toIds) };
+    };
+    const dropped = new Set();
+    shells.forEach(({ pop, node }) => {
+      if (!pop.boolInfo) return;
+      try { pop.boolInfo.expr = toIds(node.expr); } catch (err) { dropped.add(pop.id); }
+    });
+    // Pass 2: compute in dependency order (parents and boolean operands first)
+    const pending = new Map(shells.map(o => [o.pop.id, o]));
+    const doneIds = new Set([rootPopId]);
+    let progress = true;
+    while (pending.size && progress) {
+      progress = false;
+      for (const [id, { pop, node }] of [...pending]) {
+        if (dropped.has(pop.parentId)) dropped.add(id);
+        if (dropped.has(id)) { pending.delete(id); continue; }
+        const deps = [pop.parentId, ...(pop.boolInfo ? _boolLeaves(pop.boolInfo.expr) : [])];
+        if (!deps.every(d => doneIds.has(d))) continue;
+        if (pop.boolInfo) evalBool(pop);
+        else {
+          const parentPop = fileObj.populations.find(p => p.id === pop.parentId);
+          const gi = pop.gateInfo, pts = gi.rawPts;
+          const dispPtsI = pts.map(pt => ({ dx: toDisplay(pt.rx, gi.xParam, gi.xScale), dy: toDisplay(pt.ry, gi.yParam, gi.yScale) }));
+          const cdx = gi.quad ? toDisplay(gi.quad.cx, gi.xParam, gi.xScale) : 0;
+          const cdy = gi.quad ? toDisplay(gi.quad.cy, gi.yParam, gi.yScale) : 0;
+          const { data, nPar } = fileObj;
+          const gated = [];
+          const parentN = popCount(parentPop);
+          for (let ii = 0; ii < parentN; ii++) {
+            const ei = popGetIndex(parentPop, ii);
+            const dx = toDisplay(data[ei*nPar+gi.xParam], gi.xParam, gi.xScale);
+            const dy = toDisplay(data[ei*nPar+gi.yParam], gi.yParam, gi.yScale);
+            const inside = gi.quad ? _quadInside(gi.quad.q, dx, dy, cdx, cdy) : pointInPolygonDisp(dx, dy, dispPtsI);
+            if (inside) gated.push(ei);
+          }
+          pop.indices = Int32Array.from(gated);
+        }
+        doneIds.add(id); pending.delete(id); totalImported++; progress = true;
+      }
+    }
+    totalSkipped += pending.size + dropped.size;
+    fileObj.populations = fileObj.populations.filter(p => !pending.has(p.id) && !dropped.has(p.id));
+
+    // Restore draw order: sibling order follows the saved precedence, then derive it back
+    _reorderSiblingsByPrecedence(fileObj, tf.colorPrecedence);
+    _syncPrecedenceFromTree(fileObj);
+
   });
 
   rebuildPopulationsView();
@@ -7545,6 +7780,12 @@ function _applyTemplateV3(tmpl, fileMap) {
       zoomX: null, zoomY: null, _zoomRect: null,
       _vboDirty: true, fileId: fileObj.fileId
     };
+    if (ps.zoom) {
+      _contextFileId = fileObj.fileId; _paramRanges = fileObj.paramRanges;
+      const sc = (asinh, log) => asinh ? 'asinh' : log ? 'log' : 'lin';
+      if (ps.zoom.x) plot.zoomX = { min: toDisplay(ps.zoom.x.min, xi, sc(plot.xAsinh, plot.xLog)), max: toDisplay(ps.zoom.x.max, xi, sc(plot.xAsinh, plot.xLog)) };
+      if (ps.zoom.y) plot.zoomY = { min: toDisplay(ps.zoom.y.min, yi, sc(plot.yAsinh, plot.yLog)), max: toDisplay(ps.zoom.y.max, yi, sc(plot.yAsinh, plot.yLog)) };
+    }
     plots.push(plot);
     renderPlotCard(plot);
     const card = document.getElementById(`plot-card-${plot.id}`);

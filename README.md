@@ -278,6 +278,27 @@ For large datasets (>1M events):
 
 ---
 
+## Converting Kaluza Templates
+
+`scripts/kaluza_to_flowng.py` converts a Kaluza `.composite` / `.protocol` file into a FlowNg template (`*_FlowNgtmplt.json`) you can load with **Import Template**. It uses only the Python standard library; run it with [uv](https://docs.astral.sh/uv/):
+
+```bash
+# See the tubes (Kaluza datasets) and plot sheets in the template
+uv run scripts/kaluza_to_flowng.py "BTM Triage Template v10.composite" --list
+
+# Convert; pass the LMD files in Kaluza dataset order (B, T, myeloid for BTM)
+uv run scripts/kaluza_to_flowng.py "BTM Triage Template v10.composite" \
+    --lmd "B.LMD" --lmd "T.LMD" --lmd "M.LMD" -o btm_FlowNgtmplt.json
+```
+
+What is converted: gate hierarchy (polygons, rectangles, quadrants, boolean OR/AND/NOT populations), gate colours (`#rrggbb`; gates without a colour become "no colour"), axis scales (logicle is approximated as asinh, cofactor 300) and axis ranges, and every plot sheet as a tab with its plots. Linked copy gates are merged into their originals.
+
+Notes:
+- **Tubes are positional.** Kaluza templates do not name their tubes; entry *i* of the output is Kaluza dataset *i*. Give `--lmd` (or `--tube-names "B tube,T tube,M tube"`) in that order, and match each entry to the right loaded tube in the import dialog.
+- **Parameter names come from the LMD.** FlowNg names FL channels by their stain label (`$PnS`), which differs per tube, so pass `--lmd` for every tube; without it, FL parameters cannot be mapped and are skipped on import.
+- Use `--sheets` / `--exclude-sheets` to choose which plot sheets become tabs.
+- Not converted: report/stat sheets, compensation (FlowNg uses the LMD `$SPILLOVER`), hinged-quadrant tilt (centre point only).
+
 ## Technical Details
 
 ### Technology Stack
