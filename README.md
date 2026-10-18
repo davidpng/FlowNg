@@ -284,12 +284,19 @@ For large datasets (>1M events):
 
 ```bash
 # See the tubes (Kaluza datasets) and plot sheets in the template
-uv run scripts/kaluza_to_flowng.py "BTM Triage Template v10.composite" --list
+uv run scripts/kaluza_to_flowng.py "samples/BTM Triage Template v10.composite" --list
 
 # Convert; pass the LMD files in Kaluza dataset order (B, T, myeloid for BTM)
-uv run scripts/kaluza_to_flowng.py "BTM Triage Template v10.composite" \
+uv run scripts/kaluza_to_flowng.py "samples/BTM Triage Template v10.composite" \
     --lmd "B.LMD" --lmd "T.LMD" --lmd "M.LMD" -o btm_FlowNgtmplt.json
+
+# All options
+uv run scripts/kaluza_to_flowng.py --help
 ```
+
+Then open FlowNG.html, load the three LMD files, click **Import Template**, choose the JSON, and match each template entry to its tube.
+
+`samples/` holds the BTM Triage Template v10 Kaluza composite and its converted FlowNg template (`BTM Triage Template v10_FlowNgtmplt.json`, made with the three `TEST SAMPLE` LMDs in the repo root).
 
 What is converted: gate hierarchy (polygons, rectangles, quadrants, boolean OR/AND/NOT populations), gate colours (`#rrggbb`; gates without a colour become "no colour"), axis scales (logicle is approximated as asinh, cofactor 300) and axis ranges, and every plot sheet as a tab with its plots. Linked copy gates are merged into their originals.
 
