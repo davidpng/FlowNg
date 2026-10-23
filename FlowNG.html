@@ -7061,9 +7061,18 @@ let _authorTemplate = null;   // template to restore with "Reset to author's gat
 let _bundleInfo = null;
 
 /*@lite:begin*/
-const _SAFE_META_KEYS = /^(\$CYT|\$DATE|\$BTIM|\$ETIM|\$TOT|\$PAR|\$MODE|\$DATATYPE|\$BYTEORD|\$NEXTDATA|FCSVersion|\$FCSVersion|\$P\d+[NSRBEGVD])$/;
+const _SAFE_META_KEYS = /^(\$CYT|\$TOT|\$PAR|\$MODE|\$DATATYPE|\$BYTEORD|\$NEXTDATA|FCSVersion|\$FCSVersion|\$P\d+[NSRBEGVD])$/;
 
-function _docSource() {
+// The export must start from the untouched app, not the live page: by the time a user exports,
+// the live DOM holds rendered plot cards, the population tree and tab strip, all of which name the
+// loaded files (and so any patient names or accession numbers in them). The snapshot below is taken
+// by the loader hook at the end of <body>, before any file is loaded.
+let _pristineSource = null;
+function capturePristineSource() { _pristineSource = _docSourceLive(); }
+
+function _docSource() { return _pristineSource || _docSourceLive(); }
+
+function _docSourceLive() {
   const parts = Array.from(document.childNodes).map(n => {
     if (n.nodeType === Node.DOCUMENT_TYPE_NODE) return '<!DOCTYPE html>';
     if (n.nodeType === Node.COMMENT_NODE) return '<!--' + n.data + '-->';
@@ -7137,7 +7146,7 @@ function showShareDialog() {
         One self-contained HTML with the event data, compensation, gates and plots. Recipients can move and
         redraw gates, and reset to your gates. The original FCS/LMD file is not included.</p>
       <label style="font-size:11px;display:block;margin-bottom:8px">Name
-        <input id="share-name" type="text" style="width:100%" value="${(fcsFiles[0].filename||'FlowNG').replace(/\.[^.]+$/, '').replace(/"/g,'')}"></label>
+        <input id="share-name" type="text" style="width:100%" value="Shared analysis"></label>
       <label style="font-size:11px;display:block;margin-bottom:8px">Max events per file (blank = all; ${total.toLocaleString()} total loaded)
         <input id="share-maxev" type="number" min="1000" step="1000" style="width:100%" placeholder="all events" oninput="_updateShareEstimate()"></label>
       <div id="share-estimate" style="font-size:11px;color:var(--text2);margin:-4px 0 8px"></div>
@@ -7146,6 +7155,7 @@ function showShareDialog() {
           <span>Tube / file names shown in the shared file</span>
           <a href="#" onclick="document.querySelectorAll('.share-fname').forEach((e,i)=>e.value='Sample '+(i+1));return false" style="color:var(--accent)">Use Sample 1, 2, …</a>
         </div>
+        <div style="color:#f5a623;margin-bottom:4px">File names often contain patient names or accession numbers. Rename them here. Names, dates and IDs in the FCS header are removed unless you tick the metadata option below.</div>
         <div style="max-height:30vh;overflow:auto">${fcsFiles.map((f, i) => `<input class="share-fname" data-i="${i}" type="text" style="width:100%;margin-bottom:4px" value="${(f.filename || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">`).join('')}</div>
       </div>
       <label style="font-size:11px;display:block;margin-bottom:6px">
@@ -7289,7 +7299,13 @@ async function doExportShareable() {
     status.textContent = 'Building HTML…';
     await new Promise(r => setTimeout(r, 0));
     const bundle = { format: 1, sterile, name, created: new Date().toISOString(), files, template };
-    const json = JSON.stringify(bundle).replace(/</g, '\\u003c');
+    // Original file names must not survive anywhere in the bundle (template gate parents, plots, ...).
+    let jsonText = JSON.stringify(bundle);
+    const esc = x => JSON.stringify(x).slice(1, -1);
+    fcsFiles.forEach((f, fi) => {
+      if (f.filename && f.filename !== files[fi].filename) jsonText = jsonText.split(esc(f.filename)).join(esc(files[fi].filename));
+    });
+    const json = jsonText.replace(/</g, '\\u003c');
 
     // Tag strings are split so this source never contains a literal script tag of its own.
     const OPEN = '<scr' + 'ipt', CLOSE = '</scr' + 'ipt>';
@@ -9046,6 +9062,6 @@ self.addEventListener('message', async (e) => {
 
 </script>
 <!--@lite:end-->
-<script id="flowng-bundle-loader">loadBundleIfPresent();</script>
+<script id="flowng-bundle-loader">(function () { var b = document.getElementById('flowng-bundle'); if (!(b && b.textContent.slice(0, 200).indexOf('"sterile":true') >= 0) && typeof capturePristineSource === 'function') capturePristineSource(); })(); loadBundleIfPresent();</script>
 </body>
 </html>
