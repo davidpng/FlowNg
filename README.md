@@ -108,6 +108,8 @@ Supported formats: FCS 2.0, 3.0, 3.1, and Beckman Coulter LMD files
 **Export & Templates**
 - Save gating hierarchies as reusable templates for batch processing
 - Templates capture gate definitions, colors, and hierarchy for import into other files
+- **Matching a template to your files**: on import, each template file is matched to a loaded file by (1) the same file name, then (2) the same **tube name** (the instrument's test name, such as "LL panel B cell tube"), then (3) the **antibody panel** (a loaded file that has every fluorescent channel the template's gates use, preferring the closest panel). So a later acquisition of the same tube lines up even though its file name is new. The import dialog shows how each match was made, lets you change any of them, and offers "skip this section"; a tie between equally good panels is left unmatched rather than guessed. Templates saved before tube and panel were recorded still match by panel, worked out from their gates. A single-file template imported with several files loaded lists the best match first
+- Shared HTML files keep the tube name (not the file name) in the header so matching still works on them
 
 ### Toolbar
 

@@ -6996,6 +6996,8 @@ function _buildTemplateV3(tmplName) {
     });
     return {
       sourceFile: fileObj.filename || 'unknown',
+      tube: _fileTubeName(fileObj) || undefined,
+      panel: _filePanel(fileObj),
       gates: buildGateTree(fileObj, rootPopId, fileObj.filename || 'All Events'),
       booleans: fileObj.populations.filter(p => p.boolInfo).map(p => ({
         name: p.name, color: p.color, noColor: p.noColor || false,
@@ -7061,7 +7063,7 @@ let _authorTemplate = null;   // template to restore with "Reset to author's gat
 let _bundleInfo = null;
 
 /*@lite:begin*/
-const _SAFE_META_KEYS = /^(\$CYT|\$TOT|\$PAR|\$MODE|\$DATATYPE|\$BYTEORD|\$NEXTDATA|FCSVersion|\$FCSVersion|\$P\d+[NSRBEGVD])$/;
+const _SAFE_META_KEYS = /^(@TESTNAME|\$CYT|\$TOT|\$PAR|\$MODE|\$DATATYPE|\$BYTEORD|\$NEXTDATA|FCSVersion|\$FCSVersion|\$P\d+[NSRBEGVD])$/;
 
 // The export must start from the untouched app, not the live page: by the time a user exports,
 // the live DOM holds rendered plot cards, the population tree and tab strip, all of which name the
@@ -7460,6 +7462,53 @@ function importGates(templateJson) {
   }
 }
 
+// ─── TEMPLATE-TO-FILE MATCHING ──────────────────────────────────────────────
+// A template file is matched to a loaded file by, in order: the same file name; the same tube name
+// (the instrument's test name, e.g. "LL panel B cell tube"); then the antibody panel, i.e. a loaded
+// file that has every fluorescent channel the template's gates use, preferring the closest panel.
+// Templates saved before tube/panel were recorded still match by panel, derived from their gates.
+const _normTube = s => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+function _fileTubeName(f) {
+  const m = (f && f.meta) || {};
+  return (m['@TESTNAME'] || m['@TESTFILE'] || '').trim();
+}
+function _filePanel(f) {
+  return f.params.map(p => p.name).filter(n => isFluorescentParameter(n)).sort();
+}
+function _templatePanel(tf) {
+  if (tf.panel && tf.panel.length) return new Set(tf.panel);
+  const used = new Set();
+  const walk = n => { used.add(n.xParamName); used.add(n.yParamName); (n.children || []).forEach(walk); };
+  (tf.gates || []).forEach(walk);
+  return new Set([...used].filter(n => n && isFluorescentParameter(n)));
+}
+function _panelFit(tf, f) {
+  // null if the file lacks a channel the template needs; otherwise how many extra channels it has
+  const need = _templatePanel(tf), have = new Set(f.params.map(p => p.name));
+  for (const n of need) if (!have.has(n)) return null;
+  return _filePanel(f).filter(n => !need.has(n)).length;
+}
+// Returns [{ file, how }] aligned with tfs; each loaded file is used at most once.
+function _matchTemplateFiles(tfs) {
+  const out = tfs.map(() => ({ file: null, how: '' })), used = new Set();
+  const base = s => (s || '').toLowerCase().replace(/.*[/\\]/, '');
+  const pass = (how, pick) => tfs.forEach((tf, i) => {
+    if (out[i].file) return;
+    const f = pick(tf);
+    if (f) { out[i] = { file: f, how }; used.add(f.fileId); }
+  });
+  const free = () => fcsFiles.filter(f => !used.has(f.fileId));
+  pass('file name', tf => free().find(f => base(f.filename) === base(tf.sourceFile)));
+  pass('tube name', tf => { const t = _normTube(tf.tube); return t ? free().find(f => _normTube(_fileTubeName(f)) === t) : null; });
+  pass('antibody panel', tf => {
+    const fits = free().map(f => ({ f, extra: _panelFit(tf, f) })).filter(x => x.extra !== null);
+    if (!fits.length || !_templatePanel(tf).size) return null;
+    const best = Math.min(...fits.map(x => x.extra)), top = fits.filter(x => x.extra === best);
+    return top.length === 1 ? top[0].f : null;     // a tie is ambiguous: leave it for the user
+  });
+  return out;
+}
+
 function _showImportTargetPicker(tmpl) {
   const existing = document.getElementById('import-target-modal');
   if (existing) existing.remove();
@@ -7471,11 +7520,17 @@ function _showImportTargetPicker(tmpl) {
       <h2>Import Into Which File?</h2>
       <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Choose which loaded file to import the gates into:</p>
       <div id="import-target-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
-        ${fcsFiles.map(f => `
+        ${(() => {
+          const tf = { sourceFile: tmpl.sourceFile, tube: tmpl.tube, panel: tmpl.panel, gates: tmpl.gates };
+          const best = _matchTemplateFiles([tf])[0];
+          const rows = fcsFiles.map(f => ({ f, fit: _panelFit(tf, f), best: best.file && best.file.fileId === f.fileId }));
+          rows.sort((a, b) => (b.best - a.best) || ((a.fit === null) - (b.fit === null)) || ((a.fit ?? 0) - (b.fit ?? 0)));
+          return rows.map(({ f, fit, best: isBest }) => `
           <button onclick="_importGatesV2Into(${f.fileId});document.getElementById('import-target-modal').remove()"
-            style="text-align:left;padding:6px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:11px">
-            ${f.filename || 'File '+f.fileId} <span style="color:var(--text2)">(${(f.nEvents||0).toLocaleString()} events)</span>
-          </button>`).join('')}
+            style="text-align:left;padding:6px 10px;background:var(--bg2);border:1px solid ${isBest ? 'var(--accent)' : 'var(--border)'};border-radius:4px;cursor:pointer;font-size:11px">
+            ${isBest ? '★ ' : ''}${f.filename || 'File '+f.fileId} <span style="color:var(--text2)">(${(f.nEvents||0).toLocaleString()} events${_fileTubeName(f) ? ', ' + _fileTubeName(f) : ''}${isBest ? ', best match by ' + best.how : fit === null ? ', missing channels' : ''})</span>
+          </button>`).join('');
+        })()}
       </div>
       <div class="modal-actions">
         <button onclick="document.getElementById('import-target-modal').remove()">Cancel</button>
@@ -7634,12 +7689,9 @@ function _importGatesV2(tmpl, fileObj) {
 }
 
 function _importGatesV3(tmpl) {
-  // Build auto file mapping: template sourceFile → loaded fcsFile (by basename match)
-  const mapping = tmpl.files.map(tf => {
-    const srcBase = (tf.sourceFile || '').toLowerCase().replace(/.*[/\\]/, '');
-    const match = fcsFiles.find(f => (f.filename || '').toLowerCase().replace(/.*[/\\]/, '') === srcBase);
-    return { templateFile: tf, fcsFile: match || null };
-  });
+  // Auto file mapping: file name, then tube name, then antibody panel
+  const matched = _matchTemplateFiles(tmpl.files);
+  const mapping = tmpl.files.map((tf, i) => ({ templateFile: tf, fcsFile: matched[i].file, how: matched[i].how }));
 
   // Show a matching dialog
   const existing = document.getElementById('import-v3-modal');
@@ -7650,22 +7702,25 @@ function _importGatesV3(tmpl) {
 
   const rowsHTML = mapping.map((m, i) => `
     <tr>
-      <td style="padding:4px 8px;font-size:11px;color:var(--text2)">${m.templateFile.sourceFile || 'File '+i}</td>
+      <td style="padding:4px 8px;font-size:11px;color:var(--text2)">${m.templateFile.sourceFile || 'File '+i}${m.templateFile.tube ? `<br><span style="font-size:10px">${m.templateFile.tube}</span>` : ''}</td>
       <td style="padding:4px 8px">
         <select id="import-v3-sel-${i}" style="width:100%;font-size:11px;padding:2px 4px;background:var(--bg2);color:var(--text1);border:1px solid var(--border);border-radius:3px">
-          ${fcsFiles.map(f => `<option value="${f.fileId}" ${m.fcsFile && m.fcsFile.fileId===f.fileId?'selected':''}>${f.filename||'File '+f.fileId}</option>`).join('')}
+          <option value="" ${m.fcsFile ? '' : 'selected'}>(skip this section)</option>
+          ${fcsFiles.map(f => `<option value="${f.fileId}" ${m.fcsFile && m.fcsFile.fileId===f.fileId?'selected':''}>${f.filename||'File '+f.fileId}${_fileTubeName(f) ? ' — ' + _fileTubeName(f) : ''}</option>`).join('')}
         </select>
       </td>
+      <td style="padding:4px 8px;font-size:10px;color:${m.fcsFile ? 'var(--accent)' : '#e0a33e'}">${m.fcsFile ? 'by ' + m.how : 'no match'}</td>
     </tr>`).join('');
 
   overlay.innerHTML = `
     <div class="modal-box" style="width:520px">
       <h2>Import Multi-File Template</h2>
-      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Match each template file to a loaded file:</p>
+      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Each template file is matched to a loaded file by file name, then tube name, then antibody panel. Change any match, or skip a section:</p>
       <table style="width:100%;border-collapse:collapse;margin-bottom:12px">
         <thead><tr>
           <th style="text-align:left;padding:4px 8px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border)">Template file</th>
           <th style="text-align:left;padding:4px 8px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border)">Loaded file</th>
+          <th style="text-align:left;padding:4px 8px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border)">Matched</th>
         </tr></thead>
         <tbody>${rowsHTML}</tbody>
       </table>
