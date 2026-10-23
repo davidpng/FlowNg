@@ -7227,7 +7227,9 @@ async function doExportShareable() {
         colMins: Array.from(colMins), colMaxs: Array.from(colMaxs),
         otflowCofactors: f.otflowCofactors ? Array.from(f.otflowCofactors) : null,
         spillMatrix: f.spillMatrix || null, spillParamIdx: f.spillParamIdx || null,
-        data: await _gzipB64(data),
+        // With a raw (uncompensated) copy the compensated data is rebuilt on open from the spillover
+        // matrix, so only one copy of the events is stored.
+        data: rawData ? null : await _gzipB64(data),
         rawData: rawData ? await _gzipB64(rawData) : null,
       });
     }
@@ -7294,8 +7296,8 @@ async function loadBundleIfPresent() {
       const b = bundle.files[i];
       showProgress(5 + Math.round(90 * i / bundle.files.length), `Decoding ${b.filename}…`);
       await new Promise(r => setTimeout(r, 0));
-      const data = new Float32Array(await _gunzipB64(b.data));
       const rawData = b.rawData ? new Float32Array(await _gunzipB64(b.rawData)) : null;
+      const data = b.data ? new Float32Array(await _gunzipB64(b.data)) : rawData.slice();
       const fileObj = {
         fileId: fileIdCounter++,
         params: b.params, nEvents: b.nEvents, nPar: b.nPar, meta: b.meta,
@@ -7307,15 +7309,19 @@ async function loadBundleIfPresent() {
         populations: [], paramRanges: new Map(), colorPrecedence: [],
         _computeWorker: null, _computeWorkerReady: false, _pendingGateCallbacks: new Map(),
       };
-      fileObj.colPercentile05 = new Float32Array(fileObj.nPar);
-      for (let p = 0; p < fileObj.nPar; p++) {
-        const s = new Float32Array(fileObj.nEvents);
-        for (let e = 0; e < fileObj.nEvents; e++) s[e] = data[e * fileObj.nPar + p];
-        s.sort();
-        fileObj.colPercentile05[p] = s[Math.max(0, Math.ceil(s.length * 0.005) - 1)];
-      }
       fcsFiles.push(fileObj);
       fcsData = fcsFiles[0];
+      // Rebuild the compensated columns from the raw copy and the stored spillover matrix.
+      if (!b.data && b.spillMatrix && !recomputeCompensation(b.spillMatrix.map(r => [...r]), fileObj.fileId)) {
+        console.warn('FlowNG: could not recompensate; showing uncompensated data');
+      }
+      fileObj.colPercentile05 = new Float32Array(fileObj.nPar);
+      for (let p = 0; p < fileObj.nPar; p++) {
+        const col = new Float32Array(fileObj.nEvents);
+        for (let e = 0; e < fileObj.nEvents; e++) col[e] = fileObj.data[e * fileObj.nPar + p];
+        col.sort();
+        fileObj.colPercentile05[p] = col[Math.max(0, Math.ceil(col.length * 0.005) - 1)];
+      }
       addFileToSession(fileObj);
       fileMap.push(fileObj);
     }
