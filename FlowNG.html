@@ -7162,14 +7162,36 @@ function showShareDialog() {
   // Large files make huge HTML; default to a cap above 500k events per file.
   if (fcsFiles.some(f => f.nEvents > 500000)) document.getElementById('share-maxev').value = 500000;
   _updateShareEstimate();
+  _measureShareRatios();
 }
 
-// Rough output size: float32 events (x2 if raw copy kept), ~80% after gzip (float data compresses poorly), +33% base64.
+// Output size estimate: the app itself, plus each file's events at their compressed density.
+// The density is measured, not guessed: the first 20,000 events are packed and gzipped exactly as
+// the export will do it, and that ratio is applied to the number of events that will be exported.
+// Base64 adds a third on top. Until the measurement lands, a typical ratio is used.
+const _SHARE_FALLBACK_RATIO = 0.45;
+let _shareAppBytes = 0;
+
+async function _measureShareRatios() {
+  _shareAppBytes = new Blob([_docSource()]).size;
+  for (const f of fcsFiles) {
+    if (f._shareRatio) continue;
+    try {
+      const n = Math.min(20000, f.nEvents), P = f.nPar;
+      const src = (f.rawData || f.data).subarray(0, n * P);
+      const packed = _packEvents(src, n, P);
+      const gz = await new Response(new Blob([packed.bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+      f._shareRatio = Math.min(1, gz.size / packed.bytes.length);
+    } catch (e) { f._shareRatio = _SHARE_FALLBACK_RATIO; }
+    _updateShareEstimate();
+  }
+}
+
 function _estimateShareBytes() {
   const cap = parseInt(document.getElementById('share-maxev').value) || 0;
-  return fcsFiles.reduce((t, f) => {
+  return (_shareAppBytes || 330000) + fcsFiles.reduce((t, f) => {
     const n = cap ? Math.min(cap, f.nEvents) : f.nEvents;
-    return t + n * f.nPar * 4 * (f.rawData ? 2 : 1) * 0.8 * 1.34;
+    return t + n * f.nPar * 4 * (f._shareRatio || _SHARE_FALLBACK_RATIO) * (4 / 3);
   }, 0);
 }
 
