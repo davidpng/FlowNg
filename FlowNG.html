@@ -7080,6 +7080,19 @@ function _docSource() {
   return parts.join('\n');
 }
 
+// Events are stored column by column, with each 32-bit value split into byte planes, which gzip
+// compresses far better than row-major floats. Flow data is usually whole numbers (20-bit
+// detector counts), so those are stored as int32; anything else stays float32.
+function _packEvents(a, n, P) {
+  let isInt = true;
+  for (let i = 0; i < a.length; i++) { const v = a[i]; if (!Number.isInteger(v) || v > 2147483647 || v < -2147483648) { isInt = false; break; } }
+  const col = isInt ? new Int32Array(a.length) : new Float32Array(a.length);
+  for (let p = 0; p < P; p++) for (let e = 0; e < n; e++) col[p * n + e] = a[e * P + p];
+  const u = new Uint8Array(col.buffer), m = col.length, out = new Uint8Array(u.length);
+  for (let i = 0; i < m; i++) for (let b = 0; b < 4; b++) out[b * m + i] = u[i * 4 + b];
+  return { fmt: isInt ? 'i32cs' : 'f32cs', bytes: out };
+}
+
 async function _gzipB64(typedArray) {
   const stream = new Blob([typedArray.buffer, ]).stream().pipeThrough(new CompressionStream('gzip'));
   const gz = await new Response(stream).blob();
@@ -7091,6 +7104,17 @@ async function _gzipB64(typedArray) {
   });
 }
 /*@lite:end*/
+// Inverse of _packEvents; old bundles (no format tag) are plain row-major float32.
+function _unpackEvents(buf, fmt, n, P) {
+  if (!fmt) return new Float32Array(buf);
+  const u = new Uint8Array(buf), m = u.length / 4, col = new Uint8Array(u.length);
+  for (let i = 0; i < m; i++) for (let b = 0; b < 4; b++) col[i * 4 + b] = u[b * m + i];
+  const src = fmt === 'i32cs' ? new Int32Array(col.buffer) : new Float32Array(col.buffer);
+  const out = new Float32Array(src.length);
+  for (let p = 0; p < P; p++) for (let e = 0; e < n; e++) out[e * P + p] = src[p * n + e];
+  return out;
+}
+
 async function _gunzipB64(b64) {
   const resp = await fetch('data:application/octet-stream;base64,' + b64);
   const stream = resp.body.pipeThrough(new DecompressionStream('gzip'));
@@ -7138,14 +7162,36 @@ function showShareDialog() {
   // Large files make huge HTML; default to a cap above 500k events per file.
   if (fcsFiles.some(f => f.nEvents > 500000)) document.getElementById('share-maxev').value = 500000;
   _updateShareEstimate();
+  _measureShareRatios();
 }
 
-// Rough output size: float32 events (x2 if raw copy kept), ~80% after gzip (float data compresses poorly), +33% base64.
+// Output size estimate: the app itself, plus each file's events at their compressed density.
+// The density is measured, not guessed: the first 20,000 events are packed and gzipped exactly as
+// the export will do it, and that ratio is applied to the number of events that will be exported.
+// Base64 adds a third on top. Until the measurement lands, a typical ratio is used.
+const _SHARE_FALLBACK_RATIO = 0.45;
+let _shareAppBytes = 0;
+
+async function _measureShareRatios() {
+  _shareAppBytes = new Blob([_docSource()]).size;
+  for (const f of fcsFiles) {
+    if (f._shareRatio) continue;
+    try {
+      const n = Math.min(20000, f.nEvents), P = f.nPar;
+      const src = (f.rawData || f.data).subarray(0, n * P);
+      const packed = _packEvents(src, n, P);
+      const gz = await new Response(new Blob([packed.bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+      f._shareRatio = Math.min(1, gz.size / packed.bytes.length);
+    } catch (e) { f._shareRatio = _SHARE_FALLBACK_RATIO; }
+    _updateShareEstimate();
+  }
+}
+
 function _estimateShareBytes() {
   const cap = parseInt(document.getElementById('share-maxev').value) || 0;
-  return fcsFiles.reduce((t, f) => {
+  return (_shareAppBytes || 330000) + fcsFiles.reduce((t, f) => {
     const n = cap ? Math.min(cap, f.nEvents) : f.nEvents;
-    return t + n * f.nPar * 4 * (f.rawData ? 2 : 1) * 0.8 * 1.34;
+    return t + n * f.nPar * 4 * (f._shareRatio || _SHARE_FALLBACK_RATIO) * (4 / 3);
   }, 0);
 }
 
@@ -7227,8 +7273,17 @@ async function doExportShareable() {
         colMins: Array.from(colMins), colMaxs: Array.from(colMaxs),
         otflowCofactors: f.otflowCofactors ? Array.from(f.otflowCofactors) : null,
         spillMatrix: f.spillMatrix || null, spillParamIdx: f.spillParamIdx || null,
-        data: await _gzipB64(data),
-        rawData: rawData ? await _gzipB64(rawData) : null,
+        // With a raw (uncompensated) copy the compensated data is rebuilt on open from the spillover
+        // matrix, so only one copy of the events is stored.
+        ...await (async () => {
+          const out = {};
+          const target = rawData ? 'rawData' : 'data';
+          const packed = _packEvents(rawData || data, n, nPar);
+          out[target] = await _gzipB64(packed.bytes);
+          out[target + 'Fmt'] = packed.fmt;
+          out[rawData ? 'data' : 'rawData'] = null;
+          return out;
+        })(),
       });
     }
     status.textContent = 'Building HTML…';
@@ -7294,8 +7349,8 @@ async function loadBundleIfPresent() {
       const b = bundle.files[i];
       showProgress(5 + Math.round(90 * i / bundle.files.length), `Decoding ${b.filename}…`);
       await new Promise(r => setTimeout(r, 0));
-      const data = new Float32Array(await _gunzipB64(b.data));
-      const rawData = b.rawData ? new Float32Array(await _gunzipB64(b.rawData)) : null;
+      const rawData = b.rawData ? _unpackEvents(await _gunzipB64(b.rawData), b.rawDataFmt, b.nEvents, b.nPar) : null;
+      const data = b.data ? _unpackEvents(await _gunzipB64(b.data), b.dataFmt, b.nEvents, b.nPar) : rawData.slice();
       const fileObj = {
         fileId: fileIdCounter++,
         params: b.params, nEvents: b.nEvents, nPar: b.nPar, meta: b.meta,
@@ -7307,15 +7362,19 @@ async function loadBundleIfPresent() {
         populations: [], paramRanges: new Map(), colorPrecedence: [],
         _computeWorker: null, _computeWorkerReady: false, _pendingGateCallbacks: new Map(),
       };
-      fileObj.colPercentile05 = new Float32Array(fileObj.nPar);
-      for (let p = 0; p < fileObj.nPar; p++) {
-        const s = new Float32Array(fileObj.nEvents);
-        for (let e = 0; e < fileObj.nEvents; e++) s[e] = data[e * fileObj.nPar + p];
-        s.sort();
-        fileObj.colPercentile05[p] = s[Math.max(0, Math.ceil(s.length * 0.005) - 1)];
-      }
       fcsFiles.push(fileObj);
       fcsData = fcsFiles[0];
+      // Rebuild the compensated columns from the raw copy and the stored spillover matrix.
+      if (!b.data && b.spillMatrix && !recomputeCompensation(b.spillMatrix.map(r => [...r]), fileObj.fileId)) {
+        console.warn('FlowNG: could not recompensate; showing uncompensated data');
+      }
+      fileObj.colPercentile05 = new Float32Array(fileObj.nPar);
+      for (let p = 0; p < fileObj.nPar; p++) {
+        const col = new Float32Array(fileObj.nEvents);
+        for (let e = 0; e < fileObj.nEvents; e++) col[e] = fileObj.data[e * fileObj.nPar + p];
+        col.sort();
+        fileObj.colPercentile05[p] = col[Math.max(0, Math.ceil(col.length * 0.005) - 1)];
+      }
       addFileToSession(fileObj);
       fileMap.push(fileObj);
     }
