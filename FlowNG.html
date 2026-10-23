@@ -7080,6 +7080,19 @@ function _docSource() {
   return parts.join('\n');
 }
 
+// Events are stored column by column, with each 32-bit value split into byte planes, which gzip
+// compresses far better than row-major floats. Flow data is usually whole numbers (20-bit
+// detector counts), so those are stored as int32; anything else stays float32.
+function _packEvents(a, n, P) {
+  let isInt = true;
+  for (let i = 0; i < a.length; i++) { const v = a[i]; if (!Number.isInteger(v) || v > 2147483647 || v < -2147483648) { isInt = false; break; } }
+  const col = isInt ? new Int32Array(a.length) : new Float32Array(a.length);
+  for (let p = 0; p < P; p++) for (let e = 0; e < n; e++) col[p * n + e] = a[e * P + p];
+  const u = new Uint8Array(col.buffer), m = col.length, out = new Uint8Array(u.length);
+  for (let i = 0; i < m; i++) for (let b = 0; b < 4; b++) out[b * m + i] = u[i * 4 + b];
+  return { fmt: isInt ? 'i32cs' : 'f32cs', bytes: out };
+}
+
 async function _gzipB64(typedArray) {
   const stream = new Blob([typedArray.buffer, ]).stream().pipeThrough(new CompressionStream('gzip'));
   const gz = await new Response(stream).blob();
@@ -7091,6 +7104,17 @@ async function _gzipB64(typedArray) {
   });
 }
 /*@lite:end*/
+// Inverse of _packEvents; old bundles (no format tag) are plain row-major float32.
+function _unpackEvents(buf, fmt, n, P) {
+  if (!fmt) return new Float32Array(buf);
+  const u = new Uint8Array(buf), m = u.length / 4, col = new Uint8Array(u.length);
+  for (let i = 0; i < m; i++) for (let b = 0; b < 4; b++) col[i * 4 + b] = u[b * m + i];
+  const src = fmt === 'i32cs' ? new Int32Array(col.buffer) : new Float32Array(col.buffer);
+  const out = new Float32Array(src.length);
+  for (let p = 0; p < P; p++) for (let e = 0; e < n; e++) out[e * P + p] = src[p * n + e];
+  return out;
+}
+
 async function _gunzipB64(b64) {
   const resp = await fetch('data:application/octet-stream;base64,' + b64);
   const stream = resp.body.pipeThrough(new DecompressionStream('gzip'));
@@ -7229,8 +7253,15 @@ async function doExportShareable() {
         spillMatrix: f.spillMatrix || null, spillParamIdx: f.spillParamIdx || null,
         // With a raw (uncompensated) copy the compensated data is rebuilt on open from the spillover
         // matrix, so only one copy of the events is stored.
-        data: rawData ? null : await _gzipB64(data),
-        rawData: rawData ? await _gzipB64(rawData) : null,
+        ...await (async () => {
+          const out = {};
+          const target = rawData ? 'rawData' : 'data';
+          const packed = _packEvents(rawData || data, n, nPar);
+          out[target] = await _gzipB64(packed.bytes);
+          out[target + 'Fmt'] = packed.fmt;
+          out[rawData ? 'data' : 'rawData'] = null;
+          return out;
+        })(),
       });
     }
     status.textContent = 'Building HTML…';
@@ -7296,8 +7327,8 @@ async function loadBundleIfPresent() {
       const b = bundle.files[i];
       showProgress(5 + Math.round(90 * i / bundle.files.length), `Decoding ${b.filename}…`);
       await new Promise(r => setTimeout(r, 0));
-      const rawData = b.rawData ? new Float32Array(await _gunzipB64(b.rawData)) : null;
-      const data = b.data ? new Float32Array(await _gunzipB64(b.data)) : rawData.slice();
+      const rawData = b.rawData ? _unpackEvents(await _gunzipB64(b.rawData), b.rawDataFmt, b.nEvents, b.nPar) : null;
+      const data = b.data ? _unpackEvents(await _gunzipB64(b.data), b.dataFmt, b.nEvents, b.nPar) : rawData.slice();
       const fileObj = {
         fileId: fileIdCounter++,
         params: b.params, nEvents: b.nEvents, nPar: b.nPar, meta: b.meta,
