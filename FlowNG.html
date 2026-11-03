@@ -1921,7 +1921,8 @@ function addFileToSession(fileObj) {
   fileObj._rootPopId = rootPop.id;
   rebuildPopulationsView();
 
-  const isFirstFile = fcsFiles.length === 1;
+  // fcsFiles.length is unreliable here: a multi-file open pushes every file before any addFileToSession runs.
+  const isFirstFile = tabs.length === 0;
 
   if (isFirstFile) {
     // First file: initialize the full UI
