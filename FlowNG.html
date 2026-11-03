@@ -1022,9 +1022,7 @@ function initComputeWorkerForFile(fileObj) {
           invalidateSpatialCache(true);
           markAllDirty();
           getDescendantGates(gate.id).forEach(g => evalGate(g));
-          renderPopList();
-          updateAllPopSelects();
-          renderAllPlots();
+          refreshAfterGateChange();
         }
         const cb = fileObj._pendingGateCallbacks.get(msg.gateId);
         if (cb) {
@@ -1072,8 +1070,8 @@ function evalGateAsync(gate) {
   // Set context so defaultScale/getAsinhCofactor use the correct file's params
   _contextFileId = fileObj.fileId;
   _paramRanges = fileObj.paramRanges;
-  const xScale = gate.gateInfo.xScale || (defaultScale(xParam).asinh ? 'asinh' : defaultScale(xParam).log ? 'log' : 'lin');
-  const yScale = gate.gateInfo.yScale || (defaultScale(yParam).asinh ? 'asinh' : defaultScale(yParam).log ? 'log' : 'lin');
+  const xScale = gateScale(gate.gateInfo, 'x', xParam);
+  const yScale = gateScale(gate.gateInfo, 'y', yParam);
 
   const msg = {
     type: 'evalGate',
@@ -1541,6 +1539,11 @@ function getAsinhCofactor(paramIdx) {
   const pr = _paramRanges.get(paramIdx);
   return (pr && pr.asinhCofactor != null) ? pr.asinhCofactor : DEFAULT_ASINH_COFACTOR;
 }
+// The cofactor a channel starts with: the OTflow optimum for this file, else the global default.
+function defaultCofactor(fcsFile, paramIdx) {
+  const o = fcsFile.otflowCofactors;
+  return (o && !isNaN(o[paramIdx])) ? o[paramIdx] : DEFAULT_ASINH_COFACTOR;
+}
 // Returns the active file's data for the current render context
 function getContextFile() {
   return getFileById(_contextFileId) || fcsFiles[0] || null;
@@ -1624,9 +1627,7 @@ function getRawRangeGlobal(paramIdx, scale) {
   }
 
   const defHi = (scale === 'log') ? Math.max(hi, 1) : hi;
-  const defaultCF = (fcsFile.otflowCofactors && !isNaN(fcsFile.otflowCofactors[paramIdx]))
-    ? fcsFile.otflowCofactors[paramIdx]
-    : DEFAULT_ASINH_COFACTOR;
+  const defaultCF = defaultCofactor(fcsFile, paramIdx);
 
   return {
     rawMin: defLo,
@@ -1669,8 +1670,8 @@ function getAxisRange(paramIdx, scale, zoomRange) {
 //     dispY   = yMin + (pad.top + ph - canvasY)/ph * (yMax-yMin)
 
 function makeTransforms(plot, pad, pw, ph, W, H) {
-  const xls = plot.xAsinh ? 'asinh' : (plot.xLog ? 'log' : 'lin');
-  const yls = plot.yAsinh ? 'asinh' : (plot.yLog ? 'log' : 'lin');
+  const xls = plotScale(plot, 'x');
+  const yls = plotScale(plot, 'y');
   const xRange = getAxisRange(plot.xParam, xls, plot.zoomX || null);
   const yRange = getAxisRange(plot.yParam, yls, plot.zoomY || null);
 
@@ -2377,9 +2378,7 @@ function reparentGate(gateId, newParentId) {
   evalGate(gate);
   descendants.forEach(g => evalGate(g));
   markAllDirty();
-  renderPopList();
-  updateAllPopSelects();
-  renderAllPlots();
+  refreshAfterGateChange();
   showToast(`Moved "${gate.name}" under "${populations.find(p=>p.id===newParentId)?.name}"`);
 }
 
@@ -2496,6 +2495,21 @@ function defaultScale(paramIdx) {
   if (g === 3)            return { log: false, asinh: false }; // TIME = linear
   return                         { log: false, asinh: true  }; // fluorescent = asinh
 }
+
+// The scale ('lin' | 'log' | 'asinh') of one axis of a plot.
+function plotScale(plot, axis) {
+  return axis === 'x' ? (plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin')
+                      : (plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin');
+}
+// The scale a gate was drawn in; a gate saved without one falls back to the parameter's default.
+function gateScale(gateInfo, axis, paramIdx) {
+  const s = axis === 'x' ? gateInfo.xScale : gateInfo.yScale;
+  if (s) return s;
+  const d = defaultScale(paramIdx);
+  return d.asinh ? 'asinh' : d.log ? 'log' : 'lin';
+}
+// Numeric code for a scale, for the gate-evaluation inner loops.
+const scaleCode = s => s === 'log' ? 1 : s === 'asinh' ? 2 : 0;
 
 // ─── PLOT MANAGEMENT ──────────────────────────────────────────────────────────
 function addPlot(xIdx=0, yIdx=1, fileId=null) {
@@ -3477,8 +3491,8 @@ function buildSpatialIndex(pop, xParam, yParam, xScale, yScale) {
   const fcsFile = getFileById(pop.fileId) || fcsFiles[0];
   const { data, nPar } = fcsFile;
   const n = popCount(pop);
-  const xSC = xScale === 'log' ? 1 : xScale === 'asinh' ? 2 : 0;
-  const ySC = yScale === 'log' ? 1 : yScale === 'asinh' ? 2 : 0;
+  const xSC = scaleCode(xScale);
+  const ySC = scaleCode(yScale);
   const xCF = getAsinhCofactor(xParam);
   const yCF = getAsinhCofactor(yParam);
 
@@ -4012,7 +4026,7 @@ function onCanvasMouseUp(e, canvas, plot) {
     const gid = plot._dragQuad;
     plot._dragQuad = null;
     _quadGroup(gid).forEach(g => { evalGateAsync(g); getDescendantGates(g.id).forEach(d => evalGateAsync(d)); });
-    renderPopList(); updateAllPopSelects(); renderAllPlots();
+    refreshAfterGateChange();
     return;
   }
   if (!plot._dragGate) return;
@@ -4029,9 +4043,7 @@ function onCanvasMouseUp(e, canvas, plot) {
     getDescendantGates(gate.id).forEach(g => evalGateAsync(g));
   }
   plot._dragGate = null; plot._dragPts = null; plot._dragRawStart = null;
-  renderPopList();
-  updateAllPopSelects();
-  renderAllPlots();
+  refreshAfterGateChange();
 }
 
 function onCanvasClick(e, canvas, plot) {
@@ -4049,14 +4061,14 @@ function onCanvasClick(e, canvas, plot) {
         if (!confirm('Delete this quadrant (Q1-Q4) and all its children?')) return;
         pushUndo(`Deleted quadrant Q1-Q4 (${_plotPair(plot)})`);
         _quadGroup(gate.gateInfo.quad.gid).forEach(g => deleteGateAndDescendants(g.id));
-        renderPopList(); updateAllPopSelects(); renderAllPlots();
+        refreshAfterGateChange();
         showToast('Deleted quadrant');
         return;
       }
       if (!confirm(`Delete gate "${gate.name}" and all its children?`)) return;
       pushUndo(`Deleted gate "${gate.name}" and its children`);
       deleteGateAndDescendants(gate.id);
-      renderPopList(); updateAllPopSelects(); renderAllPlots();
+      refreshAfterGateChange();
       showToast(`Deleted "${gate.name}"`);
       return;
     }
@@ -4137,8 +4149,8 @@ function createQuadrant(plot, rx, ry) {
   const fcsFile = getFileForPlot(plot); if (!fcsFile) return;
   _contextFileId = fcsFile.fileId; _paramRanges = fcsFile.paramRanges;
   pushUndo(`Placed quadrant on ${_plotPair(plot)} in "${(populations.find(p => p.id === plot.inputPop) || {}).name || 'All events'}"`);
-  const xScale = plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin';
-  const yScale = plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin';
+  const xScale = plotScale(plot, 'x');
+  const yScale = plotScale(plot, 'y');
   const gid = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const taken = new Set(fcsFile.populations.map(p => p.name));
   const made = [];
@@ -4157,7 +4169,7 @@ function createQuadrant(plot, rx, ry) {
     made.push(pop);
   }
   rebuildPopulationsView();
-  renderPopList(); updateAllPopSelects(); renderAllPlots();
+  refreshAfterGateChange();
   made.forEach(g => evalGateAsync(g));
 }
 
@@ -4274,10 +4286,10 @@ function evalGateLOD(gate) {
 
   const { data, nPar } = gateFile;
   const { rawPts, xParam: xP, yParam: yP } = gate.gateInfo;
-  const xScale = gate.gateInfo.xScale || (defaultScale(xP).asinh ? 'asinh' : defaultScale(xP).log ? 'log' : 'lin');
-  const yScale = gate.gateInfo.yScale || (defaultScale(yP).asinh ? 'asinh' : defaultScale(yP).log ? 'log' : 'lin');
-  const xSC = xScale === 'log' ? 1 : xScale === 'asinh' ? 2 : 0;
-  const ySC = yScale === 'log' ? 1 : yScale === 'asinh' ? 2 : 0;
+  const xScale = gateScale(gate.gateInfo, 'x', xP);
+  const yScale = gateScale(gate.gateInfo, 'y', yP);
+  const xSC = scaleCode(xScale);
+  const ySC = scaleCode(yScale);
   const xCF = getAsinhCofactor(xP), yCF = getAsinhCofactor(yP);
 
   const dispPts = rawPts.map(pt => ({
@@ -4441,8 +4453,8 @@ function evalGate(gate, { invalidate = true } = {}) {
   const gateFile = getFileById(gate.fileId) || getFileById(pop.fileId) || fcsFiles[0];
   if (gateFile) { _contextFileId = gateFile.fileId; _paramRanges = gateFile.paramRanges; }
   const { rawPts, xParam: xP, yParam: yP } = gate.gateInfo;
-  const xScale = gate.gateInfo.xScale || (defaultScale(xP).asinh ? 'asinh' : defaultScale(xP).log ? 'log' : 'lin');
-  const yScale = gate.gateInfo.yScale || (defaultScale(yP).asinh ? 'asinh' : defaultScale(yP).log ? 'log' : 'lin');
+  const xScale = gateScale(gate.gateInfo, 'x', xP);
+  const yScale = gateScale(gate.gateInfo, 'y', yP);
 
   // Pre-compute display-space polygon ONCE
   const dispPts = rawPts.map(pt => ({
@@ -4534,7 +4546,7 @@ function autoCompensate(plot) {
     renderPlot(plot); return;
   }
   _contextFileId = f.fileId; _paramRanges = f.paramRanges;
-  const xSc = plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin', ySc = plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin';
+  const xSc = plotScale(plot, 'x'), ySc = plotScale(plot, 'y');
   const poly = pts.map(p => ({ dx: toDisplay(p.rx, plot.xParam, xSc), dy: toDisplay(p.ry, plot.yParam, ySc) }));
   const parent = populations.find(p => p.id === plot.inputPop);
   const { data, nPar } = f, picked = [];
@@ -4580,8 +4592,8 @@ function finalizeGate(plot) {
   _paramRanges = fcsFile.paramRanges;
 
   const drawEntry = pushUndo(`Drew gate on ${_plotPair(plot)}`);
-  const xScale2 = plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin';
-  const yScale2 = plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin';
+  const xScale2 = plotScale(plot, 'x');
+  const yScale2 = plotScale(plot, 'y');
   const color = GATE_COLORS[fcsFile.populations.filter(p => !p._isAll).length % GATE_COLORS.length];
   const defaultName = `Gate ${popIdCounter}`;
 
@@ -4611,9 +4623,7 @@ function finalizeGate(plot) {
   }
   rebuildPopulationsView();
   plot.gatePoints = [];
-  renderPopList();
-  updateAllPopSelects();
-  renderAllPlots();
+  refreshAfterGateChange();
   setStatusBar('Computing gate\u2026');
 
   fcsFile._pendingGateCallbacks.set(newPop.id, () => {
@@ -4624,9 +4634,7 @@ function finalizeGate(plot) {
     const fp = fcsFile.populations.find(p => p.id === newPop.id);
     if (fp) fp.name = gateName;
     setStatusBar(`\u2713 ${gateName}: ${count.toLocaleString()} events`);
-    renderPopList();
-    updateAllPopSelects();
-    renderAllPlots();
+    refreshAfterGateChange();
     showToast(`"${gateName}": ${count.toLocaleString()} events`);
   });
   evalGateAsync(newPop);
@@ -4830,7 +4838,7 @@ function pasteGate(targetId) {
   _contextFileId = f.fileId; _paramRanges = f.paramRanges;
   evalGate(pop);
   _syncPrecedenceFromTree(f);
-  renderPopList(); updateAllPopSelects(); renderAllPlots();
+  refreshAfterGateChange();
   showToast(`Pasted "${name}" under "${target.name}"`);
 }
 
@@ -5179,6 +5187,9 @@ function renderTabPlots() {
 function markAllDirty() {
 }
 
+// What every change to the gate tree needs: tree rows, population menus, then the plots.
+function refreshAfterGateChange() { renderPopList(); updateAllPopSelects(); renderAllPlots(); }
+
 function renderAllPlots() {
   // Only render plots on the active tab; others are hidden
   plots.forEach(p => {
@@ -5218,9 +5229,7 @@ function swapAxes(id) {
   });
 
   buildAxisControls(plot);
-  renderPopList();
-  updateAllPopSelects();
-  renderAllPlots();
+  refreshAfterGateChange();
 }
 
 let expandedPlotId = null;
@@ -5519,9 +5528,7 @@ function showAxisRangeModal(plot, clientX, clientY) {
     }
 
     const defHi = (scale === 'log') ? Math.max(hi, 1) : hi;
-    const defaultCF = (fcsFile.otflowCofactors && !isNaN(fcsFile.otflowCofactors[paramIdx]))
-      ? fcsFile.otflowCofactors[paramIdx]
-      : DEFAULT_ASINH_COFACTOR;
+    const defaultCF = defaultCofactor(fcsFile, paramIdx);
     return {
       rawMin: defLo,
       rawMax: (pr && pr.rawMax != null) ? pr.rawMax : defHi,
@@ -5549,8 +5556,8 @@ function showAxisRangeModal(plot, clientX, clientY) {
     const p = fcsFile.params[paramIdx];
     const label = p.longName && p.longName !== p.name ? `${p.name} · ${p.longName}` : p.name;
     const scale = axis === 'x'
-      ? (plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin')
-      : (plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin');
+      ? plotScale(plot, 'x')
+      : plotScale(plot, 'y');
     const { rawMin, rawMax, asinhCofactor, isCustomMin, isCustomMax, isCustomCF, minPercentile } = getRawRange(paramIdx, scale);
     const showCF = (scale === 'asinh');
     const cfSearchMax = Math.round(rawMax * 0.01);
@@ -5656,8 +5663,8 @@ function applyAxisRangeModal(plotId) {
 
   axes.forEach(({ axis, paramIdx }) => {
     const scale = axis === 'x'
-      ? (plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin')
-      : (plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin');
+      ? plotScale(plot, 'x')
+      : plotScale(plot, 'y');
     const minEl = overlay.querySelector(`#rm-${axis}-min`);
     const maxEl = overlay.querySelector(`#rm-${axis}-max`);
     const cfEl  = overlay.querySelector(`#rm-${axis}-cf`);
@@ -5898,9 +5905,7 @@ function showColorPicker(popId, mx, my) {
     }
     overlay.remove();
     markAllDirty();
-    renderPopList();
-    updateAllPopSelects();
-    renderAllPlots();
+    refreshAfterGateChange();
   });
 
   // Enter key applies
@@ -6197,8 +6202,7 @@ function _buildTemplateV3(tmplName) {
     let zoom;
     if (pl.zoomX || pl.zoomY) {
       _contextFileId = fileObj.fileId; _paramRanges = fileObj.paramRanges;
-      const sc = (asinh, log) => asinh ? 'asinh' : log ? 'log' : 'lin';
-      const xs = sc(pl.xAsinh, pl.xLog), ys = sc(pl.yAsinh, pl.yLog);
+      const xs = plotScale(pl, 'x'), ys = plotScale(pl, 'y');
       zoom = {};
       if (pl.zoomX) zoom.x = { min: fromDisplay(pl.zoomX.min, pl.xParam, xs), max: fromDisplay(pl.zoomX.max, pl.xParam, xs) };
       if (pl.zoomY) zoom.y = { min: fromDisplay(pl.zoomY.min, pl.yParam, ys), max: fromDisplay(pl.zoomY.max, pl.yParam, ys) };
@@ -6371,7 +6375,7 @@ async function _measureShareRatios() {
       const packed = _packEvents(src, n, P);
       const gz = await new Response(new Blob([packed.bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
       f._shareRatio = Math.min(1, gz.size / packed.bytes.length);
-    } catch (e) { f._shareRatio = _SHARE_FALLBACK_RATIO; }
+    } catch (e) { console.warn('FlowNG: could not measure compression; using a typical ratio', e); f._shareRatio = _SHARE_FALLBACK_RATIO; }
     _updateShareEstimate();
   }
 }
@@ -6751,21 +6755,10 @@ function showHistory() {
 function importGates(templateJson) {
   let tmpl;
   try { tmpl = JSON.parse(templateJson); } catch(e) { showToast('Invalid JSON file'); return; }
-  if (!tmpl.gates && !tmpl.files) { showToast('Not a FlowNG gate template'); return; }
-
+  if (!tmpl.files) { showToast(tmpl.gates ? 'This is a version 2 template; FlowNG reads version 3 templates' : 'Not a FlowNG template', 5000); return; }
+  if (tmpl.version !== 3) { showToast(`Unsupported template version ${tmpl.version || '(none)'}; FlowNG reads version 3 templates`, 5000); return; }
   if (fcsFiles.length === 0) { showToast('Load an FCS file before importing a template'); return; }
-
-  if (tmpl.version === 3 && tmpl.files) {
-    _importGatesV3(tmpl);
-  } else {
-    // v2 or legacy single-file template
-    if (fcsFiles.length === 1) {
-      _importGatesV2(tmpl, fcsFiles[0]);
-    } else {
-      // Multiple files loaded — ask which one to import into
-      _showImportTargetPicker(tmpl);
-    }
-  }
+  _importGatesV3(tmpl);
 }
 
 // ─── TEMPLATE-TO-FILE MATCHING ──────────────────────────────────────────────
@@ -6805,182 +6798,6 @@ function _matchTemplateFiles(tfs) {
     return top.length === 1 ? top[0].f : null;     // a tie is ambiguous: leave it for the user
   });
   return out;
-}
-
-function _showImportTargetPicker(tmpl) {
-  const existing = document.getElementById('import-target-modal');
-  if (existing) existing.remove();
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.id = 'import-target-modal';
-  overlay.innerHTML = `
-    <div class="modal-box" style="width:400px">
-      <h2>Import Into Which File?</h2>
-      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Choose which loaded file to import the gates into:</p>
-      <div id="import-target-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
-        ${(() => {
-          const tf = { sourceFile: tmpl.sourceFile, tube: tmpl.tube, panel: tmpl.panel, gates: tmpl.gates };
-          const best = _matchTemplateFiles([tf])[0];
-          const rows = fcsFiles.map(f => ({ f, fit: _panelFit(tf, f), best: best.file && best.file.fileId === f.fileId }));
-          rows.sort((a, b) => (b.best - a.best) || ((a.fit === null) - (b.fit === null)) || ((a.fit ?? 0) - (b.fit ?? 0)));
-          return rows.map(({ f, fit, best: isBest }) => `
-          <button onclick="_importGatesV2Into(${f.fileId});document.getElementById('import-target-modal').remove()"
-            style="text-align:left;padding:6px 10px;background:var(--bg2);border:1px solid ${isBest ? 'var(--accent)' : 'var(--border)'};border-radius:4px;cursor:pointer;font-size:11px">
-            ${isBest ? '★ ' : ''}${f.filename || 'File '+f.fileId} <span style="color:var(--text2)">(${(f.nEvents||0).toLocaleString()} events${_fileTubeName(f) ? ', ' + _fileTubeName(f) : ''}${isBest ? ', best match by ' + best.how : fit === null ? ', missing channels' : ''})</span>
-          </button>`).join('');
-        })()}
-      </div>
-      <div class="modal-actions">
-        <button onclick="document.getElementById('import-target-modal').remove()">Cancel</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-  // Store tmpl for deferred call
-  overlay._tmpl = tmpl;
-}
-
-function _importGatesV2Into(fileId) {
-  const modal = document.getElementById('import-target-modal');
-  const tmpl = modal && modal._tmpl;
-  if (!tmpl) return;
-  const fileObj = getFileById(fileId);
-  if (!fileObj) return;
-  _importGatesV2(tmpl, fileObj);
-}
-
-function _importGatesV2(tmpl, fileObj) {
-  pushUndo(`Imported template "${tmpl.name || 'template'}"`);
-  const paramMap = {};
-  fileObj.params.forEach((p, i) => { paramMap[p.name] = i; });
-
-  let imported = 0, skipped = 0;
-  const rootPop = fileObj.populations.find(p => p._isAll);
-  const rootPopId = rootPop ? rootPop.id : 0;
-  const nameToId = {};
-  nameToId[rootPop ? rootPop.name : 'All Events'] = rootPopId;
-
-  _contextFileId = fileObj.fileId;
-  _paramRanges = fileObj.paramRanges;
-
-  function importNode(node, parentId) {
-    const xi = paramMap[node.xParamName];
-    const yi = paramMap[node.yParamName];
-    if (xi === undefined || yi === undefined) {
-      skipped++; return;
-    }
-    const parentPop = populations.find(p => p.id === parentId);
-    if (!parentPop) { skipped++; return; }
-
-    const xScDef = defaultScale(xi);
-    const yScDef = defaultScale(yi);
-    const xScale = node.xScale || (xScDef.asinh ? 'asinh' : xScDef.log ? 'log' : 'lin');
-    const yScale = node.yScale || (yScDef.asinh ? 'asinh' : yScDef.log ? 'log' : 'lin');
-    const pts = node.rawPts;
-    const gateInfoObj = { rawPts: pts, xParam: xi, yParam: yi, xScale, yScale };
-
-    const { data, nPar } = fileObj;
-    const gated = [];
-    const dispPtsI = pts.map(pt => ({
-      dx: toDisplay(pt.rx, xi, xScale),
-      dy: toDisplay(pt.ry, yi, yScale)
-    }));
-    const parentN = popCount(parentPop);
-    for (let ii = 0; ii < parentN; ii++) {
-      const ei = popGetIndex(parentPop, ii);
-      const dx = toDisplay(data[ei*nPar+xi], xi, xScale);
-      const dy = toDisplay(data[ei*nPar+yi], yi, yScale);
-      if (pointInPolygonDisp(dx, dy, dispPtsI)) gated.push(ei);
-    }
-
-    const newPop = {
-      id: popIdCounter++, name: node.name, color: node.color,
-      noColor: node.noColor || false, indices: gated,
-      parentId, gateInfo: gateInfoObj, fileId: fileObj.fileId
-    };
-    fileObj.populations.push(newPop);
-    nameToId[node.name] = newPop.id;
-    imported++;
-    (node.children || []).forEach(child => importNode(child, newPop.id));
-  }
-
-  tmpl.gates.forEach(node => importNode(node, rootPopId));
-  rebuildPopulationsView();
-
-  // Restore color precedence
-  if (tmpl.colorPrecedence) {
-    const newPrec = [];
-    tmpl.colorPrecedence.forEach(name => {
-      const p = fileObj.populations.find(pp => pp.name === name && !pp._isAll);
-      if (p) newPrec.push(p.id);
-    });
-    fileObj.populations.filter(p => !p._isAll && !newPrec.includes(p.id))
-      .forEach(p => newPrec.push(p.id));
-    fileObj.colorPrecedence = newPrec;
-  }
-
-  // Restore param ranges
-  if (tmpl.paramRanges) {
-    Object.entries(tmpl.paramRanges).forEach(([pName, pr]) => {
-      const idx = paramMap[pName];
-      if (idx === undefined) return;
-      const entry = {};
-      if (pr.rawMin != null)        entry.rawMin = pr.rawMin;
-      if (pr.rawMax != null)        entry.rawMax = pr.rawMax;
-      if (pr.asinhCofactor != null) entry.asinhCofactor = pr.asinhCofactor;
-      if (pr.minPercentile != null) entry.minPercentile = pr.minPercentile;
-      if (Object.keys(entry).length) fileObj.paramRanges.set(idx, entry);
-    });
-  }
-
-  // Restore plots if template has them
-  let importedPlots = 0;
-  if (tmpl.plots && tmpl.plots.length > 0) {
-    plots = []; plotIdCounter = 0;
-    tabs = []; activeTabId = null; tabIdCounter = 0;
-    document.getElementById('canvas-area').innerHTML = `
-      <div class="drop-zone" id="drop-zone" style="display:none">
-        <div class="drop-box" id="drop-box">
-          <div class="drop-icon">🔬</div>
-          <div class="drop-title">Drop an FCS file here</div>
-          <div class="drop-sub">or click to browse</div><br>
-          <button class="primary" onclick="document.getElementById('file-input').click()">Open FCS File</button>
-        </div>
-      </div>`;
-
-    tmpl.plots.forEach(ps => {
-      const xi = paramMap[ps.xParamName];
-      const yi = paramMap[ps.yParamName];
-      if (xi === undefined || yi === undefined) return;
-      const inputPop = fileObj.populations.find(p => p.name === ps.inputPopName);
-      const inputPopId = inputPop ? inputPop.id : rootPopId;
-      const desiredTab = ps.tabName || 'Tab 1';
-      let tabObj = tabs.find(t => t.name === desiredTab);
-      if (!tabObj) { const tid = addTab(desiredTab); tabObj = tabs.find(t=>t.id===tid); }
-      const id = plotIdCounter++;
-      const plot = {
-        id, xParam: xi, yParam: yi, dotSize: ps.dotSize || 1.5, bins: ps.bins || 256,
-        inputPop: inputPopId, mode: 'pan', gatePoints: [],
-        xLog: ps.xLog === true, yLog: ps.yLog === true,
-        xAsinh: ps.xAsinh === true, yAsinh: ps.yAsinh === true,
-        tabId: tabObj ? tabObj.id : activeTabId,
-        zoomX: null, zoomY: null, _zoomRect: null, fileId: fileObj.fileId
-      };
-      plots.push(plot);
-      renderPlotCard(plot);
-      const card = document.getElementById(`plot-card-${plot.id}`);
-      if (card && plot.tabId !== activeTabId) card.style.display = 'none';
-    });
-    importedPlots = tmpl.plots.length;
-    const strip = document.getElementById('tab-strip');
-    if (strip) strip.style.display = tabs.length > 0 ? 'flex' : 'none';
-    if (tabs.length > 0) { activeTabId = tabs[0].id; renderTabStrip(); renderTabPlots(); }
-  }
-
-  invalidateSpatialCache(true); markAllDirty();
-  renderPopList(); updateAllPopSelects(); renderAllPlots();
-  const plotMsg = importedPlots ? `, ${importedPlots} plot(s)` : '';
-  showToast(`Imported ${imported} gate(s)${skipped ? ', skipped '+skipped : ''}${plotMsg}`);
 }
 
 function _importGatesV3(tmpl) {
@@ -7100,10 +6917,8 @@ function _applyTemplateV3(tmpl, fileMap) {
       const xi = paramMap[node.xParamName];
       const yi = paramMap[node.yParamName];
       if (xi === undefined || yi === undefined) { totalSkipped++; return; }
-      const xScDef = defaultScale(xi);
-      const yScDef = defaultScale(yi);
-      const xScale = node.xScale || (xScDef.asinh ? 'asinh' : xScDef.log ? 'log' : 'lin');
-      const yScale = node.yScale || (yScDef.asinh ? 'asinh' : yScDef.log ? 'log' : 'lin');
+      const xScale = gateScale(node, 'x', xi);
+      const yScale = gateScale(node, 'y', yi);
       const newPop = {
         id: popIdCounter++, name: node.name, color: node.color,
         noColor: node.noColor || false, indices: new Int32Array(0), dotBoost: node.dots ? _DOT_BOOST_ON : 0,
@@ -7135,7 +6950,7 @@ function _applyTemplateV3(tmpl, fileMap) {
     const dropped = new Set();
     shells.forEach(({ pop, node }) => {
       if (!pop.boolInfo) return;
-      try { pop.boolInfo.expr = toIds(node.expr); } catch (err) { dropped.add(pop.id); }
+      try { pop.boolInfo.expr = toIds(node.expr); } catch (err) { console.warn(`FlowNG: boolean gate "${node.name}" refers to a population that is not in the template; skipped`, err); dropped.add(pop.id); }
     });
     // Pass 2: compute in dependency order (parents and boolean operands first)
     const pending = new Map(shells.map(o => [o.pop.id, o]));
@@ -7207,9 +7022,9 @@ function _applyTemplateV3(tmpl, fileMap) {
     };
     if (ps.zoom) {
       _contextFileId = fileObj.fileId; _paramRanges = fileObj.paramRanges;
-      const sc = (asinh, log) => asinh ? 'asinh' : log ? 'log' : 'lin';
-      if (ps.zoom.x) plot.zoomX = { min: toDisplay(ps.zoom.x.min, xi, sc(plot.xAsinh, plot.xLog)), max: toDisplay(ps.zoom.x.max, xi, sc(plot.xAsinh, plot.xLog)) };
-      if (ps.zoom.y) plot.zoomY = { min: toDisplay(ps.zoom.y.min, yi, sc(plot.yAsinh, plot.yLog)), max: toDisplay(ps.zoom.y.max, yi, sc(plot.yAsinh, plot.yLog)) };
+      const xs = plotScale(plot, 'x'), ys = plotScale(plot, 'y');
+      if (ps.zoom.x) plot.zoomX = { min: toDisplay(ps.zoom.x.min, xi, xs), max: toDisplay(ps.zoom.x.max, xi, xs) };
+      if (ps.zoom.y) plot.zoomY = { min: toDisplay(ps.zoom.y.min, yi, ys), max: toDisplay(ps.zoom.y.max, yi, ys) };
     }
     plots.push(plot);
     renderPlotCard(plot);
@@ -7222,7 +7037,7 @@ function _applyTemplateV3(tmpl, fileMap) {
   if (tabs.length > 0) { activeTabId = tabs[0].id; renderTabStrip(); renderTabPlots(); }
 
   invalidateSpatialCache(true); markAllDirty();
-  renderPopList(); updateAllPopSelects(); renderAllPlots();
+  refreshAfterGateChange();
   showToast(`Imported ${totalImported} gate(s)${totalSkipped ? ', skipped '+totalSkipped : ''}, ${plots.length} plot(s)`);
 }
 
@@ -7467,7 +7282,7 @@ const GRID_RES = 256;
 
 function buildSpatialIndexW(parentIndices, isAllEvents, xParam, yParam, xScale, yScale, xCofactor, yCofactor) {
   const n = isAllEvents ? _nEvents : parentIndices.length;
-  const xSC = xScale === 'log' ? 1 : xScale === 'asinh' ? 2 : 0;
+  const xSC = xScale === 'log' ? 1 : xScale === 'asinh' ? 2 : 0;   // workers cannot see main-script helpers
   const ySC = yScale === 'log' ? 1 : yScale === 'asinh' ? 2 : 0;
 
   // Single pass: compute and cache all display coords
