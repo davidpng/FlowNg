@@ -1,8 +1,10 @@
 # FlowNG: Privacy-Focused Browser-Based Flow Cytometry Analysis
 
-**FlowNG** is a lightweight, client-side flow cytometry analysis and visualization tool that runs entirely in your web browser. Upload your FCS files and start analyzing with interactive gating, spectral compensation, and automatic cofactor optimization—all without your data ever leaving your computer.
+**FlowNG** is a lightweight, client-side flow cytometry analysis and visualization tool that runs entirely in your web browser. Load your FCS or LMD files and start analyzing with interactive gating (polygon, rectangle and quadrant), spectral compensation, and automatic cofactor optimization. When you are done, export your analysis as one self-contained HTML file that a colleague can open, continue, save and pass on, all without your data ever leaving your computer.
 
-**[Try the live demo →](./FlowNG.html)** | [Privacy Policy](#privacy-and-data-security)
+**[Try the live demo →](https://davidpng.github.io/FlowNg/FlowNG.html)** | **[Open the example shared analysis →](https://davidpng.github.io/FlowNg/samples/CLL_Example_Small_FlowNG_shared.html)** | [Privacy Policy](#data-security--privacy)
+
+The demo runs in your browser from GitHub Pages; the page is static and nothing you load is uploaded.
 
 ---
 
@@ -48,14 +50,14 @@
 
 ### 🔒 Privacy-First Design
 - **Client-side only**: All data processing occurs in your browser; data never transmitted to any server
-- **No external dependencies**: Single-file application (~260KB) with zero external libraries
+- **No external dependencies**: Single-file application (about 350 KB) with zero external libraries
 - **Works offline**: No internet connection required after initial page load
 - **Transparent code**: GNU AGPLv3 licensed with full source visible in the HTML file
 
 ### 🚀 Performance & Technology
 - **Web Workers**: Non-blocking FCS parsing and gate evaluation
-- **Level-of-detail rendering**: subsampled while you drag, refined when idle
-- **Background rendering queue**: Pre-renders off-tab plots when idle for instant tab switching
+- **Level-of-detail rendering**: large populations are drawn from a sample while you drag and refined when idle
+- **Count-based density**: plots are a binned count, so drawing cost depends on events and the bins slider, not on any GPU
 - **Cross-browser compatibility**: Works on Chrome, Firefox, Safari, Edge on Windows, macOS, and Linux
 
 ---
@@ -63,7 +65,7 @@
 ## Quick Start
 
 ### 1. Open the Application
-Simply open **FlowNG.html** in your web browser. No installation or server required.
+Open the **[live demo](https://davidpng.github.io/FlowNg/FlowNG.html)**, or download **FlowNG.html** and open it in your web browser. No installation or server required.
 
 ```
 Double-click FlowNG.html → opens in default browser
@@ -207,14 +209,14 @@ Right-click a gate row and choose **Copy** (or **Cut**), then right-click anothe
 ### Plot Configuration
 
 **Axis Scaling Options**
-1. Right-click any axis to open the scale menu
-2. Select transformation type:
+Click the **LIN / LOG / ASINH** button next to an axis's parameter drop-down to cycle its scale (each plot keeps its own scale):
    - **LINEAR**: Standard arithmetic scale
    - **LOG**: Logarithmic scale (log₁₀)
-   - **ASINH**: Inverse hyperbolic sine (arcsinh) for flow cytometry data
+   - **ASINH**: Inverse hyperbolic sine (arcsinh) for flow cytometry data, with decade ticks including zero and the negative decades
 
 **Global Settings**
 - Click the **Settings** (⚙) button to access:
+  - **Asinh cofactor**: one cofactor applied to every arcsinh axis (the per-channel optimum is the default; drag a marker to tune a single channel)
   - **Min Value Percentile**: set each fluorescent axis's lower limit from that percentile of its data
 
 **Per-Plot Configuration**
@@ -247,11 +249,7 @@ FlowNG uses the **OTflow algorithm** (Folcarelli et al., 2022) to automatically 
 - Selects cofactors that minimize deviation from normality
 - Automatically excludes scatter parameters (FSC, SSC) and time channels
 
-**Enable automatic optimization:**
-1. Open **Axis Range** modal (right-click plot axis or use toolbar)
-2. Check "Auto-optimize cofactors"
-3. Click "Apply" to calculate and apply optimal values
-4. Optimization applies to all plots if selected
+**Where you see it:** the optimum is computed automatically when a file loads and is each channel's starting cofactor. You can change it three ways: drag the blue marker on an arcsinh axis (see *Changing a Cofactor by Dragging*), right-click a plot to type a cofactor in the Axis Range dialog, or set one cofactor for every arcsinh axis from **Settings**. Every change is undoable and recorded in History.
 
 #### Spectral Compensation (Spillover Adjustment)
 For multi-colour experiments with compensation matrices:
@@ -262,27 +260,22 @@ For multi-colour experiments with compensation matrices:
 4. Both are undoable
 
 #### Level-of-Detail (LOD) Rendering
-For large datasets (>1M events):
-- Initial subsampled render appears instantly
-- Full-resolution render automatically upgrades when browser is idle
-- Maintains smooth interaction while dragging gates and axis handles
-- No user configuration needed—happens automatically
-
-#### Background Rendering Queue
-- Plots in non-active tabs are pre-rendered when browser is idle
-- Clicking between tabs shows cached render immediately
-- Automatic queue management based on browser activity
+Populations above 100,000 events are drawn from a sample while you interact, then refined to every event when the browser is idle. This keeps gate dragging and axis-handle dragging responsive; it needs no configuration.
 
 ### Performance & Large Files
 
-**Handling Large Datasets**
-- **Level-of-detail rendering**: Subsampled preview with automatic high-resolution upgrade
-- **Web Worker processing**: Gate evaluation and parsing off main thread
+Measured on one Mac (three tubes of about 33,000 events in the full app; three tubes of 100,000 events in a shared file). Your numbers will differ; the ratios are what matter.
 
-**Typical Performance**
-- Files up to 10M events: Real-time interactive gating
-- Files 10-100M events: LOD rendering with ~500ms full render
-- Compensation adjustment: Interactive with live preview
+| Action | Time |
+|---|---|
+| Load one LMD (parse, cofactors, first plot) | 0.1-0.15 s |
+| Import a 106-gate, 255-plot template | about 1 s |
+| Redraw a tab of 12 plots (33k events) | 30 ms |
+| Re-evaluate every gate after a compensation or cofactor change (31 gates, 33k / 100k events) | 0.15 s / 2.1 s |
+| Open a 10 MB shared file (3 x 100k events) | about 5.6 s |
+| Save it again | 0.3 s |
+
+Gate re-evaluation and quadrant creation run on the page itself, so at 100,000 events or more they pause the page for a second or two; moving a gate uses a sampled version while you drag so it stays smooth. Lower a plot's bins slider to make drawing cheaper, and cap events per file when exporting a shared file to keep it small.
 
 ---
 
@@ -364,7 +357,7 @@ Notes:
 - **Quality control**: Assess compensation adequacy and population separation
 
 ### Comparative Studies
-- **Multi-sample analysis**: Load multiple FCS files in separate tabs
+- **Multi-sample analysis**: Load several files at once; each appears as its own root in the population tree and plots can be switched between files
 - **Consistent gating**: Export/import gate templates for standardized analysis
 - **Population tracking**: Monitor population percentages across samples
 
@@ -376,7 +369,9 @@ Notes:
 FlowNG is a research and educational tool **not intended for clinical diagnostic purposes**. While suitable for exploratory analysis and research workflows, it has not undergone validation for clinical use.
 
 ### Browser Requirements
-- Modern browser with ES6 support: Chrome/Edge 60+, Firefox 55+, Safari 12+
+- A current Chrome, Edge, Firefox or Safari. Everything except shared files works in any browser with ES2020 support.
+- **Shared files** also need `CompressionStream` / `DecompressionStream`: Chrome and Edge 80+, Firefox 113+, Safari 16.4+. Older browsers cannot open them.
+- **Save As dialog** (choosing where Save puts a copy) is Chrome and Edge only; other browsers download the file to the usual folder.
 - 4GB+ RAM recommended for files >100M events
 
 ### Current Limitations
@@ -408,10 +403,10 @@ FlowNG is a research and educational tool **not intended for clinical diagnostic
 ### Compensation Not Working
 - **$SPILLOVER keyword**: Verify FCS file contains valid `$SPILLOVER` keyword
 - **Parameter names**: Check that spillover matrix parameter names match FCS parameters
-- **Manual application**: Use Spillover Adjust tool to manually correct if needed
+- **Manual correction**: use the Comp tool (or Autocomp) to correct it; both need two axes that are in the spillover matrix
 
 ### Slow Performance
-- **Large files**: Use LOD rendering (enabled by default) to speed up interaction
+- **Large files**: LOD rendering is on by default; moving a gate stays smooth, but re-evaluating many gates takes a second or two at 100,000 events or more
 - **Bins**: lower a plot's bins slider to make density rendering cheaper
 - **Browser memory**: Close other tabs and applications to free memory
 
@@ -419,15 +414,28 @@ FlowNG is a research and educational tool **not intended for clinical diagnostic
 
 ## Browser Compatibility
 
-| Browser | Version | Status |
-|---------|---------|--------|
-| Chrome | 60+ | ✅ Full support |
-| Firefox | 55+ | ✅ Full support |
-| Safari | 12+ | ✅ Full support |
-| Edge | 79+ | ✅ Full support |
-| Opera | 47+ | ✅ Full support |
+| Browser | Status |
+|---------|--------|
+| Chrome, Edge (80+) | ✅ Tested, full support including the Save As dialog |
+| Firefox (113+) | Expected to work; shared files need 113 or newer. Not tested by the author |
+| Safari (16.4+) | Works for viewing, gating and shared files after a fix for a missing `requestIdleCallback`; tested by simulation only. Save downloads the file |
 
 Plots render on a 2D canvas, so no GPU features are required.
+
+---
+
+## Development and Testing
+
+FlowNG is one file, `FlowNG.html` (main script plus two worker scripts). To work on it, serve the folder (`python3 -m http.server`) and open it; no build step.
+
+| File | Purpose |
+|---|---|
+| [`TESTING.md`](TESTING.md) | A step-by-step test guide with expected results and performance baselines. Say "run TESTING.md" to have Claude run it, or follow it by hand |
+| `scripts/build_test_daughter.py` | Builds a locked shared file from the working tree for testing (`--lod N` forces the large-population path, `--unlocked` keeps import/export) |
+| `scripts/extract_js_for_graphify.py` | Pulls the scripts out of the HTML so graphify (the `graphifyy` Python package) can build a real call graph; the result is in `graphify-out/` (`GRAPH_REPORT.md`, `graph.html`) |
+| `scripts/kaluza_to_flowng.py` | Kaluza template converter (see above) |
+
+Notes for contributors: code between `/*@lite:begin*/` and `/*@lite:end*/` (and `<!--@lite:...-->`) is removed from locked shared files, so anything a locked file needs (Save, History, rendering, gating) must stay outside those markers. Worker scripts cannot call main-script functions; a helper used in a worker needs its own copy.
 
 ---
 
@@ -435,7 +443,7 @@ Plots render on a 2D canvas, so no GPU features are required.
 
 **FlowNG** © 2026 David P. Ng, MD
 
-Licensed under **GNU Affero General Public License v3.0** (GNU AGPLv3). See LICENSE file for details.
+Licensed under **GNU Affero General Public License v3.0** (GNU AGPLv3); the notice is at the top of `FlowNG.html`.
 
 ### Key Algorithms & References
 - **OTflow optimization**: Folcarelli et al. (2022)
@@ -493,22 +501,29 @@ A: Every plot is a binned density. Each bin takes the colour of the populations 
 **Q: Can I send someone my analysis without the FCS file?**  
 A: Yes. **Export Shareable HTML** writes one HTML with the event data, compensation, gates and plots. Tick "Locked viewer" to remove the loading, importing and exporting code from the file so recipients can only gate and view.
 
-**Q: How do I optimize axis transformation cofactors?**  
-A: Right-click any plot axis, enable "Auto-optimize cofactors," and click Apply. FlowNG calculates optimal arcsinh cofactors using the OTflow algorithm.
+**Q: How do I change an axis's cofactor?**  
+A: FlowNG computes a starting cofactor for every fluorescent channel when a file loads (the OTflow algorithm). To change one, select the plot and drag the blue marker on its arcsinh axis, or right-click the plot and type a value.
 
 **Q: Can I work with multiple files at once?**  
-A: Yes. Load multiple FCS files—each opens in a separate tab at the top of the plot area.
+A: Yes. Load several files; each appears as its own root in the population tree, plots can be pointed at any loaded file (right-click a plot's header), and the tabs across the top are pages of plots, not files. Gates can be copied between files, and a template with several sections can be matched to several files at once.
 
 ---
 
 ## Changelog
 
-### Version 1.0 (Current)
+### Latest
+- **Shared analyses**: Export Shareable HTML, a locked viewer option, Save and History inside shared files, privacy-aware export (renamed tubes, no dates or IDs), single-copy compressed event storage, and a size estimate
+- **Gating**: quadrant gates, undo/redo, Autocomp, right-click menu with copy/cut/paste, sibling reorder that sets colour priority, axis cofactor handles, and a "+" dot toggle
+- **Plots**: blended density plots coloured by population, decade ticks, bins slider, labeled toolbar and tooltips; the zoom tool was removed
+- **Templates**: matching by file name, tube name or antibody panel; version 3 only (version 2 import removed); Kaluza converter
+- **Fixes**: Safari load error (`requestIdleCallback`), stale first-row plots on load
+- **Cleanup**: about 1,100 lines of old WebGL/heatmap code removed; `TESTING.md` added
+
+### Version 1.0
 - Initial release with core gating and analysis features
-- Blended density rendering
 - Automatic cofactor optimization via OTflow algorithm
 - Spectral compensation with interactive spillover adjustment
-- Multi-tab support and background rendering queue
+- Multi-tab support
 - Demo mode with sample PBMC data
 - Support for FCS 2.0/3.0/3.1 and Beckman Coulter LMD files
 
