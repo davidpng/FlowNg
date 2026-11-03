@@ -617,6 +617,7 @@
   .tool-btn i { font-style: normal; font-size: 13px; }
   .tool-btn:hover { background: #2d2f3d; }
   .tool-btn.active { background: #3a4a6b; border-color: #5a6f9f; color: #fff; }
+  #save-btn.dirty { border-color: #f5a623; color: #f5a623; }
   .tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .global-toolbar {
     display: none; /* shown after file load */
@@ -735,6 +736,8 @@
       <button onclick="showShareDialog()" id="share-btn" style="display:none" title="Export one self-contained HTML containing the event data, compensation, gates and plots (not the original FCS/LMD file)">🔗 Export Shareable HTML</button>
       
 <!--@lite:end-->
+<button onclick="showHistory()" id="history-btn" style="display:none" title="History: what has been done to this analysis, with times (no user names). Shared files keep the history when you save.">🕘 History</button>
+<button onclick="saveDaughter()" id="save-btn" style="display:none" title="Save: writes a new copy of this shared file that includes your gate, plot and compensation changes and the History, so it can be passed on. The original file is not changed.">💾 Save</button>
 <button onclick="resetToAuthorGates()" id="reset-author-btn" style="display:none" title="Throw away your changes and restore the gates and plots exactly as the author shared them (undoable)">↺ Reset to author's gates</button>
 <!--@lite:begin-->
       <input type="file" id="import-input" accept=".json" style="display:none">
@@ -798,6 +801,10 @@
       <kbd>Drag</kbd> row onto another — re-parent<br>
       <kbd>Drag</kbd> ⠿ above/below a sibling — reorder; the lower one wins shared cells<br>
       <kbd>Click</kbd> name — jump to the gate's plot<br>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">HISTORY AND SAVING</div>
+      <kbd>🕘 History</kbd> — every change with its time (no user names); undo and redo are logged too<br>
+      <kbd>💾 Save</kbd> — shared files only: writes a new copy with your gates, plots, compensation and History; the original is not changed<br>
+      <kbd>↺ Reset</kbd> — back to the author's gates and compensation (undoable)<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">MULTI-SELECT (2+ plots)</div>
       Axis / pop / bin changes apply to all selected.<br>
       Scale (LOG/LIN/ASINH) is always per-plot.
@@ -850,6 +857,11 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// Safari has no requestIdleCallback / cancelIdleCallback; a bare reference to a missing global throws.
+if (typeof window.requestIdleCallback !== 'function') {
+  window.requestIdleCallback = cb => setTimeout(() => cb({ didTimeout: false, timeRemaining: () => 0 }), 1);
+  window.cancelIdleCallback = id => clearTimeout(id);
+}
 // 19-color palette with maximum contrast on white background
 // Based on Kelly's 22 colors of maximum contrast, excluding white-like variants
 // Kelly's 22 colours of maximum contrast, minus white (plots are on a white background) — as FlowNg2.
@@ -2006,6 +2018,7 @@ function addFileToSession(fileObj) {
     { const b = document.getElementById('export-btn'); if (b) b.style.display = ''; }
     { const b = document.getElementById('import-btn'); if (b) b.style.display = ''; }
     { const b = document.getElementById('share-btn'); if (b) b.style.display = ''; }
+    { const b = document.getElementById('history-btn'); if (b) b.style.display = ''; }
 
     // Reset tabs and plots
     tabs = []; activeTabId = null; tabIdCounter = 0;
@@ -2447,7 +2460,7 @@ function reparentGate(gateId, newParentId) {
   }
   { const gf0 = getFileById(gate.fileId);
     if (gf0 && _upstreamIds(newParentId, gf0).has(gateId)) { showToast('Cannot move a gate under a population that depends on it'); return; } }
-  pushUndo();
+  pushUndo(`Moved gate "${gate.name}" under "${(populations.find(p => p.id === newParentId) || {}).name || 'All events'}"`);
   gate.parentId = newParentId;
   { const gf = getFileById(gate.fileId); if (gf) _syncPrecedenceFromTree(gf); }
   // Evaluate synchronously so counts and dot colors are correct immediately
@@ -2486,7 +2499,7 @@ function reorderSibling(dragId, targetId, before) {
   const drag = populations.find(p => p.id === dragId), tgt = populations.find(p => p.id === targetId);
   if (!drag || !tgt || dragId === targetId || drag.parentId !== tgt.parentId || drag.fileId !== tgt.fileId) return;
   const f = getFileById(drag.fileId); if (!f) return;
-  pushUndo();
+  pushUndo(`Reordered "${drag.name}" ${before ? 'above' : 'below'} "${tgt.name}"`);
   const arr = f.populations;
   const dragObj = arr.find(p => p.id === dragId);
   arr.splice(arr.indexOf(dragObj), 1);
@@ -3027,6 +3040,10 @@ function removePlot(id) {
 
 // ─── RENDERING ────────────────────────────────────────────────────────────────
 function renderPlot(plot) {
+  // A plot that has been removed or replaced (a template or bundle load rebuilds the plot list and
+  // restarts plot ids) must never draw: its pending idle/background renders would otherwise paint
+  // onto the canvas of whichever new plot now has the same id.
+  if (!plots.includes(plot)) return;
   const canvas = document.getElementById(`canvas-${plot.id}`); if (!canvas) return;
   // Set file context so helpers (getRawRangeGlobal, getAsinhCofactor, defaultScale…)
   // all read from the correct file's data and paramRanges.
@@ -4538,7 +4555,7 @@ function onCanvasMouseDown(e, canvas, plot) {
       const initVal = zone === 'top'
         ? _spillFile.spillMatrix[iy][ix]   // Y→X: how much Y spills into X detector
         : _spillFile.spillMatrix[ix][iy];  // X→Y: how much X spills into Y detector
-      pushUndo();
+      plot._spillEntry = pushUndo(`Adjusted spillover (${_plotPair(plot)})`);
       plot._spillDragging    = true;
       plot._spillZone        = zone;
       plot._spillDragStart   = { cx, cy };
@@ -4584,13 +4601,14 @@ function onCanvasMouseDown(e, canvas, plot) {
     const hit = hitTestGate(cx, cy, gate, tf, plot);
     if (!hit) continue;
     if (hit.type === 'quad') {
-      pushUndo();
+      plot._quadMoved = false;
+      pushUndo(`Moved quadrant crosshair (${_plotPair(plot)})`);
       plot._dragQuad = gate.gateInfo.quad.gid;
       e.preventDefault();
       renderPlot(plot);
       return;
     }
-    pushUndo();
+    pushUndo(`${hit.type === 'vertex' && plot.mode === 'edit' ? 'Reshaped' : 'Moved'} gate "${gate.name}" (${_plotPair(plot)})`);
     plot._editGate  = gate.id;
     plot._dragGate  = gate.id;
     plot._dragStart = { cx, cy };
@@ -4761,8 +4779,16 @@ function onCanvasMouseUp(e, canvas, plot) {
       const newMatrix = _sfUp.spillMatrix.map(row => [...row]);
       if (plot._spillZone === 'top')  newMatrix[iy][ix] = plot._spillCurrentVal;
       else                            newMatrix[ix][iy] = plot._spillCurrentVal;
-      if (recomputeCompensation(newMatrix, plot.fileId)) reevaluateAllGates(_sfUp);
+      if (Math.abs(plot._spillCurrentVal - plot._spillInitVal) < 1e-9) cancelUndo();
+      else {
+        if (plot._spillEntry) {
+          const xn = _sfUp.params[plot.xParam].name, yn = _sfUp.params[plot.yParam].name;
+          refineEntry(plot._spillEntry, `Adjusted spillover ${plot._spillZone === 'top' ? yn + ' into ' + xn : xn + ' into ' + yn}: ${plot._spillInitVal.toFixed(4)} to ${plot._spillCurrentVal.toFixed(4)}`);
+        }
+        if (recomputeCompensation(newMatrix, plot.fileId)) reevaluateAllGates(_sfUp);
+      }
     }
+    plot._spillEntry = null;
     plot._spillDragging   = false;
     plot._spillZone       = null;
     plot._spillDragStart  = null;
@@ -4838,7 +4864,7 @@ function onCanvasMouseUp(e, canvas, plot) {
   if (!plot._dragGate) return;
   if (plot._dragPts && plot._dragRawStart &&
       JSON.stringify(plot._dragPts) === JSON.stringify(plot._dragRawStart) && _undoStack.length) {
-    _undoStack.pop(); updateUndoButtons();   // a click without movement isn't an edit
+    cancelUndo();   // a click without movement isn't an edit
   }
   // Full eval on release — dispatch to worker so the main thread stays unblocked.
   // evalGateAsync falls back to synchronous evalGate if the worker isn't ready.
@@ -4867,14 +4893,14 @@ function onCanvasClick(e, canvas, plot) {
       if (!hit) continue;
       if (hit.type === 'quad') {
         if (!confirm('Delete this quadrant (Q1-Q4) and all its children?')) return;
-        pushUndo();
+        pushUndo(`Deleted quadrant Q1-Q4 (${_plotPair(plot)})`);
         _quadGroup(gate.gateInfo.quad.gid).forEach(g => deleteGateAndDescendants(g.id));
         renderPopList(); updateAllPopSelects(); renderAllPlots();
         showToast('Deleted quadrant');
         return;
       }
       if (!confirm(`Delete gate "${gate.name}" and all its children?`)) return;
-      pushUndo();
+      pushUndo(`Deleted gate "${gate.name}" and its children`);
       deleteGateAndDescendants(gate.id);
       renderPopList(); updateAllPopSelects(); renderAllPlots();
       showToast(`Deleted "${gate.name}"`);
@@ -4956,7 +4982,7 @@ function _quadSetCenter(gid, rx, ry, lod) {
 function createQuadrant(plot, rx, ry) {
   const fcsFile = getFileForPlot(plot); if (!fcsFile) return;
   _contextFileId = fcsFile.fileId; _paramRanges = fcsFile.paramRanges;
-  pushUndo();
+  pushUndo(`Placed quadrant on ${_plotPair(plot)} in "${(populations.find(p => p.id === plot.inputPop) || {}).name || 'All events'}"`);
   const xScale = plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin';
   const yScale = plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin';
   const gid = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -5035,8 +5061,8 @@ function beginCofactorDrag(plot, axis, e) {
   _contextFileId = f.fileId; _paramRanges = f.paramRanges;
   const param = axis === 'x' ? plot.xParam : plot.yParam;
   const prev = f.paramRanges.has(param) ? { ...f.paramRanges.get(param) } : null;
-  pushUndo();
-  _cfDrag = { plot, axis, f, param, prev, frozenMax: getRawRangeGlobal(param, 'asinh').rawMax, changed: false };
+  const cfEntry = pushUndo(`Set cofactor of ${f.params[param].name}`);
+  _cfDrag = { plot, axis, f, param, prev, entry: cfEntry, frozenMax: getRawRangeGlobal(param, 'asinh').rawMax, changed: false };
   plot._lodActive = true;
   const canvas = document.getElementById(`canvas-${plot.id}`);
   const move = ev => {
@@ -5057,11 +5083,12 @@ function beginCofactorDrag(plot, axis, e) {
     const d = _cfDrag; _cfDrag = null; if (!d) return;
     plot._lodActive = false;
     if (commit && d.changed) {
+      refineEntry(d.entry, `Set cofactor of ${f.params[param].name} to ${getAsinhCofactor(param)}`);
       invalidateSpatialCache(false);
       reevaluateAllGates(f);
     } else {
       if (d.prev) f.paramRanges.set(param, d.prev); else f.paramRanges.delete(param);
-      if (!commit || !d.changed) { _undoStack.pop(); updateUndoButtons(); }
+      if (!commit || !d.changed) cancelUndo();
       markAllDirty(); renderAllPlots();
     }
     plots.forEach(updateCofactorHandles);
@@ -5364,7 +5391,7 @@ function autoCompensate(plot) {
                            toDisplay(data[e * nPar + plot.yParam], plot.yParam, ySc), poly)) picked.push(e);
   }
   if (picked.length < 100) { showToast(`Autocomp needs at least 100 events in the polygon (got ${picked.length})`, 4000); renderPlot(plot); return; }
-  pushUndo();
+  pushUndo(`Autocomp (${_plotPair(plot)})`);
   const { ix, iy } = spi;
   const before = f.spillMatrix[ix][iy];
   for (let iter = 0; iter < 3; iter++) {
@@ -5377,12 +5404,13 @@ function autoCompensate(plot) {
     if (!recomputeCompensation(m, f.fileId)) { showToast('Autocomp stopped: matrix became singular', 4000); break; }
   }
   if (f.spillMatrix[ix][iy] === before) {
-    _undoStack.pop(); updateUndoButtons();
+    cancelUndo();
     showToast('Autocomp: that population is already flat (slope under 0.0001), so nothing changed', 5000);
     setGlobalMode('pan');
     return;
   }
   reevaluateAllGates(f);
+  { const u = _undoStack[_undoStack.length - 1]; if (u && u.entry) refineEntry(u.entry, `Autocomp ${f.params[plot.xParam].name} into ${f.params[plot.yParam].name}: spillover ${before.toFixed(4)} to ${f.spillMatrix[ix][iy].toFixed(4)}`); }
   showToast(`Autocomp: ${f.params[plot.xParam].name} → ${f.params[plot.yParam].name} spillover ${before.toFixed(4)} → ${f.spillMatrix[ix][iy].toFixed(4)}`, 5000);
   setGlobalMode('pan');
 }
@@ -5397,7 +5425,7 @@ function finalizeGate(plot) {
   _contextFileId = fcsFile.fileId;
   _paramRanges = fcsFile.paramRanges;
 
-  pushUndo();
+  const drawEntry = pushUndo(`Drew gate on ${_plotPair(plot)}`);
   const xScale2 = plot.xAsinh ? 'asinh' : plot.xLog ? 'log' : 'lin';
   const yScale2 = plot.yAsinh ? 'asinh' : plot.yLog ? 'log' : 'lin';
   const color = GATE_COLORS[fcsFile.populations.filter(p => !p._isAll).length % GATE_COLORS.length];
@@ -5438,6 +5466,7 @@ function finalizeGate(plot) {
     const count = newPop.indices.length;
     const gateName = prompt(`Name this gate (${count.toLocaleString()} events inside):`, defaultName) || defaultName;
     newPop.name = gateName;
+    refineEntry(drawEntry, `Drew gate "${gateName}" on ${_plotPair(plot)} (${count.toLocaleString()} events)`);
     const fp = fcsFile.populations.find(p => p.id === newPop.id);
     if (fp) fp.name = gateName;
     setStatusBar(`\u2713 ${gateName}: ${count.toLocaleString()} events`);
@@ -5636,7 +5665,7 @@ function pasteGate(targetId) {
   const f = getFileById(target.fileId); if (!f) return;
   const xi = f.params.findIndex(p => p.name === clip.xName), yi = f.params.findIndex(p => p.name === clip.yName);
   if (xi < 0 || yi < 0) { showToast(`Cannot paste: this file has no "${xi < 0 ? clip.xName : clip.yName}" parameter`, 4000); return; }
-  pushUndo();
+  pushUndo(`Pasted gate "${clip.name}" under "${target.name}"`);
   const taken = new Set(f.populations.map(p => p.name));
   let name = clip.name; for (let n = 2; taken.has(name); n++) name = `${clip.name} copy${n > 2 ? ' ' + n : ''}`;
   const pop = {
@@ -5659,7 +5688,7 @@ function deleteGateFromTree(popId, skipConfirm) {
   const group = pop.gateInfo && pop.gateInfo.quad ? _quadGroup(pop.gateInfo.quad.gid) : [pop];
   const what = group.length > 1 ? 'this quadrant (Q1-Q4)' : `"${pop.name}"`;
   if (!skipConfirm && !confirm(`Delete ${what} and all children?`)) return;
-  pushUndo();
+  pushUndo(`${skipConfirm ? 'Cut' : 'Deleted'} ${what}${skipConfirm ? '' : ' and its children'}`);
   group.forEach(g => deleteGateAndDescendants(g.id));
   plots.forEach(pl => {
     if (!populations.find(p => p.id === pl.inputPop)) {
@@ -5768,22 +5797,65 @@ function _restoreState(snap) {
   invalidateSpatialCache(true); markAllDirty();
   renderPopList(); renderPrecedenceList(); updateAllPopSelects(); renderAllPlots();
 }
-function pushUndo() {
-  _undoStack.push(_snapshotState());
+// ─── CHANGE HISTORY ──────────────────────────────────────────────────────────
+// Every analysis change is logged (what + when, no user names) so a shared file can show what was
+// done to it. Saving a shared file writes this log into the file; entries loaded from a file are
+// marked prior. Undo and redo are logged too.
+const _history = [];
+const HISTORY_MAX = 500;
+let _dirty = false;
+function logChange(what) {
+  const e = { t: new Date().toISOString(), what };
+  _history.push(e);
+  if (_history.length > HISTORY_MAX) _history.shift();
+  _dirty = true; updateSaveButton();
+  return e;
+}
+function updateSaveButton() {
+  const b = document.getElementById('save-btn');
+  if (b) { b.classList.toggle('dirty', _dirty); b.textContent = _dirty ? '💾 Save changes •' : '💾 Save'; }
+}
+function _plotPair(plot) {
+  const f = getFileForPlot(plot);
+  return f ? `${f.params[plot.xParam].name} vs ${f.params[plot.yParam].name}` : '';
+}
+
+// pushUndo(desc) is called just BEFORE a change; desc is what the change is (shown in History).
+// Returns the history entry so a caller can refine its text once the outcome is known.
+function pushUndo(desc) {
+  const entry = logChange(desc || 'Changed the analysis');
+  _undoStack.push({ snap: _snapshotState(), desc: entry.what, entry });
   if (_undoStack.length > UNDO_MAX) _undoStack.shift();
   _redoStack.length = 0;
   updateUndoButtons();
+  return entry;
+}
+// For a change that turned out not to be one (a click without movement): drop it from both stacks.
+function cancelUndo() {
+  const u = _undoStack.pop();
+  if (u && u.entry) { const i = _history.lastIndexOf(u.entry); if (i >= 0) _history.splice(i, 1); }
+  updateUndoButtons();
+}
+// Updates the wording of a history entry (and of its undo/redo label) once the outcome is known.
+function refineEntry(entry, text) {
+  if (!entry) return;
+  entry.what = text;
+  _undoStack.forEach(u => { if (u.entry === entry) u.desc = text; });
 }
 function undo() {
   if (!_undoStack.length) return;
-  _redoStack.push(_snapshotState());
-  _restoreState(_undoStack.pop());
+  const u = _undoStack.pop();
+  _redoStack.push({ snap: _snapshotState(), desc: u.desc });
+  _restoreState(u.snap);
+  logChange(`Undid: ${u.desc}`);
   updateUndoButtons();
 }
 function redo() {
   if (!_redoStack.length) return;
-  _undoStack.push(_snapshotState());
-  _restoreState(_redoStack.pop());
+  const r = _redoStack.pop();
+  _undoStack.push({ snap: _snapshotState(), desc: r.desc });
+  _restoreState(r.snap);
+  logChange(`Redid: ${r.desc}`);
   updateUndoButtons();
 }
 function updateUndoButtons() {
@@ -6245,6 +6317,7 @@ function applyGlobalSettings() {
     return;
   }
 
+  pushUndo(`Set the minimum-value percentile to ${percValue}`);
   _globalMinPercentile = percValue;
 
   // Apply percentile to fluorescent parameters across all loaded files
@@ -6464,6 +6537,7 @@ function showAxisRangeModal(plot, clientX, clientY) {
 function applyAxisRangeModal(plotId) {
   const plot = plots.find(p => p.id === plotId); if (!plot) return;
   const overlay = document.getElementById('axis-range-modal'); if (!overlay) return;
+  pushUndo(`Changed axis range or cofactor (${_plotPair(plot)})`);
 
   const axes = [
     { axis: 'x', paramIdx: plot.xParam },
@@ -6548,6 +6622,7 @@ function resetAxisRangeModal(plotId) {
   const overlay = document.getElementById('axis-range-modal'); if (!overlay) return;
   const fcsFile = getFileForPlot(plot) || fcsFiles[0]; if (!fcsFile) return;
   _paramRanges = fcsFile.paramRanges;
+  pushUndo(`Reset axis ranges (${_plotPair(plot)})`);
 
   // Clear custom ranges for both axes and per-plot threshold override
   [plot.xParam, plot.yParam].forEach(paramIdx => _paramRanges.delete(paramIdx));
@@ -6725,7 +6800,7 @@ function showColorPicker(popId, mx, my) {
   // Apply button
   overlay.querySelector('#cpk-apply-btn').addEventListener('click', () => {
     const nameVal = overlay.querySelector('#gate-rename-input').value.trim();
-    pushUndo();
+    pushUndo(nameVal && nameVal !== pop.name ? `Renamed "${pop.name}" to "${nameVal}"` : `Changed the colour of "${pop.name}"`);
     if (nameVal) pop.name = nameVal;
     if (selectedHex === null) {
       pop.noColor = true;
@@ -6803,6 +6878,7 @@ function applyGlobalAsinhCofactor() {
     showToast('Invalid cofactor value');
     return;
   }
+  pushUndo(`Applied cofactor ${newCf} to all arcsinh axes`);
   DEFAULT_ASINH_COFACTOR = newCf;
   // Clear all per-parameter cofactor overrides across all files so global setting applies
   fcsFiles.forEach(f => f.paramRanges.forEach(pr => { delete pr.asinhCofactor; }));
@@ -6820,6 +6896,7 @@ function applyGlobalMinPercentile() {
     showToast('Percentile must be between 0 and 100');
     return;
   }
+  pushUndo(`Applied minimum-value percentile ${newPerc} to all plots`);
   _globalMinPercentile = newPerc;
   // Invalidate caches and mark plots dirty so range calculations are redone
   invalidateSpatialCache(true);
@@ -6954,6 +7031,16 @@ function doExportTemplate() {
   showToast(`Template "${tmplName}" exported — ${fcsFiles.length} file(s), ${gateCount} gate(s), ${template.plots.length} plot(s)`);
 }
 
+/*@lite:end*/
+// Tube name (the instrument's test name) and antibody panel of a loaded file; used to match templates.
+const _normTube = s => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+function _fileTubeName(f) {
+  const m = (f && f.meta) || {};
+  return (m['@TESTNAME'] || m['@TESTFILE'] || '').trim();
+}
+function _filePanel(f) {
+  return f.params.map(p => p.name).filter(n => isFluorescentParameter(n)).sort();
+}
 // Snapshot of the current gates/plots/ranges for all loaded files as a v3 template.
 function _boolExprToNames(expr, fileObj) {
   if (typeof expr === 'number') { const p = fileObj.populations.find(q => q.id === expr); return p ? p.name : '?'; }
@@ -6996,6 +7083,8 @@ function _buildTemplateV3(tmplName) {
     });
     return {
       sourceFile: fileObj.filename || 'unknown',
+      tube: _fileTubeName(fileObj) || undefined,
+      panel: _filePanel(fileObj),
       gates: buildGateTree(fileObj, rootPopId, fileObj.filename || 'All Events'),
       booleans: fileObj.populations.filter(p => p.boolInfo).map(p => ({
         name: p.name, color: p.color, noColor: p.noColor || false,
@@ -7050,7 +7139,6 @@ function _buildTemplateV3(tmplName) {
     plots:    plotSnapshots
   };
 }
-/*@lite:end*/
 // ─── SHAREABLE HTML EXPORT / BUNDLE LOAD ─────────────────────────────────────
 // A shareable HTML is this app plus a script#flowng-bundle JSON block holding the
 // event data (gzip+base64), compensation, and the author's gates/plots. On open, the
@@ -7061,8 +7149,9 @@ let _authorTemplate = null;   // template to restore with "Reset to author's gat
 let _bundleInfo = null;
 
 /*@lite:begin*/
-const _SAFE_META_KEYS = /^(\$CYT|\$TOT|\$PAR|\$MODE|\$DATATYPE|\$BYTEORD|\$NEXTDATA|FCSVersion|\$FCSVersion|\$P\d+[NSRBEGVD])$/;
+const _SAFE_META_KEYS = /^(@TESTNAME|\$CYT|\$TOT|\$PAR|\$MODE|\$DATATYPE|\$BYTEORD|\$NEXTDATA|FCSVersion|\$FCSVersion|\$P\d+[NSRBEGVD])$/;
 
+/*@lite:end*/
 // The export must start from the untouched app, not the live page: by the time a user exports,
 // the live DOM holds rendered plot cards, the population tree and tab strip, all of which name the
 // loaded files (and so any patient names or accession numbers in them). The snapshot below is taken
@@ -7079,6 +7168,7 @@ function _docSourceLive() {
     if (n.nodeType === Node.ELEMENT_NODE) {
       // Serialize a clone without open dialogs or toast text so the shared file opens clean.
       const c = n.cloneNode(true);
+      const bundleEl = c.querySelector('#flowng-bundle'); if (bundleEl) bundleEl.remove();   // data is re-attached at save/export
       c.querySelectorAll('.modal-overlay').forEach(m => m.remove());
       const t = c.querySelector('#toast');
       if (t) { t.textContent = ''; t.classList.remove('show'); }
@@ -7088,6 +7178,7 @@ function _docSourceLive() {
   });
   return parts.join('\n');
 }
+/*@lite:begin*/
 
 // Events are stored column by column, with each 32-bit value split into byte planes, which gzip
 // compresses far better than row-major floats. Flow data is usually whole numbers (20-bit
@@ -7298,7 +7389,7 @@ async function doExportShareable() {
     }
     status.textContent = 'Building HTML…';
     await new Promise(r => setTimeout(r, 0));
-    const bundle = { format: 1, sterile, name, created: new Date().toISOString(), files, template };
+    const bundle = { format: 1, sterile, history: _history.slice(-HISTORY_MAX).map(e => ({ t: e.t, what: e.what })), name, created: new Date().toISOString(), files, template };
     // Original file names must not survive anywhere in the bundle (template gate parents, plots, ...).
     let jsonText = JSON.stringify(bundle);
     const esc = x => JSON.stringify(x).slice(1, -1);
@@ -7397,9 +7488,17 @@ async function loadBundleIfPresent() {
     hideProgress();
     _authorTemplate = bundle.template;
     _bundleInfo = bundle;
-    _applyTemplateV3(bundle.template, fileMap);
+    _bundleObj = bundle;
+    _authorSpill = bundle.files.map(f => f.spillMatrixAuthor || f.spillMatrix || null);
+    _history.length = 0;
+    (bundle.history || []).forEach(e => _history.push({ t: e.t, what: e.what, prior: true }));
+    _dirty = false;
+    _applyTemplateV3(bundle.state || bundle.template, fileMap);   // a saved file reopens where it was left
     const reset = document.getElementById('reset-author-btn');
     if (reset) reset.style.display = '';
+    const sv = document.getElementById('save-btn');
+    if (sv) sv.style.display = '';
+    updateSaveButton();
     if (bundle.sterile) _applySterileMode();
     const sub = bundle.files.filter(f => f.nEvents < f.totalEvents);
     showToast(sub.length
@@ -7432,11 +7531,132 @@ function _applySterileMode() {
 function resetToAuthorGates() {
   if (!_authorTemplate) return;
   if (!confirm("Discard your gates and plots and restore the author's version?")) return;
-  pushUndo();
+  pushUndo("Reset to the author's gates");
   const fileMap = _authorTemplate.files.map(tf =>
     fcsFiles.find(f => f.filename === tf.sourceFile) || null);
+  // Compensation first (the gates are re-evaluated against the restored data)
+  (_bundleObj ? _bundleObj.files : []).forEach((bf, i) => {
+    const f = fcsFiles.find(x => x.filename === bf.filename), m = _authorSpill[i];
+    if (f && m && f.spillMatrix && JSON.stringify(f.spillMatrix) !== JSON.stringify(m)) {
+      recomputeCompensation(m.map(r => [...r]), f.fileId);
+      sendDataToComputeWorkerForFile(f);
+      invalidateSpatialCache(false);
+    }
+  });
   _applyTemplateV3(_authorTemplate, fileMap);
   showToast("Restored author's gates");
+}
+
+// ─── SAVING A SHARED FILE, AND ITS HISTORY ───────────────────────────────────
+// A shared HTML is a "daughter" file: the events plus the author's gates (bundle.template, never
+// altered) plus, once someone saves, the working state (bundle.state) and the change log
+// (bundle.history). Saving writes a new copy of the file; the original can be kept or downloaded again.
+let _bundleObj = null;      // the bundle this page was opened from
+let _authorSpill = [];      // each file's compensation as the author left it
+
+async function saveDaughter() {
+  if (!_bundleObj || !_pristineSource) { showToast('Save is for shared analysis files'); return; }
+  const OPEN = '<scr' + 'ipt', CLOSE = '</scr' + 'ipt>';
+  const name = (_bundleObj.name || 'Shared analysis');
+  const safe = name.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
+  const fileName = `${safe}_FlowNG_shared.html`;
+  // Ask where to save first: the picker needs the click's user gesture.
+  let handle = null;
+  if (window.showSaveFilePicker) {
+    try {
+      handle = await window.showSaveFilePicker({ suggestedName: fileName,
+        types: [{ description: 'HTML', accept: { 'text/html': ['.html'] } }] });
+    } catch (e) { if (e && e.name === 'AbortError') return; handle = null; }
+  }
+  try {
+    const b = { ..._bundleObj };
+    b.files = _bundleObj.files.map(bf => {
+      const f = fcsFiles.find(x => x.filename === bf.filename);
+      return { ...bf,
+        spillMatrixAuthor: bf.spillMatrixAuthor || bf.spillMatrix || null,
+        spillMatrix: f && f.spillMatrix ? f.spillMatrix.map(r => [...r]) : bf.spillMatrix };
+    });
+    b.state = _buildTemplateV3(name);
+    b.history = _history.slice(-HISTORY_MAX).map(e => ({ t: e.t, what: e.what }));
+    b.saved = new Date().toISOString();
+    const json = JSON.stringify(b).replace(/</g, '\\u003c');
+    let src = _pristineSource;
+    const at = src.lastIndexOf(OPEN + ' id="flowng-bundle-loader"');
+    if (at < 0) throw new Error('loader hook not found');
+    src = src.slice(0, at) + `${OPEN} id="flowng-bundle" type="application/json">${json}${CLOSE}\n` + src.slice(at);
+    const blob = new Blob([src], { type: 'text/html' });
+    let where;
+    if (handle) {
+      const w = await handle.createWritable(); await w.write(blob); await w.close();
+      where = `Saved "${handle.name}" (${(blob.size / 1048576).toFixed(1)} MB)`;
+    } else {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = fileName; a.click();
+      where = `Downloaded "${fileName}" (${(blob.size / 1048576).toFixed(1)} MB) to your browser's download folder`;
+    }
+    _bundleObj = b; _dirty = false; updateSaveButton();
+    showToast(where, 8000);
+  } catch (err) {
+    console.error(err);
+    showToast('Save failed: ' + err.message, 6000);
+  }
+}
+
+window.addEventListener('beforeunload', e => {
+  if (_dirty && _bundleObj) { e.preventDefault(); e.returnValue = ''; }
+});
+
+function showHistory() {
+  document.getElementById('history-modal')?.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'history-modal';
+  const box = document.createElement('div');
+  box.className = 'modal-box';
+  box.style.cssText = 'width:520px;max-height:80vh;display:flex;flex-direction:column;gap:8px';
+  const h = document.createElement('h2'); h.textContent = '🕘 History'; box.appendChild(h);
+  const note = document.createElement('div');
+  note.style.cssText = 'font-size:10px;color:var(--text2)';
+  note.textContent = _bundleObj
+    ? 'Every change to this analysis, newest first. Click Save to keep this list inside the file.'
+    : 'Every change made in this session, newest first. Shared files keep this list inside the file.';
+  box.appendChild(note);
+  const list = document.createElement('div');
+  list.style.cssText = 'overflow:auto;border:1px solid var(--border);border-radius:4px;padding:4px;min-height:80px';
+  if (!_history.length) { list.textContent = 'No changes yet.'; list.style.cssText += ';font-size:11px;color:var(--text2);padding:10px'; }
+  let lastDay = '';
+  [..._history].reverse().forEach(e => {
+    const d = new Date(e.t), day = d.toLocaleDateString();
+    if (day !== lastDay) {
+      const hd = document.createElement('div');
+      hd.style.cssText = 'font-size:10px;font-weight:600;color:var(--text2);margin:6px 4px 2px';
+      hd.textContent = day; list.appendChild(hd); lastDay = day;
+    }
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;font-size:11px;padding:2px 4px';
+    const t = document.createElement('span');
+    t.style.cssText = 'color:var(--text2);flex-shrink:0;font-variant-numeric:tabular-nums';
+    t.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const w = document.createElement('span'); w.textContent = e.what;
+    row.append(t, w);
+    if (!e.prior && _bundleObj) {
+      const tag = document.createElement('span');
+      tag.style.cssText = 'margin-left:auto;font-size:9px;color:#f5a623;flex-shrink:0';
+      tag.textContent = _dirty ? 'unsaved' : 'saved';
+      row.appendChild(tag);
+    }
+    list.appendChild(row);
+  });
+  box.appendChild(list);
+  const act = document.createElement('div'); act.className = 'modal-actions';
+  const close = document.createElement('button'); close.className = 'primary'; close.textContent = 'Close';
+  close.onclick = () => overlay.remove();
+  act.appendChild(close); box.appendChild(act);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  overlay.tabIndex = -1; overlay.focus();
+  overlay.addEventListener('keydown', e => { if (e.key === 'Escape') overlay.remove(); });
 }
 
 /*@lite:begin*/
@@ -7460,6 +7680,45 @@ function importGates(templateJson) {
   }
 }
 
+// ─── TEMPLATE-TO-FILE MATCHING ──────────────────────────────────────────────
+// A template file is matched to a loaded file by, in order: the same file name; the same tube name
+// (the instrument's test name, e.g. "LL panel B cell tube"); then the antibody panel, i.e. a loaded
+// file that has every fluorescent channel the template's gates use, preferring the closest panel.
+// Templates saved before tube/panel were recorded still match by panel, derived from their gates.
+function _templatePanel(tf) {
+  if (tf.panel && tf.panel.length) return new Set(tf.panel);
+  const used = new Set();
+  const walk = n => { used.add(n.xParamName); used.add(n.yParamName); (n.children || []).forEach(walk); };
+  (tf.gates || []).forEach(walk);
+  return new Set([...used].filter(n => n && isFluorescentParameter(n)));
+}
+function _panelFit(tf, f) {
+  // null if the file lacks a channel the template needs; otherwise how many extra channels it has
+  const need = _templatePanel(tf), have = new Set(f.params.map(p => p.name));
+  for (const n of need) if (!have.has(n)) return null;
+  return _filePanel(f).filter(n => !need.has(n)).length;
+}
+// Returns [{ file, how }] aligned with tfs; each loaded file is used at most once.
+function _matchTemplateFiles(tfs) {
+  const out = tfs.map(() => ({ file: null, how: '' })), used = new Set();
+  const base = s => (s || '').toLowerCase().replace(/.*[/\\]/, '');
+  const pass = (how, pick) => tfs.forEach((tf, i) => {
+    if (out[i].file) return;
+    const f = pick(tf);
+    if (f) { out[i] = { file: f, how }; used.add(f.fileId); }
+  });
+  const free = () => fcsFiles.filter(f => !used.has(f.fileId));
+  pass('file name', tf => free().find(f => base(f.filename) === base(tf.sourceFile)));
+  pass('tube name', tf => { const t = _normTube(tf.tube); return t ? free().find(f => _normTube(_fileTubeName(f)) === t) : null; });
+  pass('antibody panel', tf => {
+    const fits = free().map(f => ({ f, extra: _panelFit(tf, f) })).filter(x => x.extra !== null);
+    if (!fits.length || !_templatePanel(tf).size) return null;
+    const best = Math.min(...fits.map(x => x.extra)), top = fits.filter(x => x.extra === best);
+    return top.length === 1 ? top[0].f : null;     // a tie is ambiguous: leave it for the user
+  });
+  return out;
+}
+
 function _showImportTargetPicker(tmpl) {
   const existing = document.getElementById('import-target-modal');
   if (existing) existing.remove();
@@ -7471,11 +7730,17 @@ function _showImportTargetPicker(tmpl) {
       <h2>Import Into Which File?</h2>
       <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Choose which loaded file to import the gates into:</p>
       <div id="import-target-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
-        ${fcsFiles.map(f => `
+        ${(() => {
+          const tf = { sourceFile: tmpl.sourceFile, tube: tmpl.tube, panel: tmpl.panel, gates: tmpl.gates };
+          const best = _matchTemplateFiles([tf])[0];
+          const rows = fcsFiles.map(f => ({ f, fit: _panelFit(tf, f), best: best.file && best.file.fileId === f.fileId }));
+          rows.sort((a, b) => (b.best - a.best) || ((a.fit === null) - (b.fit === null)) || ((a.fit ?? 0) - (b.fit ?? 0)));
+          return rows.map(({ f, fit, best: isBest }) => `
           <button onclick="_importGatesV2Into(${f.fileId});document.getElementById('import-target-modal').remove()"
-            style="text-align:left;padding:6px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:11px">
-            ${f.filename || 'File '+f.fileId} <span style="color:var(--text2)">(${(f.nEvents||0).toLocaleString()} events)</span>
-          </button>`).join('')}
+            style="text-align:left;padding:6px 10px;background:var(--bg2);border:1px solid ${isBest ? 'var(--accent)' : 'var(--border)'};border-radius:4px;cursor:pointer;font-size:11px">
+            ${isBest ? '★ ' : ''}${f.filename || 'File '+f.fileId} <span style="color:var(--text2)">(${(f.nEvents||0).toLocaleString()} events${_fileTubeName(f) ? ', ' + _fileTubeName(f) : ''}${isBest ? ', best match by ' + best.how : fit === null ? ', missing channels' : ''})</span>
+          </button>`).join('');
+        })()}
       </div>
       <div class="modal-actions">
         <button onclick="document.getElementById('import-target-modal').remove()">Cancel</button>
@@ -7497,6 +7762,7 @@ function _importGatesV2Into(fileId) {
 }
 
 function _importGatesV2(tmpl, fileObj) {
+  pushUndo(`Imported template "${tmpl.name || 'template'}"`);
   const paramMap = {};
   fileObj.params.forEach((p, i) => { paramMap[p.name] = i; });
 
@@ -7634,12 +7900,9 @@ function _importGatesV2(tmpl, fileObj) {
 }
 
 function _importGatesV3(tmpl) {
-  // Build auto file mapping: template sourceFile → loaded fcsFile (by basename match)
-  const mapping = tmpl.files.map(tf => {
-    const srcBase = (tf.sourceFile || '').toLowerCase().replace(/.*[/\\]/, '');
-    const match = fcsFiles.find(f => (f.filename || '').toLowerCase().replace(/.*[/\\]/, '') === srcBase);
-    return { templateFile: tf, fcsFile: match || null };
-  });
+  // Auto file mapping: file name, then tube name, then antibody panel
+  const matched = _matchTemplateFiles(tmpl.files);
+  const mapping = tmpl.files.map((tf, i) => ({ templateFile: tf, fcsFile: matched[i].file, how: matched[i].how }));
 
   // Show a matching dialog
   const existing = document.getElementById('import-v3-modal');
@@ -7650,22 +7913,25 @@ function _importGatesV3(tmpl) {
 
   const rowsHTML = mapping.map((m, i) => `
     <tr>
-      <td style="padding:4px 8px;font-size:11px;color:var(--text2)">${m.templateFile.sourceFile || 'File '+i}</td>
+      <td style="padding:4px 8px;font-size:11px;color:var(--text2)">${m.templateFile.sourceFile || 'File '+i}${m.templateFile.tube ? `<br><span style="font-size:10px">${m.templateFile.tube}</span>` : ''}</td>
       <td style="padding:4px 8px">
         <select id="import-v3-sel-${i}" style="width:100%;font-size:11px;padding:2px 4px;background:var(--bg2);color:var(--text1);border:1px solid var(--border);border-radius:3px">
-          ${fcsFiles.map(f => `<option value="${f.fileId}" ${m.fcsFile && m.fcsFile.fileId===f.fileId?'selected':''}>${f.filename||'File '+f.fileId}</option>`).join('')}
+          <option value="" ${m.fcsFile ? '' : 'selected'}>(skip this section)</option>
+          ${fcsFiles.map(f => `<option value="${f.fileId}" ${m.fcsFile && m.fcsFile.fileId===f.fileId?'selected':''}>${f.filename||'File '+f.fileId}${_fileTubeName(f) ? ' — ' + _fileTubeName(f) : ''}</option>`).join('')}
         </select>
       </td>
+      <td style="padding:4px 8px;font-size:10px;color:${m.fcsFile ? 'var(--accent)' : '#e0a33e'}">${m.fcsFile ? 'by ' + m.how : 'no match'}</td>
     </tr>`).join('');
 
   overlay.innerHTML = `
     <div class="modal-box" style="width:520px">
       <h2>Import Multi-File Template</h2>
-      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Match each template file to a loaded file:</p>
+      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Each template file is matched to a loaded file by file name, then tube name, then antibody panel. Change any match, or skip a section:</p>
       <table style="width:100%;border-collapse:collapse;margin-bottom:12px">
         <thead><tr>
           <th style="text-align:left;padding:4px 8px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border)">Template file</th>
           <th style="text-align:left;padding:4px 8px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border)">Loaded file</th>
+          <th style="text-align:left;padding:4px 8px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border)">Matched</th>
         </tr></thead>
         <tbody>${rowsHTML}</tbody>
       </table>
@@ -7684,6 +7950,7 @@ function _doImportV3(indices) {
   const modal = document.getElementById('import-v3-modal');
   const tmpl = modal && modal._tmpl;
   if (!tmpl) return;
+  pushUndo(`Imported template "${tmpl.name || 'template'}"`);
 
   // Build file map: template file index → fcsFile
   const fileMap = indices.map(i => {
@@ -9062,6 +9329,6 @@ self.addEventListener('message', async (e) => {
 
 </script>
 <!--@lite:end-->
-<script id="flowng-bundle-loader">(function () { var b = document.getElementById('flowng-bundle'); if (!(b && b.textContent.slice(0, 200).indexOf('"sterile":true') >= 0) && typeof capturePristineSource === 'function') capturePristineSource(); })(); loadBundleIfPresent();</script>
+<script id="flowng-bundle-loader">if (typeof capturePristineSource === 'function') capturePristineSource(); loadBundleIfPresent();</script>
 </body>
 </html>
