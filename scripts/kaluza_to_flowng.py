@@ -456,16 +456,10 @@ def convert(path, args):
     out_plots = []
     for p in plots:
         d = p["d"]
-        f_names = {n["name"] for n in files[d]["gates"]}
-
-        def collect(nodes):
-            for n in nodes:
-                f_names.add(n["name"])
-                collect(n.get("children", []))
-        collect(files[d]["gates"])
+        f_names = {n["name"] for n in iter_nodes(files[d]["gates"])}
         for b in files[d]["booleans"]:
             f_names.add(b["name"])
-            collect(b["children"])
+            f_names.update(n["name"] for n in iter_nodes(b["children"]))
         inp = cname(p["g"], p["gd"]) if p["g"] else "All Events"
         if inp != "All Events" and inp not in f_names:
             warn(f"plot on sheet '{p['sheet']}' uses missing population '{inp}'; using All Events")
@@ -484,18 +478,19 @@ def convert(path, args):
     return tmpl
 
 
+def iter_nodes(nodes):
+    """Every gate under `nodes`, depth first."""
+    for n in nodes:
+        yield n
+        yield from iter_nodes(n.get("children", []))
+
+
 def self_check(tmpl):
     for fi, f in enumerate(tmpl["files"]):
-        names, boolnames = [], {b["name"] for b in f["booleans"]}
-
-        def walk(nodes, parent):
-            for n in nodes:
-                names.append(n["name"])
-                walk(n["children"], n["name"])
-        walk(f["gates"], None)
+        names = [n["name"] for n in iter_nodes(f["gates"])]
         for b in f["booleans"]:
             names.append(b["name"])
-            walk(b["children"], b["name"])
+            names.extend(n["name"] for n in iter_nodes(b["children"]))
         if len(set(names)) != len(names):
             warn(f"file {fi}: gate names are not unique")
 
@@ -535,9 +530,7 @@ def main():
     out.write_text(json.dumps(tmpl, indent=2))
     print(f"wrote {out}")
     for i, f in enumerate(tmpl["files"]):
-        def count(nodes):
-            return sum(1 + count(n["children"]) for n in nodes)
-        ng = count(f["gates"]) + sum(count(b["children"]) for b in f["booleans"])
+        ng = sum(1 for _ in iter_nodes(f["gates"])) + sum(sum(1 for _ in iter_nodes(b["children"])) for b in f["booleans"])
         npl = sum(1 for p in tmpl["plots"] if p["fileIndex"] == i)
         print(f"  file {i}: {f['sourceFile']!r}: {ng} gates, {len(f['booleans'])} booleans, {npl} plots")
     print(f"  tabs: {', '.join(dict.fromkeys(p['tabName'] for p in tmpl['plots']))}")
