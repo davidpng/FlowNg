@@ -109,6 +109,13 @@ Supported formats: FCS 2.0, 3.0, 3.1, and Beckman Coulter LMD files
 - View raw FCS metadata: Open the settings menu to browse keyword/value pairs
 - Compensation status indicated in status bar
 
+**Workspaces and the Pool**
+- Opened files wait in the **Pool** (top of the sidebar). A **workspace** is one loaded template with its own files, tabs, plots, gates, undo history and change log; the workspace strip above the tabs switches between them. Gates and edits in one workspace never touch another
+- **Import Template** matches the template to files in the Pool and moves the matched files into a new workspace. Import the same template again (with other files from the Pool) for a second case; each import is its own workspace. A file belongs to one workspace only
+- Tick files in the Pool, then **Open** puts them in a blank workspace (one default plot per file), or **Starter** generates a starter template: one tab per tube with Time vs CD45, FSC-H vs FSC-A, SSC vs FSC-A and SSC vs CD45 (Y vs X), no gates. A plot is skipped, and reported, when its channel is missing. Gate it, then **Export Template** to keep it
+- Closing a workspace (✕) removes its files and gates. Rename one with a double-click
+- **Export Shareable HTML** writes every workspace into the one file (the Pool is not included); a file made by an older version opens as a single workspace
+
 **Export & Templates**
 - Save gating hierarchies as reusable templates for batch processing
 - Templates capture gate definitions, colors, and hierarchy for import into other files
@@ -120,6 +127,7 @@ Supported formats: FCS 2.0, 3.0, 3.1, and Beckman Coulter LMD files
 
 The top bar has two groups, each in two rows, laid out like FlowNg2. They appear once a file is loaded.
 
+- **Workspace strip** (above the plot tabs): one tab per workspace, plus **+ Template** to import one
 - **Left group, row 1 (drawing tools):** Select, Polygon, Rect, Quadrant, Edit, Comp, Delete
 - **Left group, row 2:** Autocomp, Undo, Redo, History, + Add Plot
 - **Right group, row 1 (files and templates):** Open FCS File, Export Template, Import Template, Export Shareable HTML
@@ -517,6 +525,9 @@ A: Yes. **Export Shareable HTML** writes one HTML with the event data, compensat
 **Q: How do I change an axis's cofactor?**  
 A: FlowNG computes a starting cofactor for every fluorescent channel when a file loads (the OTflow algorithm). To change one, select the plot and drag the blue marker on its arcsinh axis, or right-click the plot and type a value.
 
+**Q: Can I load several templates at once?**  
+A: Yes. Each imported template becomes a workspace with its own files, tabs and plots; switch with the workspace strip. Load all your files first (they wait in the Pool), then import the templates one by one.
+
 **Q: Can I work with multiple files at once?**  
 A: Yes. Load several files; each appears as its own root in the population tree, plots can be pointed at any loaded file (right-click a plot's header), and the tabs across the top are pages of plots, not files. Gates can be copied between files, and a template with several sections can be matched to several files at once.
 
@@ -525,6 +536,7 @@ A: Yes. Load several files; each appears as its own root in the population tree,
 ## Changelog
 
 ### Latest
+- **Workspaces**: several templates loaded at once, each with its own files, tabs, plots, undo and history; a Pool for unassigned files; a starter-template generator; shared files hold every workspace
 - **Shared analyses**: Export Shareable HTML, a locked viewer option, Save and History inside shared files, privacy-aware export (renamed tubes, no dates or IDs), single-copy compressed event storage, and a size estimate
 - **Gating**: quadrant gates, undo/redo, Autocomp, right-click menu with copy/cut/paste, sibling reorder that sets colour priority, axis cofactor handles, and a "+" dot toggle
 - **Plots**: blended density plots coloured by population, decade ticks, bins slider, labeled toolbar and tooltips; the zoom tool was removed

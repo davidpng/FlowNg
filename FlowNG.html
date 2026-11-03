@@ -671,6 +671,35 @@
     align-self: center; line-height: 1.2; white-space: nowrap;
   }
   .tab-add:hover { color: #fff; border-color: #888; }
+  /* ── Workspace strip (one workspace per loaded template, above the plot tabs) ── */
+  .ws-strip {
+    display: flex; align-items: center; gap: 6px; flex-shrink: 0; overflow-x: auto; scrollbar-width: none;
+    padding: 6px 12px; background: var(--surface); border-bottom: 1px solid var(--border);
+  }
+  .ws-strip::-webkit-scrollbar { display: none; }
+  .ws-label { font-size: 10px; letter-spacing: 0.5px; color: var(--text2); flex-shrink: 0; }
+  .ws-item { display: flex; align-items: stretch; flex-shrink: 0; }
+  .ws-main, .ws-close {
+    font: inherit; font-size: 11px; color: #ddd; cursor: pointer; background: #1b1d27; border: 1px solid #444;
+  }
+  .ws-main { padding: 3px 8px; border-right: none; border-radius: 12px 0 0 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-close { padding: 3px 7px; border-radius: 0 12px 12px 0; color: #997; }
+  .ws-item.active .ws-main, .ws-item.active .ws-close { background: #1f4b3f; border-color: #3f8f78; color: #fff; }
+  .ws-item.dirty .ws-main::after { content: ' •'; color: #f5a623; }
+  .ws-close:hover { color: #fff; }
+  .ws-add {
+    padding: 3px 10px; font-size: 11px; color: #aaa; cursor: pointer; flex-shrink: 0;
+    border: 1px dashed #555; border-radius: 12px; background: transparent; white-space: nowrap;
+  }
+  .ws-add:hover { color: #fff; border-color: #888; }
+  body.sterile .ws-close, body.sterile .ws-add { display: none !important; }
+  .pool-node { border: 1px dashed var(--border2); border-radius: 6px; padding: 4px; margin-bottom: 8px; }
+  .pool-head { display: flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; color: var(--text2); padding: 2px 2px 4px; letter-spacing: 0.5px; }
+  .pool-head button, .pool-row button { font-size: 10px; padding: 1px 6px; }
+  .pool-row { display: flex; align-items: center; gap: 5px; padding: 3px 4px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+  .pool-row:hover { background: var(--surface2); }
+  .pool-row .pool-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pool-row .pool-tube { font-size: 9px; color: var(--text2); }
 </style>
 </head>
 <body>
@@ -773,6 +802,11 @@
       <kbd>Esc</kbd> while dragging cancels; the change is undoable and appears in History<br>
       <kbd>Right-click</kbd> the plot to type an exact value<br>
       No marker? The plot is not selected, another tool is active, or that axis is not ASINH<br>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">WORKSPACES AND POOL</div>
+      Opened files wait in the <b>Pool</b>; a <b>workspace</b> is one template with its own files, plots and undo<br>
+      <kbd>↑ Import Template</kbd> — matches the Pool's files and opens a new workspace<br>
+      <kbd>Open</kbd> / <kbd>Starter</kbd> (Pool, on ticked files) — blank workspace / starter plots per tube<br>
+      <kbd>Click</kbd> a workspace tab — switch · <kbd>Dbl-click</kbd> — rename · <kbd>✕</kbd> — close (removes its files and gates)<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">TABS</div>
       <kbd>Right-click</kbd> or <kbd>Dbl-click</kbd> tab — rename<br>
       <kbd>✕</kbd> — close tab · <kbd>+ Tab</kbd> — add a tab<br>
@@ -796,6 +830,7 @@
   </div>
 
   <div class="workspace">
+    <div class="ws-strip" id="ws-strip" style="display:none"></div>
     <div class="tab-strip" id="tab-strip" style="display:none">
       <div class="tab-add" onclick="addTab()" title="Add a new tab (a separate page of plots)">+ Tab</div>
     </div>
@@ -915,9 +950,175 @@ function _markInteraction() {
   _interactionTimer = setTimeout(() => { _interactionPending = false; }, 150);
 }
 
+// ─── WORKSPACES ───────────────────────────────────────────────────────────────
+// A workspace is one loaded template with its own files, tabs, plots, undo stack and history. The
+// globals fcsFiles / plots / tabs / activeTabId / _undoStack / _redoStack / _history / _dirty always
+// hold the ACTIVE workspace, so the rest of the app is unaware of workspaces; switchWorkspace() swaps
+// them. Loaded files that no workspace owns yet sit in poolFiles. A file belongs to one place only.
+let poolFiles = [];
+let workspaces = [];
+let activeWsId = null;
+let wsIdCounter = 0;
+const _poolSel = new Set();     // fileIds ticked in the Pool
+
+const _DROP_STUB = `
+    <div class="drop-zone" id="drop-zone" style="display:none">
+      <div class="drop-box" id="drop-box">
+        <div class="drop-icon">🔬</div>
+        <div class="drop-title">Drop an FCS file here</div>
+        <div class="drop-sub">or click to browse</div><br>
+        <button class="primary" onclick="document.getElementById('file-input').click()">Open FCS File</button>
+      </div>
+    </div>`;
+function _sortFiles(a) { return a.sort((x, y) => x.filename.localeCompare(y.filename, undefined, { numeric: true, sensitivity: 'base' })); }
+function getActiveWs() { return workspaces.find(w => w.id === activeWsId) || null; }
+function _anyDirty() { return _dirty || workspaces.some(w => w.dirty); }
+
+// Copy the live globals into the active workspace object.
+function _wsSave() {
+  const w = getActiveWs(); if (!w) return;
+  w.files = fcsFiles; w.tabs = tabs; w.activeTabId = activeTabId; w.tabIdCounter = tabIdCounter;
+  w.plots = plots; w.plotIdCounter = plotIdCounter; w.undo = _undoStack; w.redo = _redoStack;
+  w.history = _history; w.dirty = _dirty; w.authorTemplate = _authorTemplate; w.activeFileId = _activeFileId;
+}
+// Point the live globals at workspace w (null: an empty view).
+function _wsLoad(w) {
+  fcsFiles = w ? w.files : [];
+  fcsData = fcsFiles[0] || null;
+  tabs = w ? w.tabs : []; activeTabId = w ? w.activeTabId : null; tabIdCounter = w ? w.tabIdCounter : 0;
+  plots = w ? w.plots : []; plotIdCounter = w ? w.plotIdCounter : 0;
+  _undoStack = w ? w.undo : []; _redoStack = w ? w.redo : []; _history = w ? w.history : [];
+  _dirty = w ? w.dirty : false; _authorTemplate = w ? w.authorTemplate : null;
+  activeWsId = w ? w.id : null;
+  const f = (w && getFileById(w.activeFileId)) || fcsFiles[0] || null;
+  _activeFileId = _focusedFileId = _contextFileId = f ? f.fileId : null;
+  _paramRanges = f ? f.paramRanges : new Map();
+  colorPrecedence = f ? f.colorPrecedence : [];
+  rebuildPopulationsView();
+}
+function _resetCanvasArea() {
+  document.getElementById('canvas-area').innerHTML = _DROP_STUB;
+  const db = document.getElementById('drop-box');
+  if (db) db.addEventListener('click', e => { if (e.target === db) document.getElementById('file-input').click(); });
+}
+// Show or hide the parts of the page that need files / a workspace; draw the placeholder when
+// files are loaded but no workspace is open.
+function _syncChrome() {
+  const hasWs = !!getActiveWs(), anyFiles = poolFiles.length > 0 || workspaces.length > 0;
+  const show = (id, on, disp) => { const e = document.getElementById(id); if (e) e.style.display = on ? (disp || '') : 'none'; };
+  show('sidebar', anyFiles, 'flex');
+  show('status-bar', anyFiles, 'flex');
+  show('global-toolbar', hasWs, 'flex');
+  ['add-plot-btn', 'settings-btn', 'export-btn', 'history-btn', 'share-btn'].forEach(id => show(id, hasWs));
+  show('import-btn', anyFiles);
+  show('ws-strip', anyFiles, 'flex');
+  show('tab-strip', hasWs && tabs.length > 0, 'flex');
+  if (!hasWs) {
+    _resetCanvasArea();
+    if (!anyFiles) show('drop-zone', true);
+    else {
+      const n = poolFiles.length;
+      document.getElementById('canvas-area').insertAdjacentHTML('beforeend', `
+        <div id="ws-empty" style="margin:auto;max-width:440px;text-align:center;color:var(--text2);font-size:12px;line-height:1.8">
+          <div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:6px">${n} file${n === 1 ? '' : 's'} in the Pool, no workspace open</div>
+          Import a template (<b>↑ Import Template</b>) to match these files to it, or:<br>
+          <button onclick="openPoolInWorkspace()">Open in a blank workspace</button>
+          <button onclick="generateStarterWorkspace()">Generate a starter template</button>
+        </div>`);
+    }
+  }
+  _syncHeaderHeight();
+}
+// Make workspace w the live one and rebuild the page for it.
+function _wsActivate(w) {
+  _wsSave();
+  _wsLoad(w);
+  _resetCanvasArea();
+  plots.forEach(pl => {
+    renderPlotCard(pl);
+    const c = document.getElementById(`plot-card-${pl.id}`);
+    if (c && pl.tabId !== activeTabId) c.style.display = 'none';
+  });
+  _syncChrome(); renderWsStrip(); renderTabStrip(); renderTabPlots(); renderPopList(); updateAllPopSelects();
+  updateUndoButtons(); updateSaveButton(); invalidateSpatialCache(true);
+}
+function switchWorkspace(id) {
+  if (id === activeWsId) return;
+  const w = workspaces.find(x => x.id === id); if (!w) return;
+  _wsActivate(w);
+}
+function _uniqueWsName(base) {
+  let name = base, n = 2;
+  while (workspaces.some(w => w.name === name)) name = `${base} (${n++})`;
+  return name;
+}
+// Creates a workspace owning `files` (moved out of the Pool) and makes it the live one.
+function createWorkspace(name, files, templateName) {
+  _wsSave();
+  const ids = new Set(files.map(f => f.fileId));
+  poolFiles = poolFiles.filter(f => !ids.has(f.fileId));
+  ids.forEach(i => _poolSel.delete(i));
+  const w = { id: wsIdCounter++, name: _uniqueWsName(name || 'Workspace'), templateName: templateName || '',
+    files: _sortFiles([...files]), tabs: [], activeTabId: null, tabIdCounter: 0, plots: [], plotIdCounter: 0,
+    undo: [], redo: [], history: [], dirty: false, authorTemplate: null, activeFileId: null };
+  workspaces.push(w);
+  _wsActivate(w);
+  return w;
+}
+function renameWorkspace(id) {
+  const w = workspaces.find(x => x.id === id); if (!w) return;
+  const name = prompt('Workspace name:', w.name);
+  if (name && name.trim()) { w.name = name.trim(); renderWsStrip(); }
+}
+// Closing removes the workspace's files and gates for good.
+function closeWorkspace(id) {
+  const w = workspaces.find(x => x.id === id); if (!w) return;
+  if (!confirm(`Close workspace "${w.name}"? Its files, gates and plots will be removed.`)) return;
+  _wsSave();
+  w.files.forEach(f => { if (f._computeWorker) f._computeWorker.terminate(); });
+  workspaces = workspaces.filter(x => x !== w);
+  if (id === activeWsId) {
+    activeWsId = null;     // the closed workspace must not be saved again
+    const next = workspaces[workspaces.length - 1] || null;
+    if (next) _wsActivate(next);
+    else { _wsLoad(null); _syncChrome(); renderWsStrip(); renderTabStrip(); renderPopList(); updateUndoButtons(); updateSaveButton(); }
+  } else { renderWsStrip(); }
+  showToast(`Closed workspace "${w.name}"`);
+}
+function renderWsStrip() {
+  const el = document.getElementById('ws-strip'); if (!el) return;
+  el.innerHTML = '<span class="ws-label">WORKSPACES</span>';
+  workspaces.forEach(w => {
+    const item = document.createElement('div');
+    const dirty = w.id === activeWsId ? _dirty : w.dirty;
+    item.className = 'ws-item' + (w.id === activeWsId ? ' active' : '') + (dirty ? ' dirty' : '');
+    const nFiles = w.id === activeWsId ? fcsFiles.length : w.files.length;
+    item.innerHTML = `<button class="ws-main" title="Click to switch to this workspace (${nFiles} file${nFiles === 1 ? '' : 's'}). Double-click or right-click to rename."></button>` +
+      `<button class="ws-close" title="Close this workspace and remove its files and gates">✕</button>`;
+    const main = item.querySelector('.ws-main');
+    main.textContent = w.name;
+    main.addEventListener('click', () => switchWorkspace(w.id));
+    main.addEventListener('dblclick', () => renameWorkspace(w.id));
+    main.addEventListener('contextmenu', e => { e.preventDefault(); renameWorkspace(w.id); });
+    item.querySelector('.ws-close').addEventListener('click', e => { e.stopPropagation(); closeWorkspace(w.id); });
+    el.appendChild(item);
+  });
+  if (!workspaces.length) {
+    const hint = document.createElement('span'); hint.className = 'ws-label';
+    hint.textContent = 'none yet: import a template or open files in a workspace';
+    el.appendChild(hint);
+  }
+  const add = document.createElement('div');
+  add.className = 'ws-add'; add.textContent = '+ Template';
+  add.title = 'Import a template into a new workspace (uses the files in the Pool)';
+  add.onclick = () => { const i = document.getElementById('import-input'); if (i) i.click(); };
+  el.appendChild(add);
+}
+
 // ─── FILE LOOKUP HELPERS ──────────────────────────────────────────────────────
 function getFileById(fileId) {
-  return fcsFiles.find(f => f.fileId === fileId) || null;
+  return fcsFiles.find(f => f.fileId === fileId) || poolFiles.find(f => f.fileId === fileId) ||
+    workspaces.reduce((hit, w) => hit || w.files.find(f => f.fileId === fileId), null) || null;
 }
 function getFileForPlot(plot) {
   return getFileById(plot.fileId) || fcsFiles[0] || null;
@@ -1839,9 +2040,8 @@ function finalizeFCSLoad(data, colMins, colMaxs, cofactors,
     fileObj.colPercentile05[paramIdx] = samples[Math.max(0, idx)];
   }
 
-  fcsFiles.push(fileObj);
-  fcsFiles.sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
-  fcsData = fcsFiles[0]; // shim always points to first (alphabetically) file
+  poolFiles.push(fileObj);      // new files wait in the Pool until a workspace takes them
+  _sortFiles(poolFiles);
 
   showProgress(99, 'Building plots…');
   setTimeout(() => {
@@ -1905,69 +2105,32 @@ function addFileToSession(fileObj) {
   fileObj._rootPopId = rootPop.id;
   rebuildPopulationsView();
 
-  // fcsFiles.length is unreliable here: a multi-file open pushes every file before any addFileToSession runs.
-  const isFirstFile = tabs.length === 0;
-
-  if (isFirstFile) {
-    // First file: initialize the full UI
-    document.getElementById('drop-zone').style.display = 'none';
-    document.getElementById('sidebar').style.display = 'flex';
-    document.getElementById('add-plot-btn').style.display = '';
-    document.getElementById('settings-btn').style.display = '';
-    document.getElementById('global-toolbar').style.display = 'flex'; _syncHeaderHeight();
-    document.getElementById('status-bar').style.display = 'flex';
-    { const b = document.getElementById('export-btn'); if (b) b.style.display = ''; }
-    { const b = document.getElementById('import-btn'); if (b) b.style.display = ''; }
-    { const b = document.getElementById('share-btn'); if (b) b.style.display = ''; }
-    { const b = document.getElementById('history-btn'); if (b) b.style.display = ''; }
-
-    // Reset tabs and plots
-    tabs = []; activeTabId = null; tabIdCounter = 0;
-    addTab('Tab 1');
-    const strip = document.getElementById('tab-strip');
-    if (strip) strip.style.display = 'flex';
-    plots = []; plotIdCounter = 0;
-
-    // Restore drop-zone node inside canvas-area (gets wiped by innerHTML)
-    document.getElementById('canvas-area').innerHTML = `
-      <div class="drop-zone" id="drop-zone" style="display:none">
-        <div class="drop-box" id="drop-box">
-          <div class="drop-icon">🔬</div>
-          <div class="drop-title">Drop an FCS file here</div>
-          <div class="drop-sub">or click to browse</div><br>
-          <button class="primary" onclick="document.getElementById('file-input').click()">Open FCS File</button>
-        </div>
-      </div>`;
-    const db = document.getElementById('drop-box');
-    if (db) db.addEventListener('click', e => { if (e.target === db) document.getElementById('file-input').click(); });
-  }
-
-  // Activate context for this file's params/ranges
-  _contextFileId = fileObj.fileId;
-  _focusedFileId = fileObj.fileId;
-  _activeFileId = fileObj.fileId;
-  _paramRanges = fileObj.paramRanges;
-
-  renderPopList();
-  addPlot(0, 1, fileObj.fileId);
-  updateAllFileSelects();
-  showToast('Loaded: ' + fileObj.filename);
-
   // Per-file compute worker for off-thread gate evaluation
   initComputeWorkerForFile(fileObj);
   sendDataToComputeWorkerForFile(fileObj);
 
+  // The file waits in the Pool: show the chrome, the Pool node and (when no workspace is open) the placeholder.
+  _syncChrome(); renderWsStrip(); renderPopList();
+  showToast('Loaded: ' + fileObj.filename);
 }
 
 function removeFile(fileId) {
+  // A file waiting in the Pool just goes away; one in the live workspace also takes its plots with it.
+  const pidx = poolFiles.findIndex(f => f.fileId === fileId);
+  if (pidx !== -1) {
+    const pf = poolFiles[pidx];
+    if (pf._computeWorker) pf._computeWorker.terminate();
+    poolFiles.splice(pidx, 1); _poolSel.delete(fileId);
+    _syncChrome(); renderWsStrip(); renderPopList();
+    showToast(`Removed: ${pf.filename}`);
+    return;
+  }
   const idx = fcsFiles.findIndex(f => f.fileId === fileId);
   if (idx === -1) return;
   const fileObj = fcsFiles[idx];
 
   // Terminate that file's compute worker
   if (fileObj._computeWorker) fileObj._computeWorker.terminate();
-
-  // Collect all population IDs from this file
 
   // Remove plots that belong to this file
   const removedPlotIds = plots.filter(p => p.fileId === fileId).map(p => p.id);
@@ -1992,18 +2155,14 @@ function removeFile(fileId) {
     _paramRanges = lastFile ? lastFile.paramRanges : new Map();
   }
 
-  if (fcsFiles.length === 0) {
-    // No files left — reset to welcome screen
-    populations = []; plots = []; plotIdCounter = 0;
-    tabs = []; activeTabId = null; tabIdCounter = 0;
-    document.getElementById('sidebar').style.display = 'none';
-    document.getElementById('global-toolbar').style.display = 'none';
-    document.getElementById('status-bar').style.display = 'none';
+  if (fcsFiles.length === 0 && poolFiles.length === 0 && workspaces.length <= 1) {
+    // No files left anywhere: back to the welcome screen
+    workspaces = []; _wsLoad(null);
     document.getElementById('canvas-area').innerHTML = '';
-    document.getElementById('drop-zone').style.display = '';
-    document.getElementById('tab-strip').style.display = 'none';
+    _syncChrome();
   }
 
+  renderWsStrip();
   renderPopList();
   renderTabStrip();
   renderTabPlots();
@@ -2017,6 +2176,7 @@ let colorPrecedence = [];
 function renderPopList() {
   const el = document.getElementById('pop-list');
   el.innerHTML = '';
+  renderPoolNode(el);
   fcsFiles.forEach(fileObj => {
     // ── File root row (filename) ──────────────────────────────────────────
     const fileRoot = buildFileRootNode(fileObj);
@@ -2039,6 +2199,44 @@ function renderPopList() {
   // Re-apply active-file highlight after DOM rebuild
   if (_activeFileId != null) setActiveFile(_activeFileId);
   renderPrecedenceList();
+}
+
+// The Pool: files that are loaded but belong to no workspace yet. Tick some and open them in a
+// blank workspace or generate a starter template; Import Template matches templates against them.
+function renderPoolNode(el) {
+  if (!poolFiles.length) return;
+  const box = document.createElement('div');
+  box.className = 'pool-node';
+  const head = document.createElement('div');
+  head.className = 'pool-head';
+  const nSel = poolFiles.filter(f => _poolSel.has(f.fileId)).length;
+  head.innerHTML = `<span style="flex:1" title="Loaded files that belong to no workspace yet">POOL (${poolFiles.length})${nSel ? ` · ${nSel} ticked` : ''}</span>` +
+    `<button title="Open the ticked files (or all of them) in a new blank workspace" onclick="openPoolInWorkspace()">Open</button>` +
+    `<button title="Generate a starter template from the ticked files (or all of them): one tab per tube with Time, FSC and SSC plots" onclick="generateStarterWorkspace()">Starter</button>`;
+  box.appendChild(head);
+  poolFiles.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'pool-row';
+    row.dataset.fileId = f.fileId;
+    const tube = _fileTubeName(f);
+    row.innerHTML = `<input type="checkbox" ${_poolSel.has(f.fileId) ? 'checked' : ''} title="Tick to include in Open / Starter">` +
+      `<span class="pool-name"></span>` +
+      (getActiveWs() ? `<button title="Add this file to the open workspace" class="pool-add">+</button>` : '');
+    const nm = row.querySelector('.pool-name');
+    nm.textContent = shortFilename(f.filename, 24);
+    nm.title = f.filename + (tube ? ' — ' + tube : '');
+    if (tube) { const t = document.createElement('div'); t.className = 'pool-tube'; t.textContent = tube; nm.appendChild(t); }
+    row.querySelector('input').addEventListener('change', e => {
+      if (e.target.checked) _poolSel.add(f.fileId); else _poolSel.delete(f.fileId);
+      renderPopList();
+    });
+    const add = row.querySelector('.pool-add');
+    if (add) add.addEventListener('click', e => { e.stopPropagation(); addPoolFileToWorkspace(f.fileId); });
+    row.addEventListener('dblclick', () => showMetadata(f.fileId));
+    row.addEventListener('contextmenu', e => { e.preventDefault(); showFileContextMenu(f.fileId, e.clientX, e.clientY); });
+    box.appendChild(row);
+  });
+  el.appendChild(box);
 }
 
 function setActiveFile(fileId) {
@@ -2129,7 +2327,7 @@ function showFileContextMenu(fileId, cx, cy) {
       onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
       🔍 View Metadata
     </div>
-    ${_gateClipboard ? `<div class="ctx-item" onclick="pasteGate(${(getFileById(fileId) || {})._rootPopId});document.getElementById('file-ctx-menu')?.remove()"
+    ${_gateClipboard && !poolFiles.some(f => f.fileId === fileId) ? `<div class="ctx-item" onclick="pasteGate(${(getFileById(fileId) || {})._rootPopId});document.getElementById('file-ctx-menu')?.remove()"
       style="padding:6px 14px;font-size:11px;cursor:pointer;color:var(--text)"
       onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
       📋 Paste gate here
@@ -4906,7 +5104,7 @@ function highlightOrRecreateGatePlot(gateId) {
 // ─── UNDO / REDO ─────────────────────────────────────────────────────────────
 // Snapshots cover every file's gate tree (event-index arrays are shared, never mutated in
 // place), colour precedence and spillover matrix. pushUndo() is called just BEFORE a change.
-const _undoStack = [], _redoStack = [];
+let _undoStack = [], _redoStack = [];
 const UNDO_MAX = 50;
 
 function _clonePop(p) {
@@ -4954,7 +5152,7 @@ function _restoreState(snap) {
 // Every analysis change is logged (what + when, no user names) so a shared file can show what was
 // done to it. Saving a shared file writes this log into the file; entries loaded from a file are
 // marked prior. Undo and redo are logged too.
-const _history = [];
+let _history = [];
 const HISTORY_MAX = 500;
 let _dirty = false;
 function logChange(what) {
@@ -6138,7 +6336,12 @@ function _boolExprToNames(expr, fileObj) {
   if (typeof expr === 'number') { const p = fileObj.populations.find(q => q.id === expr); return p ? p.name : '?'; }
   return { op: expr.op, args: expr.args.map(a => _boolExprToNames(a, fileObj)) };
 }
-function _buildTemplateV3(tmplName) {
+// Every file that belongs to a workspace (the Pool is not shared), in workspace order.
+function _shareFiles() { _wsSave(); return workspaces.flatMap(w => w.files); }
+// ws: a workspace to snapshot (default: the live one).
+function _buildTemplateV3(tmplName, ws) {
+  if (ws && ws.id === activeWsId) ws = null;
+  const V = ws || { files: fcsFiles, plots, tabs };
   function buildGateTree(fileObj, popId, parentName) {
     return fileObj.populations
       .filter(p => p.gateInfo && p.parentId === popId)
@@ -6159,7 +6362,7 @@ function _buildTemplateV3(tmplName) {
   }
 
   // Build per-file entries
-  const filesArr = fcsFiles.map(fileObj => {
+  const filesArr = V.files.map(fileObj => {
     const rootPop = fileObj.populations.find(p => p._isAll);
     const rootPopId = rootPop ? rootPop.id : 0;
     const prOut = {};
@@ -6192,11 +6395,11 @@ function _buildTemplateV3(tmplName) {
   });
 
   // Build tab name lookup
-  const tabNameById = {}; tabs.forEach(t => { tabNameById[t.id] = t.name; });
-  const plotSnapshots = plots.map(pl => {
+  const tabNameById = {}; V.tabs.forEach(t => { tabNameById[t.id] = t.name; });
+  const plotSnapshots = V.plots.map(pl => {
     const fileObj = getFileForPlot(pl);
     if (!fileObj) return null;
-    const fileIndex = fcsFiles.indexOf(fileObj);
+    const fileIndex = V.files.indexOf(fileObj);
     // Zoom is held in display space; save it in raw units so it survives scale/cofactor changes.
     let zoom;
     if (pl.zoomX || pl.zoomY) {
@@ -6314,10 +6517,10 @@ async function _gunzipB64(b64) {
 
 /*@lite:begin*/
 function showShareDialog() {
-  if (!fcsFiles.length) { showToast('Load a file first'); return; }
+  if (!_shareFiles().length) { showToast('Load a file first'); return; }
   const existing = document.getElementById('share-modal');
   if (existing) existing.remove();
-  const total = fcsFiles.reduce((n, f) => n + f.nEvents, 0);
+  const total = _shareFiles().reduce((n, f) => n + f.nEvents, 0);
   const overlay = document.createElement('div');
   overlay.id = 'share-modal';
   overlay.className = 'modal-overlay';
@@ -6338,7 +6541,7 @@ function showShareDialog() {
           <a href="#" onclick="document.querySelectorAll('.share-fname').forEach((e,i)=>e.value='Sample '+(i+1));return false" style="color:var(--accent)">Use Sample 1, 2, …</a>
         </div>
         <div style="color:#f5a623;margin-bottom:4px">File names often contain patient names or accession numbers. Rename them here. Names, dates and IDs in the FCS header are removed unless you tick the metadata option below.</div>
-        <div style="max-height:30vh;overflow:auto">${fcsFiles.map((f, i) => `<input class="share-fname" data-i="${i}" type="text" style="width:100%;margin-bottom:4px" value="${(f.filename || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">`).join('')}</div>
+        <div style="max-height:30vh;overflow:auto">${_shareFiles().map((f, i) => `<input class="share-fname" data-i="${i}" type="text" style="width:100%;margin-bottom:4px" value="${(f.filename || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">`).join('')}</div>
       </div>
       <label style="font-size:11px;display:block;margin-bottom:6px">
         <input id="share-meta" type="checkbox"> Include full FCS header metadata (may contain patient/sample IDs)</label>
@@ -6352,7 +6555,7 @@ function showShareDialog() {
     </div>`;
   document.body.appendChild(overlay);
   // Large files make huge HTML; default to a cap above 500k events per file.
-  if (fcsFiles.some(f => f.nEvents > 500000)) document.getElementById('share-maxev').value = 500000;
+  if (_shareFiles().some(f => f.nEvents > 500000)) document.getElementById('share-maxev').value = 500000;
   _updateShareEstimate();
   _measureShareRatios();
 }
@@ -6366,7 +6569,7 @@ let _shareAppBytes = 0;
 
 async function _measureShareRatios() {
   _shareAppBytes = new Blob([_docSource()]).size;
-  for (const f of fcsFiles) {
+  for (const f of _shareFiles()) {
     if (f._shareRatio) continue;
     try {
       const n = Math.min(20000, f.nEvents), P = f.nPar;
@@ -6381,7 +6584,7 @@ async function _measureShareRatios() {
 
 function _estimateShareBytes() {
   const cap = parseInt(document.getElementById('share-maxev').value) || 0;
-  return (_shareAppBytes || 330000) + fcsFiles.reduce((t, f) => {
+  return (_shareAppBytes || 330000) + _shareFiles().reduce((t, f) => {
     const n = cap ? Math.min(cap, f.nEvents) : f.nEvents;
     return t + n * f.nPar * 4 * (f._shareRatio || _SHARE_FALLBACK_RATIO) * (4 / 3);
   }, 0);
@@ -6420,11 +6623,13 @@ async function doExportShareable() {
     }
   }
   try {
-    const template = _buildTemplateV3(name);
+    const sfiles = _shareFiles();
+    const wsOut = workspaces.map(w => ({ name: w.name, templateName: w.templateName, fileIdx: w.files.map(f => sfiles.indexOf(f)),
+      template: _buildTemplateV3(w.name, w), history: w.history.slice(-HISTORY_MAX).map(e => ({ t: e.t, what: e.what })) }));
     const files = [];
-    for (let fi = 0; fi < fcsFiles.length; fi++) {
-      const f = fcsFiles[fi];
-      status.textContent = `Compressing file ${fi + 1} of ${fcsFiles.length}…`;
+    for (let fi = 0; fi < sfiles.length; fi++) {
+      const f = sfiles[fi];
+      status.textContent = `Compressing file ${fi + 1} of ${sfiles.length}…`;
       await new Promise(r => setTimeout(r, 0));
       const { nPar } = f;
       const n = (maxEv && maxEv < f.nEvents) ? maxEv : f.nEvents;
@@ -6457,7 +6662,7 @@ async function doExportShareable() {
       let fname = ((nameInputs[fi] && nameInputs[fi].value.trim()) || f.filename);
       for (let n = 2, base = fname; usedNames.has(fname); n++) fname = `${base} (${n})`;
       usedNames.add(fname);
-      template.files[fi].sourceFile = fname;
+      wsOut.forEach((wo, wi) => { const j = wo.fileIdx.indexOf(fi); if (j >= 0) wo.template.files[j].sourceFile = fname; });
       files.push({
         filename: fname,
         params: f.params, nEvents: n, nPar, totalEvents: f.nEvents,
@@ -6480,11 +6685,13 @@ async function doExportShareable() {
     }
     status.textContent = 'Building HTML…';
     await new Promise(r => setTimeout(r, 0));
-    const bundle = { format: 1, sterile, history: _history.slice(-HISTORY_MAX).map(e => ({ t: e.t, what: e.what })), name, created: new Date().toISOString(), files, template };
+    // format 2: a list of workspaces over one shared list of files. template/history mirror the first
+    // workspace so a one-workspace file still has the old top-level shape.
+    const bundle = { format: 2, sterile, history: wsOut[0].history, name, created: new Date().toISOString(), files, template: wsOut[0].template, workspaces: wsOut };
     // Original file names must not survive anywhere in the bundle (template gate parents, plots, ...).
     let jsonText = JSON.stringify(bundle);
     const esc = x => JSON.stringify(x).slice(1, -1);
-    fcsFiles.forEach((f, fi) => {
+    sfiles.forEach((f, fi) => {
       if (f.filename && f.filename !== files[fi].filename) jsonText = jsonText.split(esc(f.filename)).join(esc(files[fi].filename));
     });
     const json = jsonText.replace(/</g, '\\u003c');
@@ -6560,8 +6767,7 @@ async function loadBundleIfPresent() {
         populations: [], paramRanges: new Map(), colorPrecedence: [],
         _computeWorker: null, _computeWorkerReady: false, _pendingGateCallbacks: new Map(),
       };
-      fcsFiles.push(fileObj);
-      fcsData = fcsFiles[0];
+      poolFiles.push(fileObj);      // moved into its workspace once all files are decoded
       // Rebuild the compensated columns from the raw copy and the stored spillover matrix.
       if (!b.data && b.spillMatrix && !recomputeCompensation(b.spillMatrix.map(r => [...r]), fileObj.fileId)) {
         console.warn('FlowNG: could not recompensate; showing uncompensated data');
@@ -6577,14 +6783,24 @@ async function loadBundleIfPresent() {
       fileMap.push(fileObj);
     }
     hideProgress();
-    _authorTemplate = bundle.template;
     _bundleInfo = bundle;
     _bundleObj = bundle;
     _authorSpill = bundle.files.map(f => f.spillMatrixAuthor || f.spillMatrix || null);
-    _history.length = 0;
-    (bundle.history || []).forEach(e => _history.push({ t: e.t, what: e.what, prior: true }));
-    _dirty = false;
-    _applyTemplateV3(bundle.state || bundle.template, fileMap);   // a saved file reopens where it was left
+    // format 2 lists its workspaces; a format 1 file is one workspace over all its files
+    const wsDefs = bundle.workspaces || [{ name: bundle.name, fileIdx: bundle.files.map((_, i) => i),
+      template: bundle.template, state: bundle.state, history: bundle.history }];
+    let firstWs = null;
+    wsDefs.forEach(wd => {
+      const wfiles = wd.fileIdx.map(i => fileMap[i]);
+      const w = createWorkspace(wd.name || bundle.name || 'Workspace', wfiles, wd.templateName || '');
+      firstWs = firstWs || w;
+      _authorTemplate = wd.template;
+      _history.length = 0;
+      (wd.history || []).forEach(e => _history.push({ t: e.t, what: e.what, prior: true }));
+      _applyTemplateV3(wd.state || wd.template, wfiles);   // a saved file reopens where it was left
+      _dirty = false;
+    });
+    if (firstWs) switchWorkspace(firstWs.id);
     const reset = document.getElementById('reset-author-btn');
     if (reset) reset.style.display = '';
     const sv = document.getElementById('save-btn');
@@ -6661,14 +6877,24 @@ async function saveDaughter() {
   }
   try {
     const b = { ..._bundleObj };
+    const sfiles = _shareFiles();
     b.files = _bundleObj.files.map(bf => {
-      const f = fcsFiles.find(x => x.filename === bf.filename);
+      const f = sfiles.find(x => x.filename === bf.filename);
       return { ...bf,
         spillMatrixAuthor: bf.spillMatrixAuthor || bf.spillMatrix || null,
         spillMatrix: f && f.spillMatrix ? f.spillMatrix.map(r => [...r]) : bf.spillMatrix };
     });
-    b.state = _buildTemplateV3(name);
-    b.history = _history.slice(-HISTORY_MAX).map(e => ({ t: e.t, what: e.what }));
+    // Every workspace that came from this file is saved; one made later from other files is not part of it.
+    const saveable = workspaces.filter(w => w.authorTemplate && w.files.every(f => b.files.some(bf => bf.filename === f.filename)));
+    if (saveable.length < workspaces.length) showToast(`${workspaces.length - saveable.length} workspace(s) built from other files were not saved`, 6000);
+    b.format = 2;
+    b.workspaces = saveable.map(w => ({
+      name: w.name, templateName: w.templateName,
+      fileIdx: w.files.map(f => b.files.findIndex(bf => bf.filename === f.filename)),
+      template: w.authorTemplate, state: _buildTemplateV3(w.name, w),
+      history: w.history.slice(-HISTORY_MAX).map(e => ({ t: e.t, what: e.what })),
+    }));
+    if (b.workspaces.length) { b.template = b.workspaces[0].template; b.state = b.workspaces[0].state; b.history = b.workspaces[0].history; }
     b.saved = new Date().toISOString();
     const json = JSON.stringify(b).replace(/</g, '\\u003c');
     let src = _pristineSource;
@@ -6685,7 +6911,7 @@ async function saveDaughter() {
       a.download = fileName; a.click();
       where = `Downloaded "${fileName}" (${(blob.size / 1048576).toFixed(1)} MB) to your browser's download folder`;
     }
-    _bundleObj = b; _dirty = false; updateSaveButton();
+    _bundleObj = b; _dirty = false; workspaces.forEach(w => { w.dirty = false; }); renderWsStrip(); updateSaveButton();
     showToast(where, 8000);
   } catch (err) {
     console.error(err);
@@ -6694,7 +6920,7 @@ async function saveDaughter() {
 }
 
 window.addEventListener('beforeunload', e => {
-  if (_dirty && _bundleObj) { e.preventDefault(); e.returnValue = ''; }
+  if (_anyDirty() && _bundleObj) { e.preventDefault(); e.returnValue = ''; }
 });
 
 function showHistory() {
@@ -6756,7 +6982,7 @@ function importGates(templateJson) {
   try { tmpl = JSON.parse(templateJson); } catch(e) { showToast('Invalid JSON file'); return; }
   if (!tmpl.files) { showToast(tmpl.gates ? 'This is a version 2 template; FlowNG reads version 3 templates' : 'Not a FlowNG template', 5000); return; }
   if (tmpl.version !== 3) { showToast(`Unsupported template version ${tmpl.version || '(none)'}; FlowNG reads version 3 templates`, 5000); return; }
-  if (fcsFiles.length === 0) { showToast('Load an FCS file before importing a template'); return; }
+  if (poolFiles.length === 0) { showToast('Load flow files (they wait in the Pool) before importing a template'); return; }
   _importGatesV3(tmpl);
 }
 
@@ -6778,8 +7004,9 @@ function _panelFit(tf, f) {
   for (const n of need) if (!have.has(n)) return null;
   return _filePanel(f).filter(n => !need.has(n)).length;
 }
-// Returns [{ file, how }] aligned with tfs; each loaded file is used at most once.
-function _matchTemplateFiles(tfs) {
+// Returns [{ file, how }] aligned with tfs; each file is used at most once. Candidates are the Pool's files.
+function _matchTemplateFiles(tfs, pool) {
+  pool = pool || poolFiles;
   const out = tfs.map(() => ({ file: null, how: '' })), used = new Set();
   const base = s => (s || '').toLowerCase().replace(/.*[/\\]/, '');
   const pass = (how, pick) => tfs.forEach((tf, i) => {
@@ -6787,7 +7014,7 @@ function _matchTemplateFiles(tfs) {
     const f = pick(tf);
     if (f) { out[i] = { file: f, how }; used.add(f.fileId); }
   });
-  const free = () => fcsFiles.filter(f => !used.has(f.fileId));
+  const free = () => pool.filter(f => !used.has(f.fileId));
   pass('file name', tf => free().find(f => base(f.filename) === base(tf.sourceFile)));
   pass('tube name', tf => { const t = _normTube(tf.tube); return t ? free().find(f => _normTube(_fileTubeName(f)) === t) : null; });
   pass('antibody panel', tf => {
@@ -6817,7 +7044,7 @@ function _importGatesV3(tmpl) {
       <td style="padding:4px 8px">
         <select id="import-v3-sel-${i}" style="width:100%;font-size:11px;padding:2px 4px;background:var(--bg2);color:var(--text1);border:1px solid var(--border);border-radius:3px">
           <option value="" ${m.fcsFile ? '' : 'selected'}>(skip this section)</option>
-          ${fcsFiles.map(f => `<option value="${f.fileId}" ${m.fcsFile && m.fcsFile.fileId===f.fileId?'selected':''}>${f.filename||'File '+f.fileId}${_fileTubeName(f) ? ' — ' + _fileTubeName(f) : ''}</option>`).join('')}
+          ${poolFiles.map(f => `<option value="${f.fileId}" ${m.fcsFile && m.fcsFile.fileId===f.fileId?'selected':''}>${f.filename||'File '+f.fileId}${_fileTubeName(f) ? ' — ' + _fileTubeName(f) : ''}</option>`).join('')}
         </select>
       </td>
       <td style="padding:4px 8px;font-size:10px;color:${m.fcsFile ? 'var(--accent)' : '#e0a33e'}">${m.fcsFile ? 'by ' + m.how : 'no match'}</td>
@@ -6825,8 +7052,8 @@ function _importGatesV3(tmpl) {
 
   overlay.innerHTML = `
     <div class="modal-box" style="width:520px">
-      <h2>Import Multi-File Template</h2>
-      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Each template file is matched to a loaded file by file name, then tube name, then antibody panel. Change any match, or skip a section:</p>
+      <h2>Import Template as a New Workspace</h2>
+      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Each template file is matched to a file in the Pool by file name, then tube name, then antibody panel. Change any match, or skip a section. The matched files move into the new workspace:</p>
       <table style="width:100%;border-collapse:collapse;margin-bottom:12px">
         <thead><tr>
           <th style="text-align:left;padding:4px 8px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border)">Template file</th>
@@ -6850,17 +7077,93 @@ function _doImportV3(indices) {
   const modal = document.getElementById('import-v3-modal');
   const tmpl = modal && modal._tmpl;
   if (!tmpl) return;
-  pushUndo(`Imported template "${tmpl.name || 'template'}"`);
 
-  // Build file map: template file index → fcsFile
+  // Build file map: template file index → fcsFile (from the Pool)
   const fileMap = indices.map(i => {
     const sel = document.getElementById(`import-v3-sel-${i}`);
     const fid = sel ? parseInt(sel.value) : NaN;
-    return isNaN(fid) ? null : getFileById(fid);
+    return isNaN(fid) ? null : (poolFiles.find(f => f.fileId === fid) || null);
   });
+  const used = fileMap.filter(Boolean);
+  if (!used.length) { showToast('Pick at least one file for the template'); return; }
+  if (new Set(used.map(f => f.fileId)).size !== used.length) { showToast('A file can match only one template section'); return; }
 
   modal.remove();
+  const ws = createWorkspace(tmpl.name || 'Template', used, tmpl.name || '');
+  pushUndo(`Imported template "${tmpl.name || 'template'}"`);
   _applyTemplateV3(tmpl, fileMap);
+}
+
+// ─── POOL ACTIONS ────────────────────────────────────────────────────────────
+// Files for an action: the ones passed in, else the ticked ones, else every file in the Pool.
+function _poolTargets(ids) {
+  let list = ids ? poolFiles.filter(f => ids.includes(f.fileId)) : poolFiles.filter(f => _poolSel.has(f.fileId));
+  if (!list.length && !ids) list = [...poolFiles];
+  return list;
+}
+// A blank workspace (no template): one tab, one default plot per file.
+function openPoolInWorkspace(ids) {
+  const files = _poolTargets(ids);
+  if (!files.length) { showToast('No files in the Pool'); return null; }
+  const w = createWorkspace(files.length === 1 ? (_fileTubeName(files[0]) || 'Workspace') : 'Workspace', files);   // never a file name: names go into shared files
+  addTab('Tab 1');
+  files.forEach(f => addPlot(0, 1, f.fileId));
+  return w;
+}
+// Moves a Pool file into the live workspace with a default plot.
+function addPoolFileToWorkspace(fileId) {
+  const f = poolFiles.find(x => x.fileId === fileId); if (!f) return;
+  if (!getActiveWs()) { openPoolInWorkspace([fileId]); return; }
+  poolFiles = poolFiles.filter(x => x !== f); _poolSel.delete(fileId);
+  fcsFiles.push(f); _sortFiles(fcsFiles); fcsData = fcsFiles[0];
+  rebuildPopulationsView();
+  _syncChrome(); renderWsStrip(); renderPopList();
+  addPlot(0, 1, f.fileId);
+  showToast(`Added ${f.filename} to "${getActiveWs().name}"`);
+}
+
+// ─── STARTER TEMPLATE ────────────────────────────────────────────────────────
+// Roles are found by channel name (or stain label) so Beckman (FS-A, SS-A, FL1-A with the marker in
+// $PnS) and BD (FSC-A, SSC-A) files both work. A plot whose channel is missing is skipped and reported.
+const _STARTER_ROLES = {
+  FSA:  p => _anyName(p, /^(FSC|FS)[-_ ]?(A|INT|AREA)([-_ ]?(LOG|LIN))?$/i),
+  FSH:  p => _anyName(p, /^(FSC|FS)[-_ ]?(H|PEAK|HEIGHT)([-_ ]?(LOG|LIN))?$/i),
+  SSA:  p => _anyName(p, /^(SSC|SS)[-_ ]?(A|INT|AREA)([-_ ]?(LOG|LIN))?$/i),
+  TIME: p => _anyName(p, /^TIME$/i),
+  CD45: p => _anyName(p, /(^|[^A-Z0-9])CD45(?![A-Z0-9])/i),
+};
+const _anyName = (p, re) => [p.name, p.longName].some(n => re.test(n || ''));
+function _starterParam(f, role) {
+  const i = f.params.findIndex(_STARTER_ROLES[role]);
+  return i >= 0 ? i : null;
+}
+// Y vs X, the flow convention: [yRole, xRole].
+const _STARTER_PLOTS = [['TIME', 'CD45'], ['FSH', 'FSA'], ['SSA', 'FSA'], ['SSA', 'CD45']];
+const _STARTER_LABEL = { FSA: 'FSC-A', FSH: 'FSC-H', SSA: 'SSC-A', TIME: 'Time', CD45: 'CD45' };
+function generateStarterWorkspace(ids) {
+  const files = _poolTargets(ids);
+  if (!files.length) { showToast('No files in the Pool'); return null; }
+  const w = createWorkspace(files.length === 1 && _fileTubeName(files[0]) ? 'Starter: ' + _fileTubeName(files[0]) : 'Starter template', files, 'Starter');
+  let made = 0; const skipped = [];
+  files.forEach(f => {
+    const tab = _fileTubeName(f) || `Tube ${files.indexOf(f) + 1}`;   // tab names go into templates and shared files
+    let tabId = null;
+    _STARTER_PLOTS.forEach(([yr, xr]) => {
+      const yi = _starterParam(f, yr), xi = _starterParam(f, xr);
+      if (xi === null || yi === null) { skipped.push(`${tab}: ${_STARTER_LABEL[yr]} vs ${_STARTER_LABEL[xr]} (no ${xi === null ? _STARTER_LABEL[xr] : _STARTER_LABEL[yr]} channel)`); return; }
+      if (tabId === null) {
+        const existing = tabs.find(t => t.name === tab);
+        tabId = existing ? existing.id : addTab(tab);
+        activeTabId = tabId;
+      }
+      addPlot(xi, yi, f.fileId); made++;
+    });
+  });
+  if (tabs.length) { activeTabId = tabs[0].id; renderTabStrip(); renderTabPlots(); }
+  renderPopList();
+  if (skipped.length) console.warn('FlowNG starter template: skipped plots', skipped);
+  showToast(`Starter template: ${made} plot(s) on ${tabs.length} tab(s)` + (skipped.length ? `; skipped ${skipped.length} (no matching channel): ${skipped.slice(0, 3).join('; ')}${skipped.length > 3 ? '…' : ''}` : ''), skipped.length ? 9000 : 3500);
+  return { workspace: w, made, skipped };
 }
 /*@lite:end*/
 // Applies a v3 template to already-loaded files. fileMap[i] is the fcsFile for tmpl.files[i].
@@ -7217,9 +7520,9 @@ function loadDemo() {
     paramRanges: new Map(),
     _computeWorker: null, _computeWorkerReady: false, _pendingGateCallbacks: new Map()
   });
-  fcsFiles.push(fileObj);
-  fcsData = fcsFiles[0];
+  poolFiles.push(fileObj);
   addFileToSession(fileObj);
+  openPoolInWorkspace([fileObj.fileId]);
   // Add a second plot automatically
   setTimeout(() => addPlot(2, 3, fileObj.fileId), 0);
   showToast('Demo loaded — try gating lymphocytes on FSC vs SSC first');
