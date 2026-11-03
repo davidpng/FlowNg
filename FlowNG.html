@@ -747,7 +747,7 @@
     </div><!-- /sidebar-content -->
     <div class="kb-hints">
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin-bottom:4px;letter-spacing:0.5px">TOOLBAR</div>
-      <kbd>Select</kbd> — drag a gate to move it; with a plot selected, drag the blue marker on an arcsinh axis to set its cofactor<br>
+      <kbd>Select</kbd> — drag a gate to move it; select a plot (click its top bar) to get blue cofactor markers on its ASINH axes<br>
       <kbd>Polygon</kbd> — click points, click the first point (or double-click) to close<br>
       <kbd>Rect</kbd> — drag a rectangle<br>
       <kbd>Quadrant</kbd> — click to place a crosshair (Q1–Q4 clockwise from upper right); drag it with Select or Edit<br>
@@ -757,7 +757,7 @@
       <kbd>Autocomp</kbd> — outline a population that should sit flat; spillover is fitted for you<br>
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> undo · <kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Y</kbd> redo<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">PLOTS</div>
-      <kbd>Click</kbd> header — select plot<br>
+      <kbd>Click</kbd> a plot's top bar — select (highlight) it; the cofactor markers need this<br>
       <kbd>Click</kbd> empty canvas — deselect all<br>
       <kbd>Shift</kbd>+<kbd>Click</kbd> — range-select plots<br>
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Click</kbd> — toggle selection<br>
@@ -767,6 +767,12 @@
       <kbd>Right-click</kbd> canvas — axis range / cofactor<br>
       <kbd>Right-click</kbd> header — switch source file<br>
       <kbd>Slider</kbd> — density bins per axis<br>
+      <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">ARCSINH COFACTOR</div>
+      1. Click the plot's <b>top bar</b> (the row with the population menu and bins slider); the plot gets a blue outline<br>
+      2. With <kbd>Select</kbd> active, a blue marker appears on each <b>ASINH</b> axis: drag it along the axis to set that channel's cofactor live<br>
+      <kbd>Esc</kbd> while dragging cancels; the change is undoable and appears in History<br>
+      <kbd>Right-click</kbd> the plot to type an exact value<br>
+      No marker? The plot is not selected, another tool is active, or that axis is not ASINH<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">TABS</div>
       <kbd>Right-click</kbd> or <kbd>Dbl-click</kbd> tab — rename<br>
       <kbd>✕</kbd> — close tab · <kbd>+ Tab</kbd> — add a tab<br>
@@ -775,7 +781,7 @@
       <kbd>×</kbd> — delete gate and children<br>
       <kbd>Right-click</kbd> row — rename / color, copy, cut, paste, delete<br>
       <kbd>Shift</kbd>+<kbd>Click</kbd> row — rename / color<br>
-      <kbd>Right-click</kbd> file row — paste a gate at the top level
+      <kbd>Right-click</kbd> file row — paste a gate at the top level<br>
       <kbd>Drag</kbd> row onto another — re-parent<br>
       <kbd>Drag</kbd> ⠿ above/below a sibling — reorder; the lower one wins shared cells<br>
       <kbd>Click</kbd> name — jump to the gate's plot<br>

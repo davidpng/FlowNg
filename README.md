@@ -127,7 +127,7 @@ The top bar has two groups, each in two rows, laid out like FlowNg2. They appear
 
 | Tool | Function |
 |------|----------|
-| **Select** | Drag a gate to move it; with a plot selected, drag an arcsinh axis marker to set its cofactor |
+| **Select** | Drag a gate to move it; with a plot selected (click its top bar), drag an arcsinh axis marker to set its cofactor |
 | **Polygon** | Click to draw a polygon gate |
 | **Rect** | Drag to draw a rectangular gate |
 | **Quadrant** | Click to place a crosshair that creates Q1–Q4; drag the crosshair with Select or Edit |
@@ -150,7 +150,7 @@ The panel at the bottom of the left sidebar is a live cheat sheet that matches t
 
 | Control | What it does |
 |---|---|
-| **Select** | Drag a gate to move it. With a plot selected, drag the blue marker on an arcsinh axis to change that channel's cofactor |
+| **Select** | Drag a gate to move it. With a plot selected (click its top bar), drag the blue marker on an arcsinh axis to change that channel's cofactor |
 | **Polygon** | Click points around a population; click the first point (or double-click) to close the gate |
 | **Rect** | Drag a rectangle |
 | **Quadrant** | Click to place a crosshair (Q1–Q4, clockwise from upper right); drag it with Select or Edit |
@@ -164,7 +164,7 @@ The panel at the bottom of the left sidebar is a live cheat sheet that matches t
 
 | Control | What it does |
 |---|---|
-| Click a plot's header | Select that plot |
+| Click a plot's top bar (the row with the population menu and bins slider) | Select (highlight) that plot; the cofactor markers need this |
 | Click empty canvas | Deselect all |
 | `Shift`+click / `Ctrl`or`⌘`+click | Range-select / toggle plots; axis, population and bin changes then apply to every selected plot (the LOG/LIN/ASINH scale stays per plot) |
 | `Del` / `⌫` | Remove the selected plot(s) |
@@ -209,7 +209,12 @@ Both tools need a file with a spillover matrix (an FCS `$SPILLOVER` keyword, or 
 Autocomp fits one pair at a time from the population you outline; it is not the full AutoSpill algorithm that learns a whole matrix from single-stain controls. The outline is temporary and never becomes a gate.
 
 ### Changing a Cofactor by Dragging
-Select a plot in **Select** mode. Each arcsinh axis shows a small blue marker. Drag it along the axis: the position is geometric (1 to 100,000), the ticks and gate outlines follow live, and the zero point stays pinned at 20% of the axis. On release every gate is re-evaluated and every plot of that channel adopts the new cofactor. `Esc` during the drag puts the old value back, and **Undo** reverses a committed change.
+1. **Select the plot** by clicking its **top bar** (the row with the population menu and the bins slider). The plot gets a blue outline. Clicking inside the plot itself does not select it.
+2. Make sure **Select** is the active tool. Each **ASINH** axis of the selected plot now shows a small blue marker (axes set to LIN or LOG have none).
+3. Drag the marker along the axis: the position is geometric (1 to 100,000), the ticks and gate outlines follow live, and the zero point stays pinned at 20% of the axis.
+4. On release every gate is re-evaluated and every plot of that channel adopts the new cofactor. `Esc` during the drag puts the old value back, and **Undo** reverses a committed change.
+
+If the markers are missing, check that the plot is highlighted, that Select is active, and that the axis button reads ASINH. You can also right-click a plot and type a cofactor in the Axis Range dialog.
 
 ### Copying Gates
 Right-click a gate row and choose **Copy** (or **Cut**), then right-click another row, in any loaded file, and choose **Paste**. The copy is a new independent gate under that row. It is matched to the target file by parameter name, so pasting into a file that lacks one of its channels is refused with a message. Quadrant gates cannot be copied.

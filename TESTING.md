@@ -121,7 +121,7 @@ Boolean gates (BTM has some): after import, their counts are non-zero and change
 | 5.2 | `undo()` | Matrix and counts return to the originals |
 | 5.3 | Autocomp on a flat population: add a CD5 PC5.5 vs CD20 PB plot of Lymphs, `setGlobalMode('autocomp')`, `fire` clicks at (3000,-300), (200000,-300), (200000,1500), (3000,1500), then the first point again | Toast "already flat"; no Undo entry and nothing added to History |
 | 5.4 | Autocomp on a sloped region: points (-1000,-1000), (300000,-1000), (300000,100000), (-1000,100000) | Coefficient changes (measured 0 to about -0.051); toast and History show before and after; `undo()` restores 0 |
-| 5.5 | Cofactor handle: `setGlobalMode('pan')`, select an asinh plot (`card.classList.add('selected')`, then `renderPlot`), dispatch `mousedown` on `.cf-handle-x`, then `mousemove` and `mouseup` on `window` at a different x | The channel's cofactor changes (measured 300 to 5,508 when dragged to 75% of the axis), gates are re-evaluated, History "Set cofactor of ..."; `undo()` restores. A `keydown` Escape on `window` mid-drag restores the old value with no history entry |
+| 5.5 | Cofactor handle: `setGlobalMode('pan')`, select an asinh plot the way a user does (`card.querySelector('.plot-header').click()`; clicking the canvas does not select), then wait a moment, dispatch `mousedown` on `.cf-handle-x`, then `mousemove` and `mouseup` on `window` at a different x | The channel's cofactor changes (measured 300 to 5,508 when dragged to 75% of the axis), gates are re-evaluated, History "Set cofactor of ..."; `undo()` restores. A `keydown` Escape on `window` mid-drag restores the old value with no history entry |
 
 ## 6. Plots, tabs, tree
 
