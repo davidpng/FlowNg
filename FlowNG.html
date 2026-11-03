@@ -857,6 +857,11 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// Safari has no requestIdleCallback / cancelIdleCallback; a bare reference to a missing global throws.
+if (typeof window.requestIdleCallback !== 'function') {
+  window.requestIdleCallback = cb => setTimeout(() => cb({ didTimeout: false, timeRemaining: () => 0 }), 1);
+  window.cancelIdleCallback = id => clearTimeout(id);
+}
 // 19-color palette with maximum contrast on white background
 // Based on Kelly's 22 colors of maximum contrast, excluding white-like variants
 // Kelly's 22 colours of maximum contrast, minus white (plots are on a white background) — as FlowNg2.
