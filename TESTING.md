@@ -81,7 +81,7 @@ After loading the fixtures (section 1):
 ```js
 JSON.stringify({ plots: plots.length, canvases: document.querySelectorAll('canvas[id^=canvas-]').length, tree: document.querySelectorAll('.pop-tree-node').length })
 ```
-Expected: one default plot per file, canvases equal plots, the tree lists three file roots. Take a screenshot: toolbar shows Select, Polygon, Rect, Quadrant, Edit, Comp, Delete, Autocomp, Undo, Redo; plots are white with decade ticks; no console errors.
+Expected: one default plot per file, canvases equal plots, the tree lists three file roots. Take a screenshot: the top bar has two groups of two rows: left Select, Polygon, Rect, Quadrant, Edit, Comp, Delete / Autocomp, Undo, Redo, History, + Add Plot; right Open FCS File, Export Template, Import Template, Export Shareable HTML / Settings (plus Save and Reset in shared files); at 1,400 px or wider the groups sit side by side (use `resize_window`, and reset it afterwards); plots are white with decade ticks; no console errors.
 
 ## 4. Gating
 

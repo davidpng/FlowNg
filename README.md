@@ -118,6 +118,13 @@ Supported formats: FCS 2.0, 3.0, 3.1, and Beckman Coulter LMD files
 
 ### Toolbar
 
+The top bar has two groups, each in two rows, laid out like FlowNg2. They appear once a file is loaded.
+
+- **Left group, row 1 (drawing tools):** Select, Polygon, Rect, Quadrant, Edit, Comp, Delete
+- **Left group, row 2:** Autocomp, Undo, Redo, History, + Add Plot
+- **Right group, row 1 (files and templates):** Open FCS File, Export Template, Import Template, Export Shareable HTML
+- **Right group, row 2:** Settings, Save and Reset to author's gates (the last two only in shared files)
+
 | Tool | Function |
 |------|----------|
 | **Select** | Drag a gate to move it; with a plot selected, drag an arcsinh axis marker to set its cofactor |
@@ -129,6 +136,7 @@ Supported formats: FCS 2.0, 3.0, 3.1, and Beckman Coulter LMD files
 | **Delete** | Click a gate to remove it |
 | **Autocomp** | Outline a population that should sit flat in the pair of axes; the spillover coefficient between them is fitted automatically |
 | **Undo / Redo** | Step back / forward through gate, colour, order, compensation and cofactor changes |
+| **History** | Every change with its time; shared files keep it when saved |
 
 **Keyboard**: `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y` redo, `Del` remove selected plot(s), `Esc` cancel a gate or deselect.
 
@@ -148,8 +156,8 @@ The panel at the bottom of the left sidebar is a live cheat sheet that matches t
 | **Quadrant** | Click to place a crosshair (Q1–Q4, clockwise from upper right); drag it with Select or Edit |
 | **Edit** | Drag gate corner points to reshape a gate |
 | **Comp** | Drag a plot's top or right edge to tune one spillover coefficient |
-| **Autocomp** | Outline a population that should sit flat; the spillover coefficient is fitted for you |
 | **Delete** | Click a gate to remove it |
+| **Autocomp** | Outline a population that should sit flat; the spillover coefficient is fitted for you |
 | **Undo / Redo** | `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y` |
 
 **Plots**
