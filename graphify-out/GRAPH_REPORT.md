@@ -1,141 +1,144 @@
-# Graph Report - .  (2026-08-01)
+# Graph Report - .  (2026-11-03)
+
+> Built from the code, not the HTML: `python3 scripts/extract_js_for_graphify.py <dir>` pulls the scripts out of `FlowNG.html` (`flowng_main.js`, `compute_worker.js`, `parse_worker.js`) so graphify parses real functions and calls. `source_file` names refer to those extracted files.
 
 ## Corpus Check
-- Corpus is ~39,273 words - fits in a single context window. You may not need a graph.
+- Corpus is ~40,964 words - fits in a single context window. You may not need a graph.
 
 ## Summary
-- 86 nodes · 58 edges · 37 communities (8 shown, 29 thin omitted)
-- Extraction: 76% EXTRACTED · 21% INFERRED · 3% AMBIGUOUS · INFERRED: 12 edges (avg confidence: 0.81)
-- Token cost: 0 input · 87,352 output
+- 272 nodes · 893 edges · 16 communities
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 6 edges (avg confidence: 0.5)
+- Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
-- Gate Evaluation & Spatial Indexing
-- OTflow Statistical Engine
-- FCS Load & Worker Pipeline
-- File Parsing & Compensation
-- WebGL Rendering
-- Adaptive LOD Rendering
-- Background Render Queue
-- Gate Hierarchy Management
-- Display-Space Hit Testing
-- Add File To Session
-- Add Plot
-- Axis Range Modal
-- Global Asinh Cofactor
-- Global Settings
-- Export Template
-- Import V3
-- Full-Res Dot Rendering
-- Export Gates
-- Worker-Side KDE
-- Demo Data Generation
-- Spillover Indices
-- Spillover Zone
-- Import Gates
-- Import Gates V2
-- Import Gates V3
-- Load Demo
-- Canvas Click Handler
-- Canvas Mouse Down
-- Canvas Mouse Move
-- Canvas Mouse Up
-- Populations View Rebuild
-- Remove File
-- Gate Precedence List
-- Worker Data Dispatch
-- Show Axis Range Modal
-- Global Settings Dialog
-- ISAC Reference
+- Gate Editing and Actions
+- Gate Evaluation and Density Plots
+- Template Export and Session State
+- Plot Controls and Axis Ticks
+- Plot Creation and Template Import
+- Kaluza Converter
+- OTflow and Parse Worker
+- Template Matching
+- FCS Load Pipeline
+- Shareable HTML Export
+- File Metadata and Menus
+- Shared File Save and Load
+- Undo, Redo and History
+- Density Colour Maths
+- Compute Worker
+- Plot Expand and Collapse
 
 ## God Nodes (most connected - your core abstractions)
-1. `evalGate` - 6 edges
-2. `runOTflow` - 6 edges
-3. `startOTflowPool` - 5 edges
-4. `initComputeWorkerForFile` - 4 edges
-5. `renderPlot` - 4 edges
-6. `drawDotsWebGL` - 4 edges
-7. `OTflow automatic cofactor optimization` - 4 edges
-8. `parseFCS` - 3 edges
-9. `evalGateAsync` - 3 edges
-10. `gaussianKDE` - 3 edges
+1. `getFileById()` - 31 edges
+2. `showToast()` - 30 edges
+3. `renderPlot()` - 28 edges
+4. `renderAllPlots()` - 27 edges
+5. `renderPopList()` - 24 edges
+6. `_applyTemplateV3()` - 24 edges
+7. `pushUndo()` - 23 edges
+8. `renderPlotCard()` - 22 edges
+9. `getFileForPlot()` - 20 edges
+10. `onCanvasMouseUp()` - 19 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Not intended for clinical diagnostic use` --conceptually_related_to--> `OTflow automatic cofactor optimization`  [AMBIGUOUS]
-  README.md → FlowNG.html
-- `Client-side-only, no-server privacy architecture` --conceptually_related_to--> `Per-file compute worker (gate eval off main thread)`  [INFERRED]
-  README.md → FlowNG.html
-- `Single-file application with zero external libraries` --conceptually_related_to--> `Shared parse-worker-src reused for FCS parsing and OTflow pool`  [INFERRED]
-  README.md → FlowNG.html
-- `FCS 2.0/3.0/3.1 file format` --references--> `parseFCS`  [EXTRACTED]
-  README.md → FlowNG.html
-- `Beckman Coulter LMD file format` --references--> `parseLMD`  [EXTRACTED]
-  README.md → FlowNG.html
+- `renderPlot()` --indirect_call--> `_withEffColor()`  [INFERRED]
+  flowng_main.js → flowng_main.js  _Bridges community 3 → community 2_
+- `_restoreState()` --indirect_call--> `_clonePop()`  [INFERRED]
+  flowng_main.js → flowng_main.js  _Bridges community 12 → community 4_
+- `showPlotFileMenu()` --calls--> `getFileColor()`  [EXTRACTED]
+  flowng_main.js → flowng_main.js  _Bridges community 3 → community 10_
+- `addPlot()` --calls--> `getFileById()`  [EXTRACTED]
+  flowng_main.js → flowng_main.js  _Bridges community 1 → community 4_
+- `buildTreeNode()` --calls--> `getFileById()`  [EXTRACTED]
+  flowng_main.js → flowng_main.js  _Bridges community 1 → community 0_
 
 ## Import Cycles
 - None detected.
 
-## Hyperedges (group relationships)
-- **OTflow parallel worker pool cofactor optimization pipeline** — flowng_loadfcs, flowng_startotflowpool, flowng_runotflow, flowng_computekdesetup, flowng_gaussiankde, flowng_jarquebera, flowng_bartlett, flowng_finalizefcsload [EXTRACTED 0.90]
-- **GPU heatmap rendering pipeline (WebGL)** — flowng_renderplot, flowng_getglrenderer, flowng_createglrenderer, flowng_buildheatmaptexture, flowng_gethmapgl, flowng_drawheatmapgl, flowng_drawdotswebgl [EXTRACTED 0.90]
-- **Gate creation and evaluation flow (main thread + worker)** — flowng_finalizegate, flowng_evalgateasync, flowng_evalgate, flowng_evalgatelod, flowng_evalgatew, flowng_initcomputeworkerforfile, flowng_buildspatialindex [EXTRACTED 0.90]
+## Communities (16 total, 0 thin omitted)
 
-## Communities (37 total, 29 thin omitted)
+### Community 0 - "Gate Editing and Actions"
+Cohesion: 0.14
+Nodes (41): autoCompensate(), beginCofactorDrag(), _boolLeaves(), buildTreeNode(), cancelUndo(), copyGate(), createQuadrant(), cycleDotBoost() (+33 more)
 
-### Community 0 - "Gate Evaluation & Spatial Indexing"
-Cohesion: 0.17
-Nodes (13): buildSpatialIndex, buildSpatialIndexW, Per-file compute worker (gate eval off main thread), evalGate, evalGateAsync, evalGateLOD, evalGateW (worker-side gate eval), finalizeGate (+5 more)
+### Community 1 - "Gate Evaluation and Density Plots"
+Cohesion: 0.10
+Nodes (34): _boolMask(), buildLODSample(), buildSpatialIndex(), _bumpBoolDependents(), calculatePercentile(), copyMetadata(), defaultScale(), _doImportV3() (+26 more)
 
-### Community 1 - "OTflow Statistical Engine"
-Cohesion: 0.22
-Nodes (10): bartlett, computeKDESetup, gaussianKDE, jarqueBera, OTflow automatic cofactor optimization, runOTflow, runOTflowParallel, Scott, D. W. (2015), Multivariate Density Estimation (+2 more)
+### Community 2 - "Template Export and Session State"
+Cohesion: 0.07
+Nodes (29): _asinhZeroFloor(), _authorSpill, _boolText(), colorPrecedence, doExportTemplate(), _drawTickLabel(), dropBox, _effColor() (+21 more)
 
-### Community 2 - "FCS Load & Worker Pipeline"
-Cohesion: 0.33
-Nodes (7): finalizeFCSLoad, LMD files bypass OTflow, use fixed cofactor 300, loadFCS, loadFCSFallback, Shared parse-worker-src reused for FCS parsing and OTflow pool, startOTflowPool, Single-file application with zero external libraries
+### Community 3 - "Plot Controls and Axis Ticks"
+Cohesion: 0.13
+Nodes (30): _axisTicks(), _boolExprToNames(), buildAxisControls(), _buildTemplateV3(), canvasCoords(), _cfToFrac(), changeAxis(), changeBins() (+22 more)
 
-### Community 3 - "File Parsing & Compensation"
+### Community 4 - "Plot Creation and Template Import"
+Cohesion: 0.19
+Nodes (26): addFileToSession(), addPlot(), addTab(), applyAxisRangeModal(), applyGlobalAsinhCofactor(), applyGlobalMinPercentile(), applyGlobalSettings(), _applyTemplateV3() (+18 more)
+
+### Community 5 - "Kaluza Converter"
+Cohesion: 0.16
+Nodes (18): argb_to_hex(), build_datasets(), collect_plots(), convert(), find_protocol(), Gate, infer_tube_labels(), legacy_to_raw() (+10 more)
+
+### Community 6 - "OTflow and Parse Worker"
+Cohesion: 0.20
+Nodes (13): bartlett(), computeKDESetup(), findPeaks(), gaussianKDE(), jarqueBera(), makeLCG(), matInvert(), parseFCS() (+5 more)
+
+### Community 7 - "Template Matching"
 Cohesion: 0.29
-Nodes (7): matInvert, parseFCS, parseLMD, recomputeCompensation, Spectral compensation via $SPILLOVER matrix inversion, Beckman Coulter LMD file format, FCS 2.0/3.0/3.1 file format
+Nodes (11): _filePanel(), _fileTubeName(), importGates(), _importGatesV3(), isFluorescentParameter(), _matchTemplateFiles(), _normTube(), _panelFit() (+3 more)
 
-### Community 4 - "WebGL Rendering"
+### Community 8 - "FCS Load Pipeline"
+Cohesion: 0.35
+Nodes (11): finalizeFCSLoad(), hideProgress(), isLMD(), loadFCS(), loadFCSFallback(), matInvert(), parseFCS(), parseLMD() (+3 more)
+
+### Community 9 - "Shareable HTML Export"
+Cohesion: 0.24
+Nodes (10): capturePristineSource(), _docSource(), _docSourceLive(), doExportShareable(), _estimateShareBytes(), _gzipB64(), _measureShareRatios(), _packEvents() (+2 more)
+
+### Community 10 - "File Metadata and Menus"
+Cohesion: 0.25
+Nodes (9): buildFileRootNode(), filterMeta(), renderMetaRows(), setActiveFile(), shortFilename(), showFileContextMenu(), showFilePicker(), showMetadata() (+1 more)
+
+### Community 11 - "Shared File Save and Load"
 Cohesion: 0.33
-Nodes (6): createGLRenderer, drawDotsWebGL, drawHeatmapGL, getGLRenderer, getHmapGL, Inferno/Viridis colormap (Matplotlib)
+Nodes (6): _applySterileMode(), _gunzipB64(), loadBundleIfPresent(), saveDaughter(), _unpackEvents(), updateSaveButton()
 
-### Community 5 - "Adaptive LOD Rendering"
-Cohesion: 0.50
-Nodes (5): Adaptive heatmap-vs-dot rendering based on population size, buildHeatmapTexture, buildLODSample, Level-of-detail (LOD) rendering with idle-time upgrade, renderPlot
+### Community 12 - "Undo, Redo and History"
+Cohesion: 0.47
+Nodes (6): _clonePop(), logChange(), redo(), _snapshotState(), undo(), updateUndoButtons()
 
-### Community 6 - "Background Render Queue"
-Cohesion: 0.50
-Nodes (4): Background rendering queue for off-tab plots, queueBgRenderPlot, _runBgRenderChunk, scheduleBgRender
+### Community 13 - "Density Colour Maths"
+Cohesion: 0.33
+Nodes (6): _ng2Anchor(), _ng2GrayAnchor(), _ng2Hsl(), _ng2Hue(), _ng2Rgb(), _ng2ToLin()
 
-### Community 7 - "Gate Hierarchy Management"
-Cohesion: 0.67
-Nodes (4): deleteGateAndDescendants, Hierarchical gate parent-child population model, getDescendantGates, reparentGate
+### Community 14 - "Compute Worker"
+Cohesion: 0.70
+Nodes (4): buildSpatialIndexW(), evalGateW(), spatialQueryW(), toDisplayW()
 
-## Ambiguous Edges - Review These
-- `pointInPolygonDisp` → `Ray-cast gate test done in display space, not raw space`  [AMBIGUOUS]
-  FlowNG.html · relation: rationale_for
-- `OTflow automatic cofactor optimization` → `Not intended for clinical diagnostic use`  [AMBIGUOUS]
-  README.md · relation: conceptually_related_to
+### Community 15 - "Plot Expand and Collapse"
+Cohesion: 0.83
+Nodes (4): collapseExistingExpanded(), collapsePlot(), expandPlot(), togglePlotExpand()
 
 ## Knowledge Gaps
-- **50 isolated node(s):** `loadFCSFallback`, `sendDataToComputeWorkerForFile`, `evalGateLOD`, `finalizeGate`, `runOTflowParallel` (+45 more)
+- **17 isolated node(s):** `GATE_COLORS`, `FILE_DOT_COLORS`, `fcsFiles`, `plots`, `populations` (+12 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **29 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **What is the exact relationship between `pointInPolygonDisp` and `Ray-cast gate test done in display space, not raw space`?**
-  _Edge tagged AMBIGUOUS (relation: rationale_for) - confidence is low._
-- **What is the exact relationship between `OTflow automatic cofactor optimization` and `Not intended for clinical diagnostic use`?**
-  _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **Why does `evalGate` connect `Gate Evaluation & Spatial Indexing` to `Gate Hierarchy Management`?**
-  _High betweenness centrality (0.023) - this node is a cross-community bridge._
-- **Why does `OTflow automatic cofactor optimization` connect `OTflow Statistical Engine` to `FCS Load & Worker Pipeline`?**
-  _High betweenness centrality (0.022) - this node is a cross-community bridge._
-- **Are the 2 inferred relationships involving `evalGate` (e.g. with `evalGateLOD` and `evalGateW (worker-side gate eval)`) actually correct?**
-  _`evalGate` has 2 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `loadFCSFallback`, `sendDataToComputeWorkerForFile`, `evalGateLOD` to the rest of the system?**
-  _50 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `getFileById()` connect `Gate Evaluation and Density Plots` to `Gate Editing and Actions`, `Template Export and Session State`, `Plot Controls and Axis Ticks`, `Plot Creation and Template Import`, `File Metadata and Menus`?**
+  _High betweenness centrality (0.005) - this node is a cross-community bridge._
+- **Why does `showToast()` connect `Plot Creation and Template Import` to `Gate Editing and Actions`, `Gate Evaluation and Density Plots`, `Template Export and Session State`, `Plot Controls and Axis Ticks`, `Template Matching`, `FCS Load Pipeline`, `Shareable HTML Export`, `Shared File Save and Load`?**
+  _High betweenness centrality (0.005) - this node is a cross-community bridge._
+- **Why does `renderPlot()` connect `Plot Controls and Axis Ticks` to `Gate Editing and Actions`, `Gate Evaluation and Density Plots`, `Template Export and Session State`, `Plot Creation and Template Import`, `Plot Expand and Collapse`?**
+  _High betweenness centrality (0.004) - this node is a cross-community bridge._
+- **What connects `GATE_COLORS`, `FILE_DOT_COLORS`, `fcsFiles` to the rest of the system?**
+  _17 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Gate Editing and Actions` be split into smaller, more focused modules?**
+  _Cohesion score 0.14268292682926828 - nodes in this community are weakly interconnected._
+- **Should `Gate Evaluation and Density Plots` be split into smaller, more focused modules?**
+  _Cohesion score 0.09982174688057041 - nodes in this community are weakly interconnected._
+- **Should `Template Export and Session State` be split into smaller, more focused modules?**
+  _Cohesion score 0.07056451612903226 - nodes in this community are weakly interconnected._
