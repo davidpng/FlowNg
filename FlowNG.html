@@ -70,25 +70,29 @@
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
-    height: 44px;
+    min-height: 44px;
+    align-items: stretch;
   }
   .header-left {
     display: flex;
     align-items: center;
     gap: 0;
     padding: 0 8px;
-    height: 100%;
     border-right: 1px solid var(--border);
     overflow: hidden;
   }
   .header-right {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 0 12px;
-    height: 100%;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 6px 24px;
+    padding: 6px 12px;
     overflow: hidden;
   }
+  /* Two stacked rows per group, as in FlowNg2: tools / undo+history, files / settings+save */
+  .tb-group { display: flex; flex-direction: column; gap: 6px; }
+  .tb-right { margin-left: auto; align-items: flex-end; }
+  .tb-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .logo {
     font-size: 16px;
     font-weight: 700;
@@ -96,7 +100,6 @@
     color: var(--accent);
   }
   .logo span { color: var(--accent2); }
-  .header-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
   button {
     background: var(--surface2);
     color: var(--text);
@@ -217,22 +220,6 @@
   }
   canvas { display: block; }
 
-  .mode-btn {
-    padding: 2px;
-    font-size: 13px;
-    border-radius: 4px;
-    width: 22px;
-    height: 22px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .mode-btn.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-  }
   .drop-zone {
     flex: 1;
     display: flex;
@@ -464,7 +451,7 @@
   /* ── Plot expansion overlay ─────────────────────────────────────── */
   .plot-expand-overlay {
     position: fixed;
-    top: 44px;
+    top: var(--header-h, 44px);
     left: 300px;
     bottom: 0;
     right: 0;
@@ -610,26 +597,15 @@
 
   /* ── Global mode toolbar ─────────────────────────── */
   .tool-btn {
-    display: flex; flex-direction: column; align-items: center; gap: 1px;
-    padding: 3px 9px; border-radius: 5px; border: 1px solid #444;
-    background: #22232e; color: #ddd; cursor: pointer; font-size: 10px; line-height: 1.2;
+    display: flex; flex-direction: row; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 5px; border: 1px solid #444;
+    background: #22232e; color: #ddd; cursor: pointer; font-size: 11px; line-height: 1.2; white-space: nowrap;
   }
-  .tool-btn i { font-style: normal; font-size: 13px; }
+  .tool-btn i { font-style: normal; font-size: 12px; }
   .tool-btn:hover { background: #2d2f3d; }
   .tool-btn.active { background: #3a4a6b; border-color: #5a6f9f; color: #fff; }
   #save-btn.dirty { border-color: #f5a623; color: #f5a623; }
   .tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .global-toolbar {
-    display: none; /* shown after file load */
-    align-items: center;
-    gap: 3px;
-    padding: 0 8px;
-    border-left: 1px solid var(--border);
-    border-right: 1px solid var(--border);
-    height: 100%;
-  }
-  .global-toolbar .mode-btn { font-size: 14px; width: 24px; height: 24px; }
-
   /* ── Plot selection ──────────────────────────────── */
   .plot-card.selected {
     border-color: var(--accent);
@@ -704,46 +680,48 @@
     <div class="logo" onclick="showAbout()" title="About FlowNG" style="cursor:pointer">Flow<span>NG</span></div>
   </div>
   <div class="header-right">
-    <div class="global-toolbar" id="global-toolbar" style="display:none;align-items:center;gap:3px;flex-shrink:0;
-      border-right:1px solid var(--border);padding-right:10px;margin-right:4px">
-      <button class="tool-btn active" id="gbtn-pan"      onclick="setGlobalMode('pan')"      title="Select: drag a gate to move it. With a plot selected, drag the blue marker on an arcsinh axis to change its cofactor."><i>↖</i>Select</button>
-      <button class="tool-btn"        id="gbtn-gate"     onclick="setGlobalMode('gate')"     title="Polygon: click points around a population, then click the first point (or double-click) to close the gate. Esc cancels."><i>⬡</i>Polygon</button>
-      <button class="tool-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Rect: drag a rectangle on a plot to create a gate."><i>▭</i>Rect</button>
-      <button class="tool-btn"        id="gbtn-quad"     onclick="setGlobalMode('quad')"     title="Quadrant: click to place a crosshair that creates Q1-Q4 (clockwise from upper right). Drag the crosshair with Select or Edit to move all four together."><i>+</i>Quadrant</button>
-      <button class="tool-btn"        id="gbtn-edit"     onclick="setGlobalMode('edit')"     title="Edit: drag a gate's corner points to reshape it, or drag its body to move it."><i>✎</i>Edit</button>
-      <button class="tool-btn"        id="gbtn-spill"    onclick="setGlobalMode('spill')"    title="Comp: on a plot whose two axes are both in the spillover matrix, drag the top edge (Y into X) or right edge (X into Y) to tune that coefficient. Gates are re-evaluated when you let go."><i>⇔</i>Comp</button>
-      <button class="tool-btn"        id="gbtn-delete"   onclick="setGlobalMode('delete')"   title="Delete: click a gate on a plot to remove it and its children (a quadrant is removed as a set)."><i>🗑</i>Delete</button>
-      <button class="tool-btn"        id="gbtn-autocomp" onclick="setGlobalMode('autocomp')" title="Autocomp: outline a population that should sit flat in this pair of axes (at least 100 events). The spillover coefficient between the two axes is fitted automatically. Undoable."><i>◎</i>Autocomp</button>
-      <button class="tool-btn" id="undo-btn" onclick="undo()" title="Undo the last gate, colour, order, compensation or cofactor change (Ctrl/Cmd+Z)" disabled><i>↶</i>Undo</button>
-      <button class="tool-btn" id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)" disabled><i>↷</i>Redo</button>
-    </div>
-    <div id="parse-progress" style="display:none;align-items:center;gap:8px;font-size:10px;color:var(--text2)">
-      <div style="width:100px;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
-        <div id="parse-bar" style="height:100%;width:0%;background:var(--accent);border-radius:3px;transition:width 0.15s"></div>
+    <!-- left group: drawing tools, then undo/redo, history and Add Plot (shown once a file is loaded) -->
+    <div class="tb-group" id="global-toolbar" style="display:none">
+      <div class="tb-row">
+        <button class="tool-btn active" id="gbtn-pan"      onclick="setGlobalMode('pan')"      title="Select: drag a gate to move it. With a plot selected, drag the blue marker on an arcsinh axis to change its cofactor."><i>↖</i>Select</button>
+        <button class="tool-btn"        id="gbtn-gate"     onclick="setGlobalMode('gate')"     title="Polygon: click points around a population, then click the first point (or double-click) to close the gate. Esc cancels."><i>⬡</i>Polygon</button>
+        <button class="tool-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Rect: drag a rectangle on a plot to create a gate."><i>▭</i>Rect</button>
+        <button class="tool-btn"        id="gbtn-quad"     onclick="setGlobalMode('quad')"     title="Quadrant: click to place a crosshair that creates Q1-Q4 (clockwise from upper right). Drag the crosshair with Select or Edit to move all four together."><i>+</i>Quadrant</button>
+        <button class="tool-btn"        id="gbtn-edit"     onclick="setGlobalMode('edit')"     title="Edit: drag a gate's corner points to reshape it, or drag its body to move it."><i>✎</i>Edit</button>
+        <button class="tool-btn"        id="gbtn-spill"    onclick="setGlobalMode('spill')"    title="Comp: on a plot whose two axes are both in the spillover matrix, drag the top edge (Y into X) or right edge (X into Y) to tune that coefficient. Gates are re-evaluated when you let go."><i>⇔</i>Comp</button>
+        <button class="tool-btn"        id="gbtn-delete"   onclick="setGlobalMode('delete')"   title="Delete: click a gate on a plot to remove it and its children (a quadrant is removed as a set)."><i>🗑</i>Delete</button>
       </div>
-      <span id="parse-label">Loading…</span>
+      <div class="tb-row">
+        <button class="tool-btn"        id="gbtn-autocomp" onclick="setGlobalMode('autocomp')" title="Autocomp: outline a population that should sit flat in this pair of axes (at least 100 events). The spillover coefficient between the two axes is fitted automatically. Undoable."><i>◎</i>Autocomp</button>
+        <button class="tool-btn" id="undo-btn" onclick="undo()" title="Undo the last gate, colour, order, compensation or cofactor change (Ctrl/Cmd+Z)" disabled><i>↶</i>Undo</button>
+        <button class="tool-btn" id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)" disabled><i>↷</i>Redo</button>
+        <button class="tool-btn" onclick="showHistory()" id="history-btn" style="display:none" title="History: what has been done to this analysis, with times (no user names). Shared files keep the history when you save.">🕘 History</button>
+        <button class="tool-btn" onclick="addPlot()" id="add-plot-btn" style="display:none" title="Add a plot to the current tab (for the selected file)">+ Add Plot</button>
+      </div>
     </div>
-    <div class="header-actions" style="margin-left:auto;display:flex;gap:6px;align-items:center">
+    <!-- right group: files and templates, then settings and saving -->
+    <div class="tb-group tb-right">
+      <div class="tb-row">
 <!--@lite:begin-->
-      <button onclick="document.getElementById('file-input').click()" id="open-btn" title="Open one or more FCS / LMD files (or drop them on the page)">📂 Open FCS File</button>
-      
+        <button class="tool-btn" onclick="document.getElementById('file-input').click()" id="open-btn" title="Open one or more FCS / LMD files (or drop them on the page)">📂 Open FCS File</button>
+        <button class="tool-btn" onclick="exportGates()" id="export-btn" style="display:none" title="Save gates, plots and axis settings as a JSON template (no event data)">↓ Export Template</button>
+        <button class="tool-btn" onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Apply a saved JSON template to the loaded file(s)">↑ Import Template</button>
+        <button class="tool-btn" onclick="showShareDialog()" id="share-btn" style="display:none" title="Export one self-contained HTML containing the event data, compensation, gates and plots (not the original FCS/LMD file)">🔗 Export Shareable HTML</button>
+        <input type="file" id="import-input" accept=".json" style="display:none">
 <!--@lite:end-->
-<button onclick="showGlobalSettingsDialog()" id="settings-btn" style="display:none" title="Global settings: set the lower display limit of every fluorescent axis from a data percentile">⚙️ Settings</button>
-      <button onclick="addPlot()" id="add-plot-btn" style="display:none" title="Add a plot to the current tab (for the selected file)">+ Add Plot</button>
-<!--@lite:begin-->
-      <button onclick="exportGates()" id="export-btn" style="display:none" title="Save gates, plots and axis settings as a JSON template (no event data)">↓ Export Template</button>
-      <button onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Apply a saved JSON template to the loaded file(s)">↑ Import Template</button>
-      <button onclick="showShareDialog()" id="share-btn" style="display:none" title="Export one self-contained HTML containing the event data, compensation, gates and plots (not the original FCS/LMD file)">🔗 Export Shareable HTML</button>
-      
-<!--@lite:end-->
-<button onclick="showHistory()" id="history-btn" style="display:none" title="History: what has been done to this analysis, with times (no user names). Shared files keep the history when you save.">🕘 History</button>
-<button onclick="saveDaughter()" id="save-btn" style="display:none" title="Save: writes a new copy of this shared file that includes your gate, plot and compensation changes and the History, so it can be passed on. The original file is not changed.">💾 Save</button>
-<button onclick="resetToAuthorGates()" id="reset-author-btn" style="display:none" title="Throw away your changes and restore the gates and plots exactly as the author shared them (undoable)">↺ Reset to author's gates</button>
-<!--@lite:begin-->
-      <input type="file" id="import-input" accept=".json" style="display:none">
-    
-<!--@lite:end-->
-</div>
+      </div>
+      <div class="tb-row">
+        <button class="tool-btn" onclick="showGlobalSettingsDialog()" id="settings-btn" style="display:none" title="Global settings: set the lower display limit of every fluorescent axis from a data percentile">⚙️ Settings</button>
+        <button class="tool-btn" onclick="saveDaughter()" id="save-btn" style="display:none" title="Save: writes a new copy of this shared file that includes your gate, plot and compensation changes and the History, so it can be passed on. The original file is not changed.">💾 Save</button>
+        <button class="tool-btn" onclick="resetToAuthorGates()" id="reset-author-btn" style="display:none" title="Throw away your changes and restore the gates and plots exactly as the author shared them (undoable)">↺ Reset to author's gates</button>
+        <div id="parse-progress" style="display:none;align-items:center;gap:8px;font-size:10px;color:var(--text2)">
+          <div style="width:100px;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
+            <div id="parse-bar" style="height:100%;width:0%;background:var(--accent);border-radius:3px;transition:width 0.15s"></div>
+          </div>
+          <span id="parse-label">Loading…</span>
+        </div>
+      </div>
+    </div>
   </div>
 </header>
 <!--@lite:begin-->
@@ -775,8 +753,8 @@
       <kbd>Quadrant</kbd> — click to place a crosshair (Q1–Q4 clockwise from upper right); drag it with Select or Edit<br>
       <kbd>Edit</kbd> — drag gate vertices<br>
       <kbd>Comp</kbd> — drag a plot's top or right edge to tune spillover<br>
-      <kbd>Autocomp</kbd> — outline a population that should sit flat; spillover is fitted for you<br>
       <kbd>Delete</kbd> — click a gate to remove it<br>
+      <kbd>Autocomp</kbd> — outline a population that should sit flat; spillover is fitted for you<br>
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> undo · <kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Y</kbd> redo<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">PLOTS</div>
       <kbd>Click</kbd> header — select plot<br>
@@ -1930,7 +1908,7 @@ function addFileToSession(fileObj) {
     document.getElementById('sidebar').style.display = 'flex';
     document.getElementById('add-plot-btn').style.display = '';
     document.getElementById('settings-btn').style.display = '';
-    document.getElementById('global-toolbar').style.display = 'flex';
+    document.getElementById('global-toolbar').style.display = 'flex'; _syncHeaderHeight();
     document.getElementById('status-bar').style.display = 'flex';
     { const b = document.getElementById('export-btn'); if (b) b.style.display = ''; }
     { const b = document.getElementById('import-btn'); if (b) b.style.display = ''; }
@@ -4266,6 +4244,14 @@ function beginCofactorDrag(plot, axis, e) {
   window.addEventListener('keydown', key, true);
 }
 
+// The header grows to two rows of buttons; fixed offsets below it (the expanded-plot overlay) follow its height.
+function _syncHeaderHeight() {
+  document.documentElement.style.setProperty('--header-h', document.querySelector('header').offsetHeight + 'px');
+}
+_syncHeaderHeight();
+new ResizeObserver(_syncHeaderHeight).observe(document.querySelector('header'));
+window.addEventListener('resize', _syncHeaderHeight);
+
 // Handles follow selection and mode changes (both only touch class names).
 new MutationObserver(() => plots.forEach(updateCofactorHandles))
   .observe(document.getElementById('canvas-area'), { attributes: true, attributeFilter: ['class'], subtree: true });
@@ -5247,6 +5233,7 @@ function togglePlotExpand(plotId) {
 }
 
 function expandPlot(plotId) {
+  _syncHeaderHeight();
   const plot = plots.find(p => p.id === plotId);
   if (!plot) return;
 
