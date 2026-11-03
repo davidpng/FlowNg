@@ -3040,6 +3040,10 @@ function removePlot(id) {
 
 // ─── RENDERING ────────────────────────────────────────────────────────────────
 function renderPlot(plot) {
+  // A plot that has been removed or replaced (a template or bundle load rebuilds the plot list and
+  // restarts plot ids) must never draw: its pending idle/background renders would otherwise paint
+  // onto the canvas of whichever new plot now has the same id.
+  if (!plots.includes(plot)) return;
   const canvas = document.getElementById(`canvas-${plot.id}`); if (!canvas) return;
   // Set file context so helpers (getRawRangeGlobal, getAsinhCofactor, defaultScale…)
   // all read from the correct file's data and paramRanges.
