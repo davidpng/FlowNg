@@ -120,6 +120,7 @@ Use the first tube after importing the BTM template (section 7) so there is a po
 | 4.17 | Same keys with `ctrlKey`, `metaKey`, `altKey` or `shiftKey: true`; with a `<input>` focused; with a `.modal-overlay` open; before any workspace is open (toolbar hidden) | `globalMode` does not change |
 | 4.18 | `keydown` `Delete` and `Backspace` with no plot selected, then with one plot selected | No selection: `globalMode === 'delete'`. With a selection: that plot is removed and the mode is unchanged |
 | 4.19 | Read the first eight `#global-toolbar .tool-btn` | Each label has its key in `<b>` (Select, Polygon, Rect, Quadrant, Edit, Comp, **Del**ete, Autocomp); tooltips end with "Shortcut: ..." |
+| 4.20 | Rect orthogonality: draw a rectangle (`rectgate`), `setGlobalMode('edit')`, drag one corner (`fire` mousedown on the vertex, mousemove, mouseup) and read `gateInfo.rawPts`; repeat on another corner | Four points still form an axis-aligned rectangle (two distinct x values, two distinct y values, each side horizontal or vertical); the opposite corner has not moved. A hand-drawn polygon with slanted edges still moves one vertex independently |
 
 Boolean gates (BTM has some): after import, their counts are non-zero and change when a referenced gate moves.
 

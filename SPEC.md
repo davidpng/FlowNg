@@ -73,6 +73,14 @@ Rules:
 - `getDescendantGates` stays event-overlap based on purpose, for back-gating and re-evaluation after a move. It must not be used to answer "is this an ancestor/descendant?".
 - Checks: `TESTING.md` 4.13, 4.14.
 
+## 4a. Editing gate vertices (Edit mode)
+
+- Dragging a vertex of a gate whose edges are **all horizontal or vertical** (a gate drawn with Rect, or any rectilinear polygon) keeps it rectilinear: each neighbour of the dragged corner keeps the edge it shared with it (a vertical edge keeps its x, a horizontal edge keeps its y). A rectangle therefore stays a rectangle and dragging a corner resizes it.
+- Edges are judged horizontal or vertical on screen (within half a pixel), which is the same as in raw data because every axis scale is monotonic.
+- A gate with any slanted edge (a hand-drawn polygon) is edited freely, one vertex at a time, as before. Moving a whole gate (Select, or dragging the body in Edit) is unchanged.
+- Reason: dragging one corner of a rectangle used to skew it into a quadrilateral with slanted sides.
+- Check: `TESTING.md` 4.20.
+
 ## 5. Starter template
 
 Generated per tube from the Pool (**Starter**). One tab per tube, four plots, no gates. Plots are **Y vs X**:

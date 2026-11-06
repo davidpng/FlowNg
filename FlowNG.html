@@ -4094,6 +4094,19 @@ function onCanvasMouseMove(e, canvas, plot) {
       rx: fromDisplay(newDispX, plot.xParam, tf.xls),
       ry: fromDisplay(newDispY, plot.yParam, tf.yls)
     };
+    // A rectilinear gate (every edge horizontal or vertical, e.g. one drawn with Rect) stays rectilinear:
+    // each neighbour of the dragged corner keeps the edge it shared with it (a vertical edge keeps its
+    // x, a horizontal edge keeps its y), so a rectangle stays a rectangle.
+    const orig = plot._dragRawStart, n = orig.length;
+    const same = (a, b, axis) => Math.abs((axis === 'x' ? tf.dataToCanvasX(a.rx) - tf.dataToCanvasX(b.rx)
+                                                         : tf.dataToCanvasY(a.ry) - tf.dataToCanvasY(b.ry))) < 0.5;
+    const rectilinear = n >= 4 && orig.every((p, i) => { const q = orig[(i + 1) % n]; return same(p, q, 'x') || same(p, q, 'y'); });
+    if (rectilinear) {
+      [(vi + n - 1) % n, (vi + 1) % n].forEach(ni => {
+        if (same(orig[ni], origPt, 'x')) plot._dragPts[ni] = { ...plot._dragPts[ni], rx: plot._dragPts[vi].rx };
+        else                              plot._dragPts[ni] = { ...plot._dragPts[ni], ry: plot._dragPts[vi].ry };
+      });
+    }
   } else {
     plot._dragPts = plot._dragRawStart.map(pt => {
       const ptCx = tf.dataToCanvasX(pt.rx) + ddx;
