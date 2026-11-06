@@ -2,12 +2,15 @@
 
 A checklist for Claude (or a person) to follow after any change to `FlowNG.html`, the Kaluza converter, or the export code. It drives the real app in the browser pane, so it needs no test framework. Say "run TESTING.md" and work through the sections in order; sections 1-2 are always required, the rest depend on what changed (see the table).
 
+The app keeps loaded files in a **Pool** and each loaded template in its own **workspace** (files, tabs, plots, undo, history). The globals `fcsFiles`, `plots`, `tabs`, `_undoStack`, `_history` always hold the *live* workspace, so older checks that read them still apply to whichever workspace is open.
+
 | You changed... | Run sections |
 |---|---|
 | Anything | 1, 2, 3, 12 |
 | Gating, tree, undo, plots | + 4, 5, 6, 10 |
-| Templates, Kaluza converter | + 7 |
-| Export, shared files, Save, History | + 8, 9, 11 |
+| Templates, Kaluza converter | + 7, 13 |
+| Workspaces, Pool, file loading, starter template | + 13 |
+| Export, shared files, Save, History | + 8, 9, 11, 13 |
 | Rendering, evaluation, loading | + 11 (performance) |
 
 ## 0. Rules and traps (learned the hard way)
@@ -35,7 +38,7 @@ cd $SP/t && python3 -m http.server 8770 &
 
 The app is `http://localhost:8770/FlowNG.html`. Expected: `curl -sI` returns 200. Rebuild the daughters whenever `FlowNG.html` changes (they embed a copy of it).
 
-Load the three fixtures (used by most sections):
+Load the three fixtures (used by most sections). Loaded files wait in the **Pool**; most sections then need a workspace, which comes from `openPoolInWorkspace()` (blank, one default plot per file) or from importing a template (section 7):
 
 ```js
 const names = ['00028336 001', '00028337 002', '00028338 003'];
@@ -46,7 +49,7 @@ for (const n of names) {
 }
 JSON.stringify({ events: fcsFiles.map(f => f.nEvents), tubes: fcsFiles.map(_fileTubeName) })
 ```
-Expected: events `[33635,37596,31015]`; tubes `LL panel B cell tube`, `LL panel T cell tube`, `LL panel myeloid tube`.
+Replace `fcsFiles` with `poolFiles` in that line: the files are in the Pool, `fcsFiles.length` is 0 and there are no plots. Expected: events `[33635,37596,31015]`; tubes `LL panel B cell tube`, `LL panel T cell tube`, `LL panel myeloid tube`. The page shows the placeholder "3 files in the Pool, no workspace open".
 
 ## 2. Static checks (no browser)
 
@@ -76,12 +79,12 @@ Console check: after every section run `read_console_messages` with `onlyErrors:
 
 ## 3. Load and basic rendering
 
-After loading the fixtures (section 1):
+After loading the fixtures (section 1) and `openPoolInWorkspace()`:
 
 ```js
 JSON.stringify({ plots: plots.length, canvases: document.querySelectorAll('canvas[id^=canvas-]').length, tree: document.querySelectorAll('.pop-tree-node').length })
 ```
-Expected: one default plot per file, canvases equal plots, the tree lists three file roots. Take a screenshot: the top bar has two groups of two rows: left Select, Polygon, Rect, Quadrant, Edit, Comp, Delete / Autocomp, Undo, Redo, History, + Add Plot; right Open FCS File, Export Template, Import Template, Export Shareable HTML / Settings (plus Save and Reset in shared files); at 1,400 px or wider the groups sit side by side (use `resize_window`, and reset it afterwards); plots are white with decade ticks; no console errors.
+Expected: one default plot per file, canvases equal plots, the tree lists three file roots. Take a screenshot: a green workspace tab above the plot tabs, no Pool node (empty); the top bar has two groups of two rows: left Select, Polygon, Rect, Quadrant, Edit, Comp, Delete / Autocomp, Undo, Redo, History, + Add Plot; right Open FCS File, Export Template, Import Template, Export Shareable HTML / Settings (plus Save and Reset in shared files); at 1,400 px or wider the groups sit side by side (use `resize_window`, and reset it afterwards); plots are white with decade ticks; no console errors.
 
 ## 4. Gating
 
@@ -110,6 +113,13 @@ Use the first tube after importing the BTM template (section 7) so there is a po
 | 4.10 | `cycleDotBoost(id)` | Population drawn as exact dots; toggling again restores density |
 | 4.11 | `undo()` after each of the above, then `redo()` | State returns and comes back; counts identical; undo/redo logged in History |
 | 4.12 | Worker vs main-thread membership: `g.indices = new Int32Array(0); evalGateAsync(g); await 2.5 s` | Count equals the count before (worker result matches `evalGate`) |
+| 4.13 | Re-parent siblings: `setGlobalMode('rectgate')`, draw a big rectangle then a smaller one inside it on the same plot (both children of All Events, sharing events); `reparentGate(g2, g1)` | `g2.parentId === g1`, toast "Moved ...". Regression: this used to be refused because the check used event overlap (`getDescendantGates`) instead of the `parentId` chain |
+| 4.14 | Then `reparentGate(g1, g2)` | Refused with "Cannot reparent a gate onto one of its own descendants"; parents unchanged |
+| 4.15 | Select a plot (add class `selected` to its `.plot-card`), then `setGlobalMode('gate')` | `getSelectedPlots().length === 0` and **every** plot's `.mode` is `'gate'` (drawing works on plots other than the one that was selected) |
+| 4.16 | Tool shortcuts: dispatch `keydown` on `document` with `key` `s g r q e c a` | `globalMode` becomes `pan gate rectgate quad edit spill autocomp`; the matching `#gbtn-*` is `.active` |
+| 4.17 | Same keys with `ctrlKey`, `metaKey`, `altKey` or `shiftKey: true`; with a `<input>` focused; with a `.modal-overlay` open; before any workspace is open (toolbar hidden) | `globalMode` does not change |
+| 4.18 | `keydown` `Delete` and `Backspace` with no plot selected, then with one plot selected | No selection: `globalMode === 'delete'`. With a selection: that plot is removed and the mode is unchanged |
+| 4.19 | Read the first eight `#global-toolbar .tool-btn` | Each label has its key in `<b>` (Select, Polygon, Rect, Quadrant, Edit, Comp, **Del**ete, Autocomp); tooltips end with "Shortcut: ..." |
 
 Boolean gates (BTM has some): after import, their counts are non-zero and change when a referenced gate moves.
 
@@ -126,15 +136,18 @@ Boolean gates (BTM has some): after import, their counts are non-zero and change
 ## 6. Plots, tabs, tree
 
 - Add a plot (`addPlot(i,j,fileId)`), change axes (`changeAxis`), change scale (`toggleAxisScale`), change bins (`changeBins(id,128)`): each redraws without error.
+- Multi-select scale: with 2+ plots selected (add class `selected` to their `.plot-card`), `toggleAxisScale(id,'x')` gives the X axis of **every** selected plot the same new scale (`xLog`/`xAsinh` equal across them); with none selected it changes only that plot.
 - `switchTab` through every tab: each shows its plots. `renameTab`, `removeTab` work and the tab strip shows "Name (count)".
+- Delete plots: select two middle plots (add class `selected`), `keydown` `Delete`; History shows "Removed 2 plots", both cards gone. `undo()` restores both at their old positions (`plots` order and `.plot-card` DOM order match the original) and canvases draw; `redo()` removes them again; `Ctrl+Z` after a single-plot delete restores it.
+- Tabs undo: `addTabUndoable()` twice, move plots 0 and 1 to tab 2 (`plots[i].tabId = id`), `renameTab(id)` (stub `prompt`), `removeTab(id)`. History shows "Added tab", "Renamed tab ... to ...", "Closed tab ... (its 2 plots moved to ...)". Four `undo()` calls step back through the close (tab returns at its position, the two plots return to it), the rename, and both adds; four `redo()` calls reapply them.
 - Expand and collapse a plot (`togglePlotExpand`, `collapsePlot`).
 - Axis Range dialog: `showAxisRangeModal(pl,100,100)` then `applyAxisRangeModal(pl.id)` and `resetAxisRangeModal(pl.id)`; no "Display Mode" block; History records both.
 - Drag-reorder of plots and tree rows (dispatch `dragstart`/`dragover`/`drop` on `.plot-drag-handle` and `.pop-grip`) reorders them.
 
 ## 7. Templates and the Kaluza converter
 
-1. **BTM import by tube name.** Use a template whose file names do not match: `importGates(txt)` then read `#import-v3-modal tbody tr`. Expected: each row "by tube name" (or "by file name" for the repo sample), then `_doImportV3([0,1,2])`: gate counts `[31,41,30]`, 255 plots, 15 tabs, no skipped gates.
-2. **Matcher unit checks** (no UI): build a template with `_buildTemplateV3('t')`, rename each `sourceFile`, then `_matchTemplateFiles(files)` returns `tube name` for every file; remove `tube` and it returns `antibody panel`; a template using only channels shared by all tubes returns **no match** (never a guess).
+1. **BTM import by tube name.** Load the fixtures into the Pool (do not open them), use a template whose file names do not match: `importGates(txt)` then read `#import-v3-modal tbody tr`. Expected: each row "by tube name" (or "by file name" for the repo sample), then `_doImportV3([0,1,2])`: a new workspace named after the template, Pool now empty, gate counts `[31,41,30]`, 255 plots, 15 tabs, no skipped gates. With an empty Pool `importGates(txt)` only toasts.
+2. **Matcher unit checks** (no UI): build a template with `_buildTemplateV3('t')`, rename each `sourceFile`, then `_matchTemplateFiles(tfs, fcsFiles)` (the second argument is the candidate list; the default is the Pool) returns `tube name` for every file; remove `tube` and it returns `antibody panel`; a template using only channels shared by all tubes returns **no match** (never a guess).
 3. **Unmatched sections** show "(skip this section)", not the first file.
 4. **Version 2 and junk files are refused:** `importGates('{"version":2,"gates":[]}')` toast says version 2 is unsupported; `{"foo":1}` says "Not a FlowNG template".
 5. **Round trip:** export a template (`_buildTemplateV3('rt')`), clear the gates, re-apply with `_applyTemplateV3(t, fcsFiles)`; gate counts and plot count equal the originals.
@@ -162,6 +175,7 @@ JSON.stringify({ estMB: (est / 1048576).toFixed(2), actualMB: (cap.size / 104857
 | 8.5 | Events stored once | Bundle has `rawData` and `rawDataFmt:"i32cs"` and `data:null` for LMD tubes |
 | 8.6 | Large file warning | With a file over 500,000 events the cap defaults to 500,000 |
 | 8.7 | Size sanity | 3 tubes x 20,000 events is about 2 MB |
+| 8.8 | Workspaces | Bundle has `format:2` and `workspaces`, one entry per open workspace, each with `fileIdx`, `template`, `history`; `files` holds every workspace file once; Pool files are not exported. Workspace names are never an original file name (the PHI scan in 8.2 covers them) |
 
 For a real case file, never print contents: scan with a script that reports counts only.
 
@@ -180,7 +194,8 @@ Use `daughter.html` (locked) and `daughter_unlocked.html`.
 | 9.7 | `showHistory()` | Modal lists entries newest first; Escape closes it |
 | 9.8 | Locked guard | Dropping a file on the page does nothing; `importGates`/`loadFCS` are undefined |
 | 9.9 | Unlocked daughter | Open/Import/Export present and working |
-| 9.10 | Old files | `samples/CLL_Example_Small_FlowNG_shared.html` (built by older code) still opens; it has no Save button (known) |
+| 9.10 | Old files | `samples/CLL_Example_Small_FlowNG_shared.html` (built by older code, `format:1`) still opens as one workspace; it has no Save button (known). Saving a format 1 file (`build_test_daughter.py` uses it) writes `format:2` |
+| 9.11 | Workspaces in a saved file | A two-workspace shared file reopens with both workspaces in the strip (`workspaces.length === 2`), the first active; a change made in the second one marks only that tab dirty (`•`), and `saveDaughter()` writes `format:2` with each workspace's own history; closing and Save buttons are hidden in the locked viewer |
 
 ## 10. Visual checks (screenshots)
 
@@ -235,7 +250,24 @@ Scale test: build a bigger daughter by raising event caps in an export, or load 
 - `CompressionStream`/`DecompressionStream` are required for shared files (Safari 16.4+, Chrome, Edge, Firefox 113+); an older browser should fail with a visible message, not a blank page.
 - Save As dialog (`showSaveFilePicker`) exists in Chrome/Edge only; elsewhere Save downloads. Test the download path by leaving the stub undefined.
 
-## 13. Reporting
+## 13. Workspaces and the Pool
+
+Start from a fresh page and load the fixtures (section 1); each check below uses `poolFiles`, `workspaces`, `getActiveWs()`.
+
+| # | Do | Expected |
+|---|---|---|
+| 13.1 | Load 3 fixtures; read the sidebar | A **POOL (3)** node lists the files with tube names and tick boxes; no workspace; placeholder in the canvas; Import Template button visible, Add Plot / Export / Share hidden |
+| 13.2 | Import the BTM template (7.1); then load the fixtures again and import it a second time | Two workspaces `BTM Triage Template v10` and `... (2)`; each has its own file ids (`[0,1,2]`, `[3,4,5]`), gate counts `[31,41,30]`, 255 plots, 255 `.plot-card` elements in the DOM while it is active; Pool is empty after each import |
+| 13.3 | In workspace 2 delete a gate (`deleteGateFromTree(id, true)`), then `switchWorkspace` to 1 and back | Workspace 1 keeps `[31,41,30]` and its own undo depth (1); workspace 2 keeps `[2,41,30]` and undo depth 2; the strip shows `•` only on a dirty workspace; no console errors |
+| 13.4 | `undo()` in each workspace | Only that workspace's change is undone; the other is untouched |
+| 13.5 | Starter template: load the 3 fixtures, tick two and click Starter (or `generateStarterWorkspace()`) | One tab per tube named by tube, 4 plots per tube in order CD45 vs Time, FSC-H vs FSC-A, FSC-A vs SSC, CD45 vs SSC (Y vs X); no gates; the toast lists skipped plots when a channel is missing (check `fcsFiles[0].params` has `CD45` in the stain label) |
+| 13.6 | `openPoolInWorkspace()` with one Pool file, and `addPoolFileToWorkspace(id)` with a workspace open | Blank workspace named by tube (never a file name) with one plot; the second moves the file into the live workspace with a default plot |
+| 13.7 | `closeWorkspace(activeWsId)` twice | Files and plots of that workspace are gone, another workspace becomes live with its DOM rebuilt; closing the last one returns to the welcome drop zone with the sidebar hidden |
+| 13.8 | `removeFile` on a Pool file | Leaves the Pool, its compute worker is terminated, workspaces untouched |
+| 13.9 | Shared round trip (section 8 then 9.11) with two workspaces | Both restore with their plots and history |
+| 13.10 | Locked viewer (`daughter.html`) | Workspace strip shows, but the close buttons and "+ Template" are hidden; `typeof openPoolInWorkspace === 'undefined'` |
+
+## 14. Reporting
 
 End every run with a short report:
 
