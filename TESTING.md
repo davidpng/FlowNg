@@ -113,6 +113,13 @@ Use the first tube after importing the BTM template (section 7) so there is a po
 | 4.10 | `cycleDotBoost(id)` | Population drawn as exact dots; toggling again restores density |
 | 4.11 | `undo()` after each of the above, then `redo()` | State returns and comes back; counts identical; undo/redo logged in History |
 | 4.12 | Worker vs main-thread membership: `g.indices = new Int32Array(0); evalGateAsync(g); await 2.5 s` | Count equals the count before (worker result matches `evalGate`) |
+| 4.13 | Re-parent siblings: `setGlobalMode('rectgate')`, draw a big rectangle then a smaller one inside it on the same plot (both children of All Events, sharing events); `reparentGate(g2, g1)` | `g2.parentId === g1`, toast "Moved ...". Regression: this used to be refused because the check used event overlap (`getDescendantGates`) instead of the `parentId` chain |
+| 4.14 | Then `reparentGate(g1, g2)` | Refused with "Cannot reparent a gate onto one of its own descendants"; parents unchanged |
+| 4.15 | Select a plot (add class `selected` to its `.plot-card`), then `setGlobalMode('gate')` | `getSelectedPlots().length === 0` and **every** plot's `.mode` is `'gate'` (drawing works on plots other than the one that was selected) |
+| 4.16 | Tool shortcuts: dispatch `keydown` on `document` with `key` `s g r q e c a` | `globalMode` becomes `pan gate rectgate quad edit spill autocomp`; the matching `#gbtn-*` is `.active` |
+| 4.17 | Same keys with `ctrlKey`, `metaKey`, `altKey` or `shiftKey: true`; with a `<input>` focused; with a `.modal-overlay` open; before any workspace is open (toolbar hidden) | `globalMode` does not change |
+| 4.18 | `keydown` `Delete` and `Backspace` with no plot selected, then with one plot selected | No selection: `globalMode === 'delete'`. With a selection: that plot is removed and the mode is unchanged |
+| 4.19 | Read the first eight `#global-toolbar .tool-btn` | Each label has its key in `<b>` (Select, Polygon, Rect, Quadrant, Edit, Comp, **Del**ete, Autocomp); tooltips end with "Shortcut: ..." |
 
 Boolean gates (BTM has some): after import, their counts are non-zero and change when a referenced gate moves.
 
@@ -129,7 +136,10 @@ Boolean gates (BTM has some): after import, their counts are non-zero and change
 ## 6. Plots, tabs, tree
 
 - Add a plot (`addPlot(i,j,fileId)`), change axes (`changeAxis`), change scale (`toggleAxisScale`), change bins (`changeBins(id,128)`): each redraws without error.
+- Multi-select scale: with 2+ plots selected (add class `selected` to their `.plot-card`), `toggleAxisScale(id,'x')` gives the X axis of **every** selected plot the same new scale (`xLog`/`xAsinh` equal across them); with none selected it changes only that plot.
 - `switchTab` through every tab: each shows its plots. `renameTab`, `removeTab` work and the tab strip shows "Name (count)".
+- Delete plots: select two middle plots (add class `selected`), `keydown` `Delete`; History shows "Removed 2 plots", both cards gone. `undo()` restores both at their old positions (`plots` order and `.plot-card` DOM order match the original) and canvases draw; `redo()` removes them again; `Ctrl+Z` after a single-plot delete restores it.
+- Tabs undo: `addTabUndoable()` twice, move plots 0 and 1 to tab 2 (`plots[i].tabId = id`), `renameTab(id)` (stub `prompt`), `removeTab(id)`. History shows "Added tab", "Renamed tab ... to ...", "Closed tab ... (its 2 plots moved to ...)". Four `undo()` calls step back through the close (tab returns at its position, the two plots return to it), the rename, and both adds; four `redo()` calls reapply them.
 - Expand and collapse a plot (`togglePlotExpand`, `collapsePlot`).
 - Axis Range dialog: `showAxisRangeModal(pl,100,100)` then `applyAxisRangeModal(pl.id)` and `resetAxisRangeModal(pl.id)`; no "Display Mode" block; History records both.
 - Drag-reorder of plots and tree rows (dispatch `dragstart`/`dragover`/`drop` on `.plot-drag-handle` and `.pop-grip`) reorders them.
@@ -250,7 +260,7 @@ Start from a fresh page and load the fixtures (section 1); each check below uses
 | 13.2 | Import the BTM template (7.1); then load the fixtures again and import it a second time | Two workspaces `BTM Triage Template v10` and `... (2)`; each has its own file ids (`[0,1,2]`, `[3,4,5]`), gate counts `[31,41,30]`, 255 plots, 255 `.plot-card` elements in the DOM while it is active; Pool is empty after each import |
 | 13.3 | In workspace 2 delete a gate (`deleteGateFromTree(id, true)`), then `switchWorkspace` to 1 and back | Workspace 1 keeps `[31,41,30]` and its own undo depth (1); workspace 2 keeps `[2,41,30]` and undo depth 2; the strip shows `•` only on a dirty workspace; no console errors |
 | 13.4 | `undo()` in each workspace | Only that workspace's change is undone; the other is untouched |
-| 13.5 | Starter template: load the 3 fixtures, tick two and click Starter (or `generateStarterWorkspace()`) | One tab per tube named by tube, 4 plots per tube in order Time vs CD45, FSC-H vs FSC-A, SSC vs FSC-A, SSC vs CD45 (Y vs X); no gates; the toast lists skipped plots when a channel is missing (check `fcsFiles[0].params` has `CD45` in the stain label) |
+| 13.5 | Starter template: load the 3 fixtures, tick two and click Starter (or `generateStarterWorkspace()`) | One tab per tube named by tube, 4 plots per tube in order CD45 vs Time, FSC-H vs FSC-A, FSC-A vs SSC, CD45 vs SSC (Y vs X); no gates; the toast lists skipped plots when a channel is missing (check `fcsFiles[0].params` has `CD45` in the stain label) |
 | 13.6 | `openPoolInWorkspace()` with one Pool file, and `addPoolFileToWorkspace(id)` with a workspace open | Blank workspace named by tube (never a file name) with one plot; the second moves the file into the live workspace with a default plot |
 | 13.7 | `closeWorkspace(activeWsId)` twice | Files and plots of that workspace are gone, another workspace becomes live with its DOM rebuilt; closing the last one returns to the welcome drop zone with the sidebar hidden |
 | 13.8 | `removeFile` on a Pool file | Leaves the Pool, its compute worker is terminated, workspaces untouched |

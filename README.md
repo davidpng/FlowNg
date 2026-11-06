@@ -13,7 +13,7 @@ The demo runs in your browser from GitHub Pages; the page is static and nothing 
 ### 🎯 Interactive Gating
 - **Polygon, rectangle and quadrant gates**: a quadrant is one draggable crosshair whose Q1–Q4 populations (clockwise from the upper right) always follow its centre and partition the parent exactly
 - **Select, edit and delete**: drag a gate with Select, reshape it with Edit, remove it from the toolbar or the tree
-- **Population tree**: counts and % of parent on every row, drag a row onto another to re-parent, drag its grip to reorder siblings (the gate lower in the tree wins shared cells; a child always beats its ancestors)
+- **Population tree**: counts and % of parent on every row, drag a row onto another to re-parent (any gate, including a sibling that shares events with it; only moving a gate under its own descendant is refused), drag its grip to reorder siblings (the gate lower in the tree wins shared cells; a child always beats its ancestors)
 - **Right-click menu**: rename / colour, copy, cut, paste (into any loaded file, matched by parameter name) and delete
 - **Undo / redo**: gates, colours, order, compensation and cofactors (Ctrl/Cmd+Z, Shift+Z)
 - **Kelly 21-colour palette**, with a "No Color" option for gates that should not stand out
@@ -112,7 +112,7 @@ Supported formats: FCS 2.0, 3.0, 3.1, and Beckman Coulter LMD files
 **Workspaces and the Pool**
 - Opened files wait in the **Pool** (top of the sidebar). A **workspace** is one loaded template with its own files, tabs, plots, gates, undo history and change log; the workspace strip above the tabs switches between them. Gates and edits in one workspace never touch another
 - **Import Template** matches the template to files in the Pool and moves the matched files into a new workspace. Import the same template again (with other files from the Pool) for a second case; each import is its own workspace. A file belongs to one workspace only
-- Tick files in the Pool, then **Open** puts them in a blank workspace (one default plot per file), or **Starter** generates a starter template: one tab per tube with Time vs CD45, FSC-H vs FSC-A, SSC vs FSC-A and SSC vs CD45 (Y vs X), no gates. A plot is skipped, and reported, when its channel is missing. Gate it, then **Export Template** to keep it
+- Tick files in the Pool, then **Open** puts them in a blank workspace (one default plot per file), or **Starter** generates a starter template: one tab per tube with CD45 vs Time, FSC-H vs FSC-A, FSC-A vs SSC and CD45 vs SSC (Y vs X), no gates. A plot is skipped, and reported, when its channel is missing. Gate it, then **Export Template** to keep it
 - Closing a workspace (✕) removes its files and gates. Rename one with a double-click
 - **Export Shareable HTML** writes every workspace into the one file (the Pool is not included); a file made by an older version opens as a single workspace
 
@@ -146,7 +146,7 @@ The top bar has two groups, each in two rows, laid out like FlowNg2. They appear
 | **Undo / Redo** | Step back / forward through gate, colour, order, compensation and cofactor changes |
 | **History** | Every change with its time; shared files keep it when saved |
 
-**Keyboard**: `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y` redo, `Del` remove selected plot(s), `Esc` cancel a gate or deselect.
+**Keyboard**: `Ctrl/Cmd+Z` undo, `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y` redo, `Del` remove selected plot(s), `Esc` cancel a gate or deselect. **Tool shortcuts** (all on the left hand, plain letters; the key is bold and underlined on each button): `S` Select, `G` Polygon, `R` Rect, `Q` Quadrant, `E` Edit, `C` Comp, `A` Autocomp, and `Del` / `⌫` Delete mode when no plot is selected (with plots selected it removes them instead). Shortcuts are ignored while typing in a field, with `Ctrl`/`⌘`/`Alt`/`Shift` held, while a dialog is open, and before a workspace is open. Choosing a tool by button or key deselects all plots, so the tool applies to every plot.
 
 **Hover for help.** The toolbar tools, header buttons, plot controls (population, axes, bins, grip, expand, swap), tabs, cofactor markers and tree controls (`+`, `×`, grip) all have tooltips: hold the pointer over one and it says what it does and what it needs (for example, Comp and Autocomp say that both axes must be in the spillover matrix).
 
@@ -174,7 +174,7 @@ The panel at the bottom of the left sidebar is a live cheat sheet that matches t
 |---|---|
 | Click a plot's top bar (the row with the population menu and bins slider) | Select (highlight) that plot; the cofactor markers need this |
 | Click empty canvas | Deselect all |
-| `Shift`+click / `Ctrl`or`⌘`+click | Range-select / toggle plots; axis, population and bin changes then apply to every selected plot (the LOG/LIN/ASINH scale stays per plot) |
+| `Shift`+click / `Ctrl`or`⌘`+click | Range-select / toggle plots; axis, population and bin changes then apply to every selected plot (including the LOG/LIN/ASINH scale: clicking the scale button on one selected plot gives that axis of every selected plot the same scale) |
 | `Del` / `⌫` | Remove the selected plot(s) |
 | `Esc` | Cancel a gate you are drawing, and deselect all |
 | Drag ⠿ | Reorder plots, or drop one on a tab to move it there |
@@ -230,7 +230,7 @@ Right-click a gate row and choose **Copy** (or **Cut**), then right-click anothe
 ### Plot Configuration
 
 **Axis Scaling Options**
-Click the **LIN / LOG / ASINH** button next to an axis's parameter drop-down to cycle its scale (each plot keeps its own scale):
+Click the **LIN / LOG / ASINH** button next to an axis's parameter drop-down to cycle its scale (each plot keeps its own scale, unless 2+ plots are selected, in which case they all take the same new scale on that axis):
    - **LINEAR**: Standard arithmetic scale
    - **LOG**: Logarithmic scale (log₁₀)
    - **ASINH**: Inverse hyperbolic sine (arcsinh) for flow cytometry data, with decade ticks including zero and the negative decades

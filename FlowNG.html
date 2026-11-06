@@ -602,6 +602,7 @@
     background: #22232e; color: #ddd; cursor: pointer; font-size: 11px; line-height: 1.2; white-space: nowrap;
   }
   .tool-btn i { font-style: normal; font-size: 12px; }
+  .tool-btn b { font-weight: 800; color: #fff; text-decoration: underline; text-underline-offset: 2px; }
   .tool-btn:hover { background: #2d2f3d; }
   .tool-btn.active { background: #3a4a6b; border-color: #5a6f9f; color: #fff; }
   #save-btn.dirty { border-color: #f5a623; color: #f5a623; }
@@ -712,16 +713,16 @@
     <!-- left group: drawing tools, then undo/redo, history and Add Plot (shown once a file is loaded) -->
     <div class="tb-group" id="global-toolbar" style="display:none">
       <div class="tb-row">
-        <button class="tool-btn active" id="gbtn-pan"      onclick="setGlobalMode('pan')"      title="Select: drag a gate to move it. With a plot selected, drag the blue marker on an arcsinh axis to change its cofactor."><i>↖</i>Select</button>
-        <button class="tool-btn"        id="gbtn-gate"     onclick="setGlobalMode('gate')"     title="Polygon: click points around a population, then click the first point (or double-click) to close the gate. Esc cancels."><i>⬡</i>Polygon</button>
-        <button class="tool-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Rect: drag a rectangle on a plot to create a gate."><i>▭</i>Rect</button>
-        <button class="tool-btn"        id="gbtn-quad"     onclick="setGlobalMode('quad')"     title="Quadrant: click to place a crosshair that creates Q1-Q4 (clockwise from upper right). Drag the crosshair with Select or Edit to move all four together."><i>+</i>Quadrant</button>
-        <button class="tool-btn"        id="gbtn-edit"     onclick="setGlobalMode('edit')"     title="Edit: drag a gate's corner points to reshape it, or drag its body to move it."><i>✎</i>Edit</button>
-        <button class="tool-btn"        id="gbtn-spill"    onclick="setGlobalMode('spill')"    title="Comp: on a plot whose two axes are both in the spillover matrix, drag the top edge (Y into X) or right edge (X into Y) to tune that coefficient. Gates are re-evaluated when you let go."><i>⇔</i>Comp</button>
-        <button class="tool-btn"        id="gbtn-delete"   onclick="setGlobalMode('delete')"   title="Delete: click a gate on a plot to remove it and its children (a quadrant is removed as a set)."><i>🗑</i>Delete</button>
+        <button class="tool-btn active" id="gbtn-pan"      onclick="setGlobalMode('pan')"      title="Select: drag a gate to move it. With a plot selected, drag the blue marker on an arcsinh axis to change its cofactor. Shortcut: S."><i>↖</i><span><b>S</b>elect</span></button>
+        <button class="tool-btn"        id="gbtn-gate"     onclick="setGlobalMode('gate')"     title="Polygon: click points around a population, then click the first point (or double-click) to close the gate. Esc cancels. Shortcut: G."><i>⬡</i><span>Poly<b>g</b>on</span></button>
+        <button class="tool-btn"        id="gbtn-rectgate" onclick="setGlobalMode('rectgate')" title="Rect: drag a rectangle on a plot to create a gate. Shortcut: R."><i>▭</i><span><b>R</b>ect</span></button>
+        <button class="tool-btn"        id="gbtn-quad"     onclick="setGlobalMode('quad')"     title="Quadrant: click to place a crosshair that creates Q1-Q4 (clockwise from upper right). Drag the crosshair with Select or Edit to move all four together. Shortcut: Q."><i>+</i><span><b>Q</b>uadrant</span></button>
+        <button class="tool-btn"        id="gbtn-edit"     onclick="setGlobalMode('edit')"     title="Edit: drag a gate's corner points to reshape it, or drag its body to move it. Shortcut: E."><i>✎</i><span><b>E</b>dit</span></button>
+        <button class="tool-btn"        id="gbtn-spill"    onclick="setGlobalMode('spill')"    title="Comp: on a plot whose two axes are both in the spillover matrix, drag the top edge (Y into X) or right edge (X into Y) to tune that coefficient. Gates are re-evaluated when you let go. Shortcut: C."><i>⇔</i><span><b>C</b>omp</span></button>
+        <button class="tool-btn"        id="gbtn-delete"   onclick="setGlobalMode('delete')"   title="Delete: click a gate on a plot to remove it and its children (a quadrant is removed as a set). Shortcut: Del / Backspace with no plot selected."><i>🗑</i><span><b>Del</b>ete</span></button>
       </div>
       <div class="tb-row">
-        <button class="tool-btn"        id="gbtn-autocomp" onclick="setGlobalMode('autocomp')" title="Autocomp: outline a population that should sit flat in this pair of axes (at least 100 events). The spillover coefficient between the two axes is fitted automatically. Undoable."><i>◎</i>Autocomp</button>
+        <button class="tool-btn"        id="gbtn-autocomp" onclick="setGlobalMode('autocomp')" title="Autocomp: outline a population that should sit flat in this pair of axes (at least 100 events). The spillover coefficient between the two axes is fitted automatically. Undoable. Shortcut: A."><i>◎</i><span><b>A</b>utocomp</span></button>
         <button class="tool-btn" id="undo-btn" onclick="undo()" title="Undo the last gate, colour, order, compensation or cofactor change (Ctrl/Cmd+Z)" disabled><i>↶</i>Undo</button>
         <button class="tool-btn" id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)" disabled><i>↷</i>Redo</button>
         <button class="tool-btn" onclick="showHistory()" id="history-btn" style="display:none" title="History: what has been done to this analysis, with times (no user names). Shared files keep the history when you save.">🕘 History</button>
@@ -792,6 +793,7 @@
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Click</kbd> — toggle selection<br>
       <kbd>Del</kbd>/<kbd>⌫</kbd> — remove selected plot(s)<br>
       <kbd>Esc</kbd> — cancel gate / deselect all<br>
+      <kbd>S</kbd> Select · <kbd>G</kbd> Polygon · <kbd>R</kbd> Rect · <kbd>Q</kbd> Quadrant · <kbd>E</kbd> Edit · <kbd>C</kbd> Comp · <kbd>A</kbd> Autocomp · <kbd>Delete</kbd> Delete mode (when no plot is selected; otherwise it removes the selected plots)<br>
       <kbd>Drag</kbd> ⠿ — reorder plots; drop on a tab to move it<br>
       <kbd>Right-click</kbd> canvas — axis range / cofactor<br>
       <kbd>Right-click</kbd> header — switch source file<br>
@@ -824,15 +826,14 @@
       <kbd>💾 Save</kbd> — shared files only: writes a new copy with your gates, plots, compensation and History; the original is not changed<br>
       <kbd>↺ Reset</kbd> — back to the author's gates and compensation (undoable)<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">MULTI-SELECT (2+ plots)</div>
-      Axis / pop / bin changes apply to all selected.<br>
-      Scale (LOG/LIN/ASINH) is always per-plot.
+      Axis / pop / bin / scale (LOG/LIN/ASINH) changes apply to all selected.
     </div>
   </div>
 
   <div class="workspace">
     <div class="ws-strip" id="ws-strip" style="display:none"></div>
     <div class="tab-strip" id="tab-strip" style="display:none">
-      <div class="tab-add" onclick="addTab()" title="Add a new tab (a separate page of plots)">+ Tab</div>
+      <div class="tab-add" onclick="addTabUndoable()" title="Add a new tab (a separate page of plots)">+ Tab</div>
     </div>
     <div class="canvas-area" id="canvas-area">
     <div class="drop-zone" id="drop-zone">
@@ -2548,9 +2549,12 @@ function reparentGate(gateId, newParentId) {
   const gate = populations.find(p => p.id === gateId); if (!gate) return;
   if (gate.boolInfo) { showToast('Boolean populations stay at the top level'); return; }
   // Prevent making a gate its own descendant
+  // (getDescendantGates is event-overlap based, so siblings sharing events would be falsely
+  // flagged; use the actual parentId chain for the cycle check.)
   const descendants = getDescendantGates(gateId);
-  if (descendants.map(g => g.id).includes(newParentId)) {
-    showToast('Cannot reparent a gate onto one of its own descendants'); return;
+  for (let cur = populations.find(p => p.id === newParentId), guard = 0; cur && guard < 1000; guard++) {
+    if (cur.id === gateId) { showToast('Cannot reparent a gate onto one of its own descendants'); return; }
+    cur = populations.find(p => p.id === cur.parentId);
   }
   { const gf0 = getFileById(gate.fileId);
     if (gf0 && _upstreamIds(newParentId, gf0).has(gateId)) { showToast('Cannot move a gate under a population that depends on it'); return; } }
@@ -3008,10 +3012,9 @@ function setGlobalMode(mode) {
     const btn = document.getElementById(`gbtn-${m}`);
     if (btn) btn.classList.toggle('active', m === mode);
   });
-  // Apply to all selected plots (or all plots if none selected)
-  const selected = getSelectedPlots();
-  const targets = selected.length ? selected : plots;
-  targets.forEach(pl => {
+  // Switching mode deselects any selected plots, so the mode applies to every plot
+  document.querySelectorAll('.plot-card.selected').forEach(c => c.classList.remove('selected'));
+  plots.forEach(pl => {
     if (pl.mode === 'zoom' && mode !== 'zoom') {
       // Preserve zoom state, just change mode
     }
@@ -3039,6 +3042,14 @@ function getSelectedPlots() {
   });
 }
 
+const _MODE_KEYS = { s: 'pan', g: 'gate', r: 'rectgate', q: 'quad', e: 'edit', c: 'spill', a: 'autocomp' };
+// Shortcuts only work while the toolbar is showing and no dialog is open
+function _modeKeysActive() {
+  const tb = document.getElementById('global-toolbar');
+  if (!tb || tb.style.display === 'none') return false;
+  return !document.querySelector('.modal-overlay, #meta-modal, [id$="-overlay"]');
+}
+
 // Delete key removes selected plots; Escape deselects / cancels gate
 // Click outside plots deselects all
 document.getElementById('canvas-area').addEventListener('mousedown', e => {
@@ -3054,9 +3065,15 @@ document.addEventListener('keydown', e => {
     const sel = getSelectedPlots();
     if (sel.length) {
       e.preventDefault();
-      sel.forEach(pl => removePlot(pl.id));
+      removePlotsUndoable(sel.map(pl => pl.id));
       return;
     }
+    // No plot selected: Delete / Backspace switches to Delete mode (click a gate to remove it)
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && _modeKeysActive()) { e.preventDefault(); setGlobalMode('delete'); return; }
+  }
+  // Single-letter mode shortcuts (left hand): S select, G polygon, R rect, Q quadrant, E edit, C comp, A autocomp
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.repeat && _MODE_KEYS[e.key.toLowerCase()] && _modeKeysActive()) {
+    e.preventDefault(); setGlobalMode(_MODE_KEYS[e.key.toLowerCase()]); return;
   }
   if (e.key === 'Escape') {
     // Cancel in-progress gate on all plots
@@ -3142,6 +3159,34 @@ function removePlot(id) {
   const card = document.getElementById(`plot-card-${id}`);
   if (card) card.remove();
   renderTabStrip();
+}
+
+// Removes plots as one undoable, logged step. Plots are not part of the gate snapshot (undoing a gate
+// change must not bring back or remove plots), so the entry carries its own plotOps: undo puts the
+// same plot objects back at their old positions, redo removes them again.
+function removePlotsUndoable(ids) {
+  const items = ids.map(id => ({ plot: plots.find(p => p.id === id), index: plots.findIndex(p => p.id === id) }))
+    .filter(x => x.plot).sort((a, b) => a.index - b.index);
+  if (!items.length) return;
+  pushUndo(items.length === 1
+    ? `Removed plot ${_plotPair(items[0].plot) || '#' + items[0].plot.id}`
+    : `Removed ${items.length} plots`);
+  _undoStack[_undoStack.length - 1].plotOps = {
+    undo() {
+      items.forEach(({ plot, index }) => {
+        if (plots.includes(plot)) return;
+        plots.splice(Math.min(index, plots.length), 0, plot);
+        renderPlotCard(plot);
+        const card = document.getElementById(`plot-card-${plot.id}`);
+        const next = plots[plots.indexOf(plot) + 1];
+        const nextCard = next && document.getElementById(`plot-card-${next.id}`);
+        if (card && nextCard) nextCard.parentNode.insertBefore(card, nextCard);
+      });
+      renderTabStrip(); renderTabPlots();
+    },
+    redo() { items.forEach(({ plot }) => removePlot(plot.id)); },
+  };
+  items.forEach(({ plot }) => removePlot(plot.id));
 }
 
 // ─── RENDERING ────────────────────────────────────────────────────────────────
@@ -5196,7 +5241,8 @@ function refineEntry(entry, text) {
 function undo() {
   if (!_undoStack.length) return;
   const u = _undoStack.pop();
-  _redoStack.push({ snap: _snapshotState(), desc: u.desc });
+  _redoStack.push({ snap: _snapshotState(), desc: u.desc, plotOps: u.plotOps });
+  if (u.plotOps) u.plotOps.undo();
   _restoreState(u.snap);
   logChange(`Undid: ${u.desc}`);
   updateUndoButtons();
@@ -5204,7 +5250,8 @@ function undo() {
 function redo() {
   if (!_redoStack.length) return;
   const r = _redoStack.pop();
-  _undoStack.push({ snap: _snapshotState(), desc: r.desc });
+  _undoStack.push({ snap: _snapshotState(), desc: r.desc, plotOps: r.plotOps });
+  if (r.plotOps) r.plotOps.redo();
   _restoreState(r.snap);
   logChange(`Redid: ${r.desc}`);
   updateUndoButtons();
@@ -5296,15 +5343,48 @@ function addTab(name) {
   return id;
 }
 
+// Tab changes made by the user (+ Tab, rename, close) are undoable and logged. Like plot removal they
+// carry their own restore step on the undo entry (tabs are not part of the gate snapshot).
+function pushUndoOps(desc, ops) {
+  pushUndo(desc);
+  _undoStack[_undoStack.length - 1].plotOps = ops;
+}
+
+function addTabUndoable() {
+  const prevActive = activeTabId;
+  const id = addTab();
+  const tab = tabs.find(t => t.id === id);
+  pushUndoOps(`Added tab "${tab.name}"`, {
+    undo() { tabs = tabs.filter(t => t.id !== id); if (activeTabId === id) activeTabId = prevActive !== null && tabs.some(t => t.id === prevActive) ? prevActive : (tabs[0] ? tabs[0].id : null); renderTabStrip(); renderTabPlots(); },
+    redo() { if (!tabs.includes(tab)) tabs.push(tab); renderTabStrip(); renderTabPlots(); },
+  });
+  return id;
+}
+
 function removeTab(id) {
   if (tabs.length <= 1) { showToast('Cannot remove the last tab'); return; }
   // Move plots on this tab to first remaining tab
+  const idx = tabs.findIndex(t => t.id === id); if (idx < 0) return;
+  const tab = tabs[idx], prevActive = activeTabId;
   const fallback = tabs.find(t => t.id !== id);
-  plots.forEach(pl => { if (pl.tabId === id) pl.tabId = fallback.id; });
-  tabs = tabs.filter(t => t.id !== id);
-  if (activeTabId === id) activeTabId = tabs[0].id;
-  renderTabStrip();
-  renderTabPlots();
+  const moved = plots.filter(pl => pl.tabId === id);
+  const apply = () => {
+    moved.forEach(pl => { pl.tabId = fallback.id; });
+    tabs = tabs.filter(t => t.id !== id);
+    if (activeTabId === id) activeTabId = tabs[0].id;
+    renderTabStrip();
+    renderTabPlots();
+  };
+  pushUndoOps(`Closed tab "${tab.name}"` + (moved.length ? ` (its ${moved.length} plot${moved.length > 1 ? 's' : ''} moved to "${fallback.name}")` : ''), {
+    undo() {
+      if (!tabs.includes(tab)) tabs.splice(Math.min(idx, tabs.length), 0, tab);
+      moved.forEach(pl => { pl.tabId = id; });
+      activeTabId = tabs.some(t => t.id === prevActive) ? prevActive : id;
+      renderTabStrip(); renderTabPlots();
+    },
+    redo: apply,
+  });
+  apply();
 }
 
 function switchTab(id) {
@@ -5351,7 +5431,7 @@ function renderTabStrip() {
   strip.appendChild(addBtn || (() => {
     const b = document.createElement('div');
     b.className = 'tab-add'; b.textContent = '+ Tab';
-    b.title = 'New tab'; b.onclick = () => addTab();
+    b.title = 'New tab'; b.onclick = () => addTabUndoable();
     return b;
   })());
 }
@@ -5359,7 +5439,14 @@ function renderTabStrip() {
 function renameTab(id) {
   const tab = tabs.find(t => t.id === id); if (!tab) return;
   const name = prompt('Tab name:', tab.name);
-  if (name && name.trim()) { tab.name = name.trim(); renderTabStrip(); }
+  if (name && name.trim() && name.trim() !== tab.name) {
+    const oldName = tab.name, newName = name.trim();
+    pushUndoOps(`Renamed tab "${oldName}" to "${newName}"`, {
+      undo() { tab.name = oldName; renderTabStrip(); },
+      redo() { tab.name = newName; renderTabStrip(); },
+    });
+    tab.name = newName; renderTabStrip();
+  }
 }
 
 function renderTabPlots() {
@@ -5933,12 +6020,16 @@ function toggleAxisScale(id, axis) {
   if (isLog && !isAsinh)       { newLog = false; newAsinh = false; }
   else if (!isLog && !isAsinh) { newLog = false; newAsinh = true;  }
   else                          { newLog = true;  newAsinh = false; }
-  if (axis === 'x') { plot.xLog = newLog; plot.xAsinh = newAsinh; }
-  else              { plot.yLog = newLog; plot.yAsinh = newAsinh; }
-  plot.gatePoints = [];
-  buildAxisControls(plot);
-  renderPlot(plot);
-  // Scale is intentionally per-plot — no propagation to other selected plots
+  // With 2+ plots selected, every selected plot gets the same new scale on this axis
+  const selectedPlots = getSelectedPlots();
+  const targets = selectedPlots.length > 1 ? selectedPlots : [plot];
+  for (const t of targets) {
+    if (axis === 'x') { t.xLog = newLog; t.xAsinh = newAsinh; }
+    else              { t.yLog = newLog; t.yAsinh = newAsinh; }
+    t.gatePoints = [];
+    buildAxisControls(t);
+    renderPlot(t);
+  }
 }
 
 // ── Gate color picker ─────────────────────────────────────────────────────────
@@ -7138,7 +7229,7 @@ function _starterParam(f, role) {
   return i >= 0 ? i : null;
 }
 // Y vs X, the flow convention: [yRole, xRole].
-const _STARTER_PLOTS = [['TIME', 'CD45'], ['FSH', 'FSA'], ['SSA', 'FSA'], ['SSA', 'CD45']];
+const _STARTER_PLOTS = [['CD45', 'TIME'], ['FSH', 'FSA'], ['FSA', 'SSA'], ['CD45', 'SSA']];
 const _STARTER_LABEL = { FSA: 'FSC-A', FSH: 'FSC-H', SSA: 'SSC-A', TIME: 'Time', CD45: 'CD45' };
 function generateStarterWorkspace(ids) {
   const files = _poolTargets(ids);
