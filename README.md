@@ -444,7 +444,7 @@ FlowNG is a research and educational tool **not intended for clinical diagnostic
 |---------|--------|
 | Chrome, Edge (80+) | ✅ Tested, full support including the Save As dialog |
 | Firefox (113+) | Expected to work; shared files need 113 or newer. Not tested by the author |
-| Safari (16.4+) | Works for viewing, gating and shared files after a fix for a missing `requestIdleCallback`; tested by simulation only. Save downloads the file |
+| Safari (16.4+) | ✅ Tested by the author on Safari 26.6.2: works fully, including shared files. Save downloads the file (no Save As dialog). Earlier versions are untested |
 
 Plots render on a 2D canvas, so no GPU features are required.
 
