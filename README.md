@@ -6,9 +6,9 @@
 
 The demo runs in your browser from GitHub Pages; the page is static and nothing you load is uploaded.
 
-[![FlowNG walkthrough video on YouTube](https://img.youtube.com/vi/uev2HDCQbWc/maxresdefault.jpg)](https://youtu.be/uev2HDCQbWc)
+[![FlowNG walkthrough video on YouTube](https://img.youtube.com/vi/Xj0Y3ohmiGs/maxresdefault.jpg)](https://youtu.be/Xj0Y3ohmiGs)
 
-**[Watch the walkthrough video on YouTube →](https://youtu.be/uev2HDCQbWc)**: loading LMD files, importing a template, selecting plots, gating, cofactors, compensation and sharing, with the keys and mouse buttons shown on screen.
+**[Watch the walkthrough video on YouTube →](https://youtu.be/Xj0Y3ohmiGs)**: loading LMD files, importing a template, selecting plots, gating, cofactors, compensation and sharing, with the keys and mouse buttons shown on screen.
 
 ---
 
