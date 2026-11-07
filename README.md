@@ -2,9 +2,13 @@
 
 **FlowNG** is a lightweight, client-side flow cytometry analysis and visualization tool that runs entirely in your web browser. Load your FCS or LMD files and start analyzing with interactive gating (polygon, rectangle and quadrant), spectral compensation, and automatic cofactor optimization. When you are done, export your analysis as one self-contained HTML file that a colleague can open, continue, save and pass on, all without your data ever leaving your computer.
 
-**[Try the live demo →](https://davidpng.github.io/FlowNg/FlowNG.html)** | **[Open the example shared analysis →](https://davidpng.github.io/FlowNg/samples/CLL_Example_Small_FlowNG_shared.html)** | [Privacy Policy](#data-security--privacy)
+**[Try the live demo →](https://davidpng.github.io/FlowNg/FlowNG.html)** | **[Open the example shared analysis →](https://davidpng.github.io/FlowNg/samples/Complex_Analysis_FlowNg.html)** | [Privacy Policy](#data-security--privacy)
 
 The demo runs in your browser from GitHub Pages; the page is static and nothing you load is uploaded.
+
+[![FlowNG walkthrough video on YouTube](https://img.youtube.com/vi/Xj0Y3ohmiGs/maxresdefault.jpg)](https://youtu.be/Xj0Y3ohmiGs)
+
+**[Watch the walkthrough video on YouTube →](https://youtu.be/Xj0Y3ohmiGs)**: loading LMD files, importing a template, selecting plots, gating, cofactors, compensation and sharing, with the keys and mouse buttons shown on screen.
 
 ---
 
@@ -21,7 +25,8 @@ The demo runs in your browser from GitHub Pages; the page is static and nothing 
 ### 📊 Visualization
 - **Blended density plots**: every plot is a binned density. Each bin takes the count-weighted colour of the populations that own its events and bleaches toward white as it gets denser, so back-gated populations show up in their own colours
 - **"+" dot toggle**: draw any population additionally as exact events
-- **Bins slider** per plot (32–512 per axis)
+- **Plot size slider** on the tab strip: one size for every plot on the active tab (280–800 px), saved with templates and shared files
+- **Bins slider** per plot (32–1024 per axis; high values suit the expanded view)
 - **Decade ticks**: log and arcsinh axes label each power of ten with a raised exponent (arcsinh also labels zero and the negative decades)
 - **Axis cofactor handles**: select a plot, then drag the blue marker on an arcsinh axis to set that channel's cofactor live; gates are re-evaluated on release
 - **Tabs**: named tabs with plot counts, right-click to rename, drag a plot onto a tab to move it
@@ -38,7 +43,7 @@ The demo runs in your browser from GitHub Pages; the page is static and nothing 
 - Events are stored once (the uncompensated values plus the spillover matrix; compensation is rebuilt on open), column by column in byte planes and gzipped, as text inside the HTML. A browser cannot embed raw binary in an HTML file, so base64 text is the compact single-file option. A 34k-event, 14-parameter LMD (3.0 MB) shares as about 1.3 MB
 - **Saving a shared file and its History**: a shared file keeps working. Click **💾 Save** to write a new copy that contains your changes (gates, plots, axis settings, compensation) and the **🕘 History**, then pass that copy on; the next person opens it exactly where you left off. The original file is never altered, so keep it or download it again to start over, and **↺ Reset to author's gates** inside any copy goes back to the author's gates and compensation (undoable). In Chrome and Edge, Save opens a Save As dialog, so you can choose where the copy goes; elsewhere it downloads. The save button shows a dot while there are unsaved changes, and the browser warns before closing with unsaved changes
 - **History**: every gating action is logged with its time and a plain description, for example `Drew gate "Blasts" on SS INT LOG vs CD45 KO (984 events)`, `Moved gate "Lymphs"`, `Adjusted spillover CD5 into CD20: 0.0000 to 0.0123`, `Set cofactor of CD19 ECD to 3085`, `Pasted gate "Viable" under "Singlets"`, plus undo, redo and reset. There are no user names or accounts, only what was done and when. The log keeps the latest 500 entries and travels inside saved files; an author's own history is included when exporting a shared file (file names in it are replaced with the tube names you chose)
-- **Example**: [`samples/CLL_Example_Small_FlowNG_shared.html`](samples/CLL_Example_Small_FlowNG_shared.html) is a locked, three-tube CLL panel (B cell, T-NK and myeloid tubes, 100,000 of 250,000 events each, 102 gates, 15 tabs). Download it and open it in a browser; the tube names are generic and the FCS header dates and IDs are removed
+- **Example**: [`samples/Complex_Analysis_FlowNg.html`](samples/Complex_Analysis_FlowNg.html) is a shared analysis with several tabs of gated plots. Download it and open it in a browser.
 - **Privacy**: file names, dates and IDs often identify a patient. The export dialog asks you to rename the tubes, drops collection date/time and IDs from the FCS header, and writes only the pristine app, never the live page. Check the result before sharing
 - Options: cap events per file (large files default to 500,000), rename the tubes / files (or use Sample 1, 2, …), strip FCS header metadata (default; removes sample IDs and collection dates and times), and **Locked viewer** (default on)
 - **Locked viewer** removes the FCS/LMD parsers, demo data, template import/export and the share code from the file, hides the open/import/export buttons and stops dropped files. Recipients can still gate, compensate, undo and reset to your gates. The embedded events can still be read with View Source or developer tools, so it limits casual reuse rather than preventing extraction
@@ -135,7 +140,7 @@ The top bar has two groups, each in two rows, laid out like FlowNg2. They appear
 
 | Tool | Function |
 |------|----------|
-| **Select** | Drag a gate to move it; with a plot selected (click its top bar), drag an arcsinh axis marker to set its cofactor |
+| **Select** | Drag a gate to move it; with a plot selected (click its top bar or empty space on it), drag an arcsinh axis marker to set its cofactor |
 | **Polygon** | Click to draw a polygon gate |
 | **Rect** | Drag to draw a rectangular gate |
 | **Quadrant** | Click to place a crosshair that creates Q1–Q4; drag the crosshair with Select or Edit |
@@ -158,7 +163,7 @@ The panel at the bottom of the left sidebar is a live cheat sheet that matches t
 
 | Control | What it does |
 |---|---|
-| **Select** | Drag a gate to move it. With a plot selected (click its top bar), drag the blue marker on an arcsinh axis to change that channel's cofactor |
+| **Select** | Drag a gate to move it. With a plot selected (click its top bar or empty space on it), drag the blue marker on an arcsinh axis to change that channel's cofactor |
 | **Polygon** | Click points around a population; click the first point (or double-click) to close the gate |
 | **Rect** | Drag a rectangle |
 | **Quadrant** | Click to place a crosshair (Q1–Q4, clockwise from upper right); drag it with Select or Edit |
@@ -172,7 +177,7 @@ The panel at the bottom of the left sidebar is a live cheat sheet that matches t
 
 | Control | What it does |
 |---|---|
-| Click a plot's top bar (the row with the population menu and bins slider) | Select (highlight) that plot; the cofactor markers need this |
+| Click a plot's top bar (the row with the population menu and bins slider), or any empty space on the plot | Select (highlight) that plot; the cofactor markers need this. Empty space means blank canvas with Select, Edit or Delete (not while drawing or in Comp), the card margins, and the gaps beside the axis menus |
 | Click empty canvas | Deselect all |
 | `Shift`+click / `Ctrl`or`⌘`+click | Range-select / toggle plots; axis, population and bin changes then apply to every selected plot (including the LOG/LIN/ASINH scale: clicking the scale button on one selected plot gives that axis of every selected plot the same scale) |
 | `Del` / `⌫` | Remove the selected plot(s) |
@@ -180,9 +185,9 @@ The panel at the bottom of the left sidebar is a live cheat sheet that matches t
 | Drag ⠿ | Reorder plots, or drop one on a tab to move it there |
 | Right-click the plot | Set axis min/max and the arcsinh cofactor numerically |
 | Right-click the plot header | Switch the plot's source file (when several files are loaded) |
-| Bins slider | Density bins per axis (32–512) |
+| Bins slider | Density bins per axis (32–1024) |
 
-**Tabs**: right-click or double-click a tab to rename it, `✕` closes it, `+ Tab` adds one.
+**Tabs**: right-click or double-click a tab to rename it, `✕` closes it, `+ Tab` adds one. The **Plot size** slider at the right end of the tab strip resizes every plot on that tab (each tab keeps its own size, saved with templates and shared files).
 
 **Population tree**
 
@@ -217,7 +222,7 @@ Both tools need a file with a spillover matrix (an FCS `$SPILLOVER` keyword, or 
 Autocomp fits one pair at a time from the population you outline; it is not the full AutoSpill algorithm that learns a whole matrix from single-stain controls. The outline is temporary and never becomes a gate.
 
 ### Changing a Cofactor by Dragging
-1. **Select the plot** by clicking its **top bar** (the row with the population menu and the bins slider). The plot gets a blue outline. Clicking inside the plot itself does not select it.
+1. **Select the plot** by clicking its **top bar** (the row with the population menu and the bins slider) or any empty space on it (blank canvas with Select active, the card margins). The plot gets a blue outline. Clicking on a gate or while drawing does not select it.
 2. Make sure **Select** is the active tool. Each **ASINH** axis of the selected plot now shows a small blue marker (axes set to LIN or LOG have none).
 3. Drag the marker along the axis: the position is geometric (1 to 100,000), the ticks and gate outlines follow live, and the zero point stays pinned at 20% of the axis.
 4. On release every gate is re-evaluated and every plot of that channel adopts the new cofactor. `Esc` during the drag puts the old value back, and **Undo** reverses a committed change.

@@ -32,7 +32,7 @@ SP=<scratchpad dir>; mkdir -p $SP/t && cd /path/to/FlowNg
 python3 scripts/build_test_daughter.py $SP/t/daughter.html                    # locked file
 python3 scripts/build_test_daughter.py $SP/t/daughter_lod.html --lod 20000    # forces the large-population render path
 python3 scripts/build_test_daughter.py $SP/t/daughter_unlocked.html --unlocked
-cp FlowNG.html "TEST SAMPLE"*.LMD flowviz_B_cells.json $SP/t/ && mkdir -p $SP/t/samples && cp samples/*.json $SP/t/samples/
+cp FlowNG.html "TEST SAMPLE"*.LMD $SP/t/ && mkdir -p $SP/t/samples && cp samples/*.json $SP/t/samples/
 cd $SP/t && python3 -m http.server 8770 &
 ```
 
@@ -141,6 +141,9 @@ Boolean gates (BTM has some): after import, their counts are non-zero and change
 - `switchTab` through every tab: each shows its plots. `renameTab`, `removeTab` work and the tab strip shows "Name (count)".
 - Delete plots: select two middle plots (add class `selected`), `keydown` `Delete`; History shows "Removed 2 plots", both cards gone. `undo()` restores both at their old positions (`plots` order and `.plot-card` DOM order match the original) and canvases draw; `redo()` removes them again; `Ctrl+Z` after a single-plot delete restores it.
 - Tabs undo: `addTabUndoable()` twice, move plots 0 and 1 to tab 2 (`plots[i].tabId = id`), `renameTab(id)` (stub `prompt`), `removeTab(id)`. History shows "Added tab", "Renamed tab ... to ...", "Closed tab ... (its 2 plots moved to ...)". Four `undo()` calls step back through the close (tab returns at its position, the two plots return to it), the rename, and both adds; four `redo()` calls reapply them.
+- Selection: with `setGlobalMode('pan')`, click empty canvas (`mousedown`, `mouseup`, `click` on the canvas) selects that plot; a click on a gate does not; `Ctrl` toggles; `Shift` ranges. The same blank-canvas click selects in Edit and Delete modes and does not in Polygon mode. Clicking the card itself, the gap in `#xaxis-ctrl-<id>`, or the header selects; clicking the axis menu, scale button or expand button does not.
+- Bins: slider runs 32 to 1024; `changeBins(id,1024)` redraws with no error at normal and expanded size (measured about 16 ms vs 12 ms at 512 on 33,000 events with 8 gates; cost beyond that is the bins x bins pass, a few ms).
+- Plot size slider (`#tab-size-slider`, range 280 to 800): set the value and dispatch `input`; every canvas on the active tab is that size (`canvas.width`/`height`, card width +2 px) and redrawn; the label `#tab-size-val` matches; other tabs are unchanged. Switching tabs moves the slider to that tab's size. A new plot on a resized tab gets its size; `expandPlot` then `collapsePlot` returns to the tab's size. `_buildTemplateV3('x').tabs` lists `{name,size}` for resized tabs only; clearing the plots and `_applyTemplateV3` restores the size; a template with the `tabs` field deleted opens at 350. Shared round trip (section 8 then 9.11) keeps it.
 - Expand and collapse a plot (`togglePlotExpand`, `collapsePlot`).
 - Axis Range dialog: `showAxisRangeModal(pl,100,100)` then `applyAxisRangeModal(pl.id)` and `resetAxisRangeModal(pl.id)`; no "Display Mode" block; History records both.
 - Drag-reorder of plots and tree rows (dispatch `dragstart`/`dragover`/`drop` on `.plot-drag-handle` and `.pop-grip`) reorders them.
@@ -152,8 +155,7 @@ Boolean gates (BTM has some): after import, their counts are non-zero and change
 3. **Unmatched sections** show "(skip this section)", not the first file.
 4. **Version 2 and junk files are refused:** `importGates('{"version":2,"gates":[]}')` toast says version 2 is unsupported; `{"foo":1}` says "Not a FlowNG template".
 5. **Round trip:** export a template (`_buildTemplateV3('rt')`), clear the gates, re-apply with `_applyTemplateV3(t, fcsFiles)`; gate counts and plot count equal the originals.
-6. **Single-file template** (`flowviz_B_cells.json`): imports into one tube, 9 gates.
-7. **Converter regression:** run `scripts/kaluza_to_flowng.py` on a template and diff against the committed sample (ignore `exported`); output must be identical unless the change was intended. Converted templates that use raw channel names (`FL1 INT`) match no file and say so.
+6. **Converter regression:** run `scripts/kaluza_to_flowng.py` on a template and diff against the committed sample (ignore `exported`); output must be identical unless the change was intended. Converted templates that use raw channel names (`FL1 INT`) match no file and say so.
 
 ## 8. Export Shareable HTML
 
@@ -195,8 +197,7 @@ Use `daughter.html` (locked) and `daughter_unlocked.html`.
 | 9.7 | `showHistory()` | Modal lists entries newest first; Escape closes it |
 | 9.8 | Locked guard | Dropping a file on the page does nothing; `importGates`/`loadFCS` are undefined |
 | 9.9 | Unlocked daughter | Open/Import/Export present and working |
-| 9.10 | Old files | `samples/CLL_Example_Small_FlowNG_shared.html` (built by older code, `format:1`) still opens as one workspace; it has no Save button (known). Saving a format 1 file (`build_test_daughter.py` uses it) writes `format:2` |
-| 9.11 | Workspaces in a saved file | A two-workspace shared file reopens with both workspaces in the strip (`workspaces.length === 2`), the first active; a change made in the second one marks only that tab dirty (`•`), and `saveDaughter()` writes `format:2` with each workspace's own history; closing and Save buttons are hidden in the locked viewer |
+| 9.10 | Workspaces in a saved file | A two-workspace shared file reopens with both workspaces in the strip (`workspaces.length === 2`), the first active; a change made in the second one marks only that tab dirty (`•`), and `saveDaughter()` writes `format:2` with each workspace's own history; closing and Save buttons are hidden in the locked viewer |
 
 ## 10. Visual checks (screenshots)
 

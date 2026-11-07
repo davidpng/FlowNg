@@ -672,6 +672,9 @@
     align-self: center; line-height: 1.2; white-space: nowrap;
   }
   .tab-add:hover { color: #fff; border-color: #888; }
+  .tab-size-ctl { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 11px; color: #aaa; white-space: nowrap; align-self: center; }
+  .tab-size-ctl input[type=range] { width: 110px; height: 12px; cursor: pointer; }
+  .tab-size-ctl span.tab-size-val { min-width: 34px; text-align: right; }
   /* ── Workspace strip (one workspace per loaded template, above the plot tabs) ── */
   .ws-strip {
     display: flex; align-items: center; gap: 6px; flex-shrink: 0; overflow-x: auto; scrollbar-width: none;
@@ -777,7 +780,7 @@
     </div><!-- /sidebar-content -->
     <div class="kb-hints">
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin-bottom:4px;letter-spacing:0.5px">TOOLBAR</div>
-      <kbd>Select</kbd> — drag a gate to move it; select a plot (click its top bar) to get blue cofactor markers on its ASINH axes<br>
+      <kbd>Select</kbd> — drag a gate to move it; select a plot (click its top bar or empty space on it) to get blue cofactor markers on its ASINH axes<br>
       <kbd>Polygon</kbd> — click points, click the first point (or double-click) to close<br>
       <kbd>Rect</kbd> — drag a rectangle<br>
       <kbd>Quadrant</kbd> — click to place a crosshair (Q1–Q4 clockwise from upper right); drag it with Select or Edit<br>
@@ -787,7 +790,7 @@
       <kbd>Autocomp</kbd> — outline a population that should sit flat; spillover is fitted for you<br>
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> undo · <kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Y</kbd> redo<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">PLOTS</div>
-      <kbd>Click</kbd> a plot's top bar — select (highlight) it; the cofactor markers need this<br>
+      <kbd>Click</kbd> a plot's top bar, or any empty space on it (blank canvas with Select, Edit or Delete; the margins; gaps beside the axis menus) — select (highlight) it; the cofactor markers need this<br>
       <kbd>Click</kbd> empty canvas — deselect all<br>
       <kbd>Shift</kbd>+<kbd>Click</kbd> — range-select plots<br>
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Click</kbd> — toggle selection<br>
@@ -797,9 +800,9 @@
       <kbd>Drag</kbd> ⠿ — reorder plots; drop on a tab to move it<br>
       <kbd>Right-click</kbd> canvas — axis range / cofactor<br>
       <kbd>Right-click</kbd> header — switch source file<br>
-      <kbd>Slider</kbd> — density bins per axis<br>
+      <kbd>Slider</kbd> — density bins per axis (32–1024; high values suit the expanded view)<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">ARCSINH COFACTOR</div>
-      1. Click the plot's <b>top bar</b> (the row with the population menu and bins slider); the plot gets a blue outline<br>
+      1. Click the plot's <b>top bar</b> (the row with the population menu and bins slider), or any empty space on the plot; the plot gets a blue outline<br>
       2. With <kbd>Select</kbd> active, a blue marker appears on each <b>ASINH</b> axis: drag it along the axis to set that channel's cofactor live<br>
       <kbd>Esc</kbd> while dragging cancels; the change is undoable and appears in History<br>
       <kbd>Right-click</kbd> the plot to type an exact value<br>
@@ -812,6 +815,7 @@
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">TABS</div>
       <kbd>Right-click</kbd> or <kbd>Dbl-click</kbd> tab — rename<br>
       <kbd>✕</kbd> — close tab · <kbd>+ Tab</kbd> — add a tab<br>
+      <kbd>Plot size</kbd> slider (right end of the tab strip) — size of every plot on this tab; saved with templates and shared files<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">POPULATION TREE</div>
       <kbd>+</kbd> — also draw this population as exact events (dots)<br>
       <kbd>×</kbd> — delete gate and children<br>
@@ -834,6 +838,11 @@
     <div class="ws-strip" id="ws-strip" style="display:none"></div>
     <div class="tab-strip" id="tab-strip" style="display:none">
       <div class="tab-add" onclick="addTabUndoable()" title="Add a new tab (a separate page of plots)">+ Tab</div>
+      <div class="tab-size-ctl" id="tab-size-ctl" title="Plot size: the width and height of every plot on this tab. Saved with templates and shared files.">
+        <span>Plot size</span>
+        <input type="range" id="tab-size-slider" min="280" max="800" step="10" value="350" oninput="setTabPlotSize(this.value)">
+        <span class="tab-size-val" id="tab-size-val">350</span>
+      </div>
     </div>
     <div class="canvas-area" id="canvas-area">
     <div class="drop-zone" id="drop-zone">
@@ -2789,7 +2798,8 @@ function renderPlotCard(plot) {
   const card = document.createElement('div');
   card.className = 'plot-card';
   card.id = `plot-card-${plot.id}`;
-  card.style.width = '352px';
+  const tabPx = tabSizeOf(plot.tabId);
+  card.style.width = `${tabPx + 2}px`;
 
   const pOpts = (sel) => sortedParamIndices().map(i => {
     const p = fcsFile ? fcsFile.params[i] : null; if (!p) return '';
@@ -2815,13 +2825,13 @@ function renderPlotCard(plot) {
         style="flex:1;min-width:0;font-size:10px;padding:2px 4px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:4px"
         onmousedown="event.stopPropagation()">${popOpts()}</select>
       <span id="res-val-${plot.id}" style="font-size:10px;color:var(--text2);flex-shrink:0;min-width:24px;text-align:right" title="Density bins per axis">${plot.bins || 256}</span>
-      <input type="range" min="32" max="512" step="32" value="${plot.bins || 256}" id="res-${plot.id}"
+      <input type="range" min="32" max="1024" step="32" value="${plot.bins || 256}" id="res-${plot.id}"
         oninput="changeBins(${plot.id},this.value)" onmousedown="event.stopPropagation()"
         style="width:56px;height:12px;cursor:pointer;flex-shrink:0" title="Density bins per axis (lower = chunkier, higher = finer)">
       <span id="event-count-${plot.id}" style="font-size:9px;color:var(--text2);flex-shrink:0;margin-left:2px"></span>
     </div>
     <div class="plot-canvas-wrap" style="position:relative">
-      <canvas id="canvas-${plot.id}" width="350" height="350" style="cursor:crosshair;display:block"></canvas>
+      <canvas id="canvas-${plot.id}" width="${tabPx}" height="${tabPx}" style="cursor:crosshair;display:block"></canvas>
       <div id="xaxis-ctrl-${plot.id}" style="position:absolute;bottom:2px;left:64px;right:8px;display:flex;align-items:center;justify-content:center;gap:4px;pointer-events:auto;z-index:10"></div>
       <div id="yaxis-ctrl-${plot.id}" style="position:absolute;top:0;bottom:44px;left:0;width:60px;display:flex;align-items:center;justify-content:center;pointer-events:auto;z-index:10"></div>
       <button class="expand-button" onclick="togglePlotExpand(${plot.id})" title="Expand plot"
@@ -2847,10 +2857,9 @@ function renderPlotCard(plot) {
       e.preventDefault();
     }
   });
-  hdr.addEventListener('click', e => {
-    if (e.target.closest('.plot-drag-handle') || e.target.tagName === 'SELECT' ||
-        e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
-
+  // Selecting a plot: click its top bar, or any part of the card that has no other job (empty canvas
+  // in Select/Edit/Delete mode, the card margin, the gaps beside the axis controls).
+  const selectPlot = e => {
     const currentIndex = plots.findIndex(p => p.id === plot.id);
 
     if (e.shiftKey && lastClickedPlotIndex !== null && lastClickedPlotIndex !== currentIndex) {
@@ -2882,6 +2891,21 @@ function renderPlotCard(plot) {
       _focusedFileId = plot.fileId;
       renderPrecedenceList();
     }
+  };
+  plot._selectPlot = selectPlot;
+  hdr.addEventListener('click', e => {
+    if (e.target.closest('.plot-drag-handle') || e.target.tagName === 'SELECT' ||
+        e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+    selectPlot(e);
+  });
+  // Anywhere else on the card that is not a control, the header or the canvas (the canvas decides for
+  // itself, see the canvas click handler)
+  card.addEventListener('mousedown', e => {
+    if ((e.shiftKey || e.ctrlKey || e.metaKey) && !e.target.closest('select, input, button, canvas, .plot-header')) e.preventDefault();
+  });
+  card.addEventListener('click', e => {
+    if (e.target.closest('select, input, button, canvas, .plot-header, .cf-handle')) return;
+    selectPlot(e);
   });
 
   // Right-click plot header → file-switch context menu (only when multiple files loaded)
@@ -2929,10 +2953,15 @@ function renderPlotCard(plot) {
   // Mode buttons have onmousedown stopPropagation inline where needed
 
   const canvas = document.getElementById(`canvas-${plot.id}`);
-  canvas.addEventListener('click',     e => onCanvasClick(e, canvas, plot));
+  canvas.addEventListener('click',     e => {
+    onCanvasClick(e, canvas, plot);
+    // A click on empty canvas, with a tool that is not using it, selects the plot
+    if (plot._emptyDown && (plot.mode === 'pan' || plot.mode === 'edit' || plot.mode === 'delete')) plot._selectPlot(e);
+    plot._emptyDown = false;
+  });
   canvas.addEventListener('dblclick',  e => { if ((plot.mode==='gate' || plot.mode==='autocomp') && plot.gatePoints.length>=3) finalizeGate(plot); });
   canvas.addEventListener('contextmenu', e => { e.preventDefault(); showAxisRangeModal(plot, e.clientX, e.clientY); });
-  canvas.addEventListener('mousedown', e => { _markInteraction(); onCanvasMouseDown(e, canvas, plot); });
+  canvas.addEventListener('mousedown', e => { _markInteraction(); plot._emptyDown = false; onCanvasMouseDown(e, canvas, plot); });
   canvas.addEventListener('mousemove', e => { _markInteraction(); onCanvasMouseMove(e, canvas, plot); });
   canvas.addEventListener('mouseup',   e => { _markInteraction(); onCanvasMouseUp(e, canvas, plot); });
   canvas.addEventListener('mouseleave',e => { onCanvasMouseUp(e, canvas, plot); canvas.style.cursor = 'default'; });
@@ -3610,7 +3639,7 @@ const _ng2GrayAnchor = g => { const c = _ng2ToLin(g); return [c, c, c]; };
 
 function drawDensityNg2(ctx, plot, tf, pad, pw, ph, pop, renderPop, fcsFile, orderedGates) {
   const { data, nPar, nEvents } = fcsFile;
-  const nb = Math.max(16, Math.min(512, plot.bins || 256));
+  const nb = Math.max(16, Math.min(1024, plot.bins || 256));
   const xr = tf.xRange, yr = tf.yRange;
   const xSpan = xr.max - xr.min, ySpan = yr.max - yr.min;
 
@@ -4017,8 +4046,9 @@ function onCanvasMouseDown(e, canvas, plot) {
     renderPlot(plot);
     return;
   }
-  // Clicked empty space — deselect
+  // Clicked empty space — deselect the gate (and let the click select the plot)
   plot._editGate = null; plot._dragGate = null;
+  plot._emptyDown = (e.button === 0);
   renderPlot(plot);
 }
 
@@ -4313,6 +4343,7 @@ function onCanvasClick(e, canvas, plot) {
       showToast(`Deleted "${gate.name}"`);
       return;
     }
+    plot._emptyDown = true;   // nothing under the pointer: the click selects the plot
     return;
   }
   if (plot.mode === 'quad') {
@@ -5342,7 +5373,7 @@ function getDescendantGates(popId) {
 
 
 // ─── TAB SYSTEM ────────────────────────────────────────────────────────────────
-let tabs = [];           // [{id, name}]
+let tabs = [];           // [{id, name, size?}]  size = plot canvas width/height in px (default 350)
 let activeTabId = null;
 let tabIdCounter = 0;
 
@@ -5372,6 +5403,36 @@ function addTabUndoable() {
     redo() { if (!tabs.includes(tab)) tabs.push(tab); renderTabStrip(); renderTabPlots(); },
   });
   return id;
+}
+
+// ── Plot size per tab ──────────────────────────────────────────────────────
+// Every plot on a tab is drawn at the tab's size (square canvas, px). Default 350; saved in templates.
+const TAB_SIZE_DEFAULT = 350, TAB_SIZE_MIN = 280, TAB_SIZE_MAX = 800;
+function _clampTabSize(v) { v = Math.round(parseFloat(v) / 10) * 10; return isNaN(v) ? TAB_SIZE_DEFAULT : Math.max(TAB_SIZE_MIN, Math.min(TAB_SIZE_MAX, v)); }
+function tabSizeOf(tabId) { const t = tabs.find(x => x.id === tabId); return (t && t.size) || TAB_SIZE_DEFAULT; }
+// Resizes one plot's canvas and card to its tab's size; true if it changed. An expanded plot keeps its overlay size.
+function fitPlotToTab(plot) {
+  if (expandedPlotId === plot.id) return false;
+  const card = document.getElementById(`plot-card-${plot.id}`), canvas = document.getElementById(`canvas-${plot.id}`);
+  if (!card || !canvas) return false;
+  const size = tabSizeOf(plot.tabId);
+  if (canvas.width === size && canvas.height === size && card.style.width === `${size + 2}px`) return false;
+  canvas.width = size; canvas.height = size;
+  card.style.width = `${size + 2}px`;
+  plot._tf = null;
+  return true;
+}
+function updateTabSizeControl() {
+  const tab = tabs.find(t => t.id === activeTabId), size = (tab && tab.size) || TAB_SIZE_DEFAULT;
+  const sl = document.getElementById('tab-size-slider'), val = document.getElementById('tab-size-val');
+  if (sl && sl.value !== String(size)) sl.value = size;
+  if (val) val.textContent = size;
+}
+function setTabPlotSize(v) {
+  const tab = tabs.find(t => t.id === activeTabId); if (!tab) return;
+  tab.size = _clampTabSize(v);
+  updateTabSizeControl();
+  plots.filter(p => p.tabId === tab.id).forEach(p => { if (fitPlotToTab(p)) renderPlot(p); });
 }
 
 function removeTab(id) {
@@ -5414,6 +5475,7 @@ function renderTabStrip() {
   if (!strip) return;
   // Keep the + button, rebuild tabs before it
   const addBtn = strip.querySelector('.tab-add');
+  const sizeCtl = strip.querySelector('.tab-size-ctl');   // persistent, so a drag on the slider survives a rebuild
   strip.innerHTML = '';
   tabs.forEach(tab => {
     const plotCount = plots.filter(p => p.tabId === tab.id).length;
@@ -5447,6 +5509,7 @@ function renderTabStrip() {
     b.title = 'New tab'; b.onclick = () => addTabUndoable();
     return b;
   })());
+  if (sizeCtl) { strip.appendChild(sizeCtl); updateTabSizeControl(); }
 }
 
 function renameTab(id) {
@@ -5470,8 +5533,9 @@ function renderTabPlots() {
     if (!card) return;
     const visible = pl.tabId === activeTabId;
     card.style.display = visible ? '' : 'none';
-    if (visible) renderPlot(pl);
+    if (visible) { fitPlotToTab(pl); renderPlot(pl); }
   });
+  updateTabSizeControl();
 }
 
 
@@ -5615,8 +5679,9 @@ function collapseExistingExpanded() {
   // Reset canvas size FIRST - clear all canvas attributes and styles
   const canvas = document.getElementById(`canvas-${oldId}`);
   if (canvas) {
-    canvas.width = 350;
-    canvas.height = 350;
+    const px = tabSizeOf((plots.find(p => p.id === oldId) || {}).tabId);
+    canvas.width = px;
+    canvas.height = px;
     canvas.style.width = '';
     canvas.style.height = '';
   }
@@ -5630,7 +5695,7 @@ function collapseExistingExpanded() {
 
   // Reset card styling - EXPLICITLY set width back to 352px (normal size)
   card.classList.remove('expanded');
-  card.style.width = '352px';  // Explicitly reset to normal width
+  card.style.width = `${tabSizeOf((plots.find(p => p.id === oldId) || {}).tabId) + 2}px`;  // back to the tab's plot size
   card.style.removeProperty('--expanded-size');
 
   // Move card back to canvas area if not already there
@@ -6534,7 +6599,8 @@ function _buildTemplateV3(tmplName, ws) {
     name:     tmplName,
     exported: new Date().toISOString(),
     files:    filesArr,
-    plots:    plotSnapshots
+    plots:    plotSnapshots,
+    tabs:     V.tabs.filter(t => t.size && t.size !== TAB_SIZE_DEFAULT).map(t => ({ name: t.name, size: t.size }))
   };
 }
 // ─── SHAREABLE HTML EXPORT / BUNDLE LOAD ─────────────────────────────────────
@@ -7438,6 +7504,11 @@ function _applyTemplateV3(tmpl, fileMap) {
     if (card && plot.tabId !== activeTabId) card.style.display = 'none';
   });
 
+  // Plot size per tab (older templates have none: the default applies)
+  (tmpl.tabs || []).forEach(ts => {
+    const t = tabs.find(x => x.name === ts.name);
+    if (t && ts.size) t.size = _clampTabSize(ts.size);
+  });
   const strip = document.getElementById('tab-strip');
   if (strip) strip.style.display = tabs.length > 0 ? 'flex' : 'none';
   if (tabs.length > 0) { activeTabId = tabs[0].id; renderTabStrip(); renderTabPlots(); }

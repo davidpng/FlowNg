@@ -20,7 +20,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parent.parent
 ap = argparse.ArgumentParser()
 ap.add_argument('out')
-ap.add_argument('--bundle', default=str(root / 'samples' / 'CLL_Example_Small_FlowNG_shared.html'),
+ap.add_argument('--bundle', default=str(root / 'samples' / 'Complex_Analysis_FlowNg.html'),
                 help='shared HTML whose embedded events/template are reused')
 ap.add_argument('--lod', type=int, help='override LOD_TARGET (default 100000)')
 ap.add_argument('--unlocked', action='store_true', help='do not strip the loading/import/export code')
