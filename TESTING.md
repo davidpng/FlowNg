@@ -21,7 +21,7 @@ The app keeps loaded files in a **Pool** and each loaded template in its own **w
 - **The pane allows a limited number of tabs.** Close old ones (`tabs_close`) before opening new ones; reuse one tab with `navigate`.
 - **Stub dialogs and downloads before exercising export/save:** `window.showSaveFilePicker = undefined; HTMLAnchorElement.prototype.click = function(){}; window.prompt = (m, d) => d; window.confirm = () => true;` and capture the blob by wrapping `URL.createObjectURL`.
 - **Workers cannot see main-script functions.** `evalGateW` and the parse worker have their own copies of helpers. `node --check` will not catch a helper used inside a worker; run a worker-evaluated gate (section 4) after touching shared math.
-- **Never use real patient files.** The three `TEST SAMPLE *.LMD` files are the fixtures. A file name or header can hold a name, accession number or date: scan outputs (section 8).
+- **Never use real patient files.** The three `samples/TEST SAMPLE *.LMD` files are the fixtures. A file name or header can hold a name, accession number or date: scan outputs (section 8).
 - **Do not trust one signal.** A plot can have correct state and a stale picture; compare pixels (section 10).
 - Timings below are from one Mac; use them as ratios. Re-baseline (section 11) when the hardware changes.
 
@@ -32,7 +32,7 @@ SP=<scratchpad dir>; mkdir -p $SP/t && cd /path/to/FlowNg
 python3 scripts/build_test_daughter.py $SP/t/daughter.html                    # locked file
 python3 scripts/build_test_daughter.py $SP/t/daughter_lod.html --lod 20000    # forces the large-population render path
 python3 scripts/build_test_daughter.py $SP/t/daughter_unlocked.html --unlocked
-cp FlowNG.html "TEST SAMPLE"*.LMD $SP/t/ && mkdir -p $SP/t/samples && cp samples/*.json $SP/t/samples/
+cp FlowNG.html samples/"TEST SAMPLE"*.LMD $SP/t/ && mkdir -p $SP/t/samples && cp samples/*.json $SP/t/samples/
 cd $SP/t && python3 -m http.server 8770 &
 ```
 
