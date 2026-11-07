@@ -167,6 +167,11 @@ Definitions used throughout this spec:
 
 ## 13. Tabs
 
+- **Plot size per tab:** a **Plot size** slider at the right end of the tab strip sets the width and height of every plot on the active tab (280 to 800 px in steps of 10, default 350; the card is 2 px wider than the canvas). Dragging resizes the plots live. Each tab keeps its own size, the slider shows the active tab's, and a plot moved to another tab takes that tab's size. The expanded view is unaffected and returns to the tab's size when collapsed. New plots use the tab's size.
+  - Reason: users wanted bigger (or more) plots per page without expanding each one; a tab is the natural unit because tabs group plots that are read together.
+  - Saved in the template as `tabs: [{name, size}]` (only tabs not at the default), which also carries it into shared files and Save, since all of them are built from the template. Older templates have no `tabs` field and open at the default size. The minimum of 280 keeps the axis menus inside the plot.
+  - It is a display setting like the bins slider: not an undo step and not in History. Pair large sizes with a higher bins value.
+
 - A tab groups plots. The strip shows `Name (count)`; right-click or double-click renames; `✕` closes; `+ Tab` adds one.
 - **Adding (`+ Tab`), renaming and closing a tab are undoable and logged** ("Added tab ...", "Renamed tab ... to ...", "Closed tab ... (its N plots moved to ...)"). Closing a tab never deletes plots: they move to the first remaining tab, and Undo reopens the tab at its old position and sends exactly those plots back; Redo repeats it. The last tab cannot be closed. Tabs made by the program (starter template, template import) are not individual undo steps.
 - A workspace (one loaded template and its files) has its own tabs, plots, undo and history; the workspace strip sits above the tab strip.

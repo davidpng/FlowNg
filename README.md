@@ -21,6 +21,7 @@ The demo runs in your browser from GitHub Pages; the page is static and nothing 
 ### 📊 Visualization
 - **Blended density plots**: every plot is a binned density. Each bin takes the count-weighted colour of the populations that own its events and bleaches toward white as it gets denser, so back-gated populations show up in their own colours
 - **"+" dot toggle**: draw any population additionally as exact events
+- **Plot size slider** on the tab strip: one size for every plot on the active tab (280–800 px), saved with templates and shared files
 - **Bins slider** per plot (32–1024 per axis; high values suit the expanded view)
 - **Decade ticks**: log and arcsinh axes label each power of ten with a raised exponent (arcsinh also labels zero and the negative decades)
 - **Axis cofactor handles**: select a plot, then drag the blue marker on an arcsinh axis to set that channel's cofactor live; gates are re-evaluated on release
@@ -182,7 +183,7 @@ The panel at the bottom of the left sidebar is a live cheat sheet that matches t
 | Right-click the plot header | Switch the plot's source file (when several files are loaded) |
 | Bins slider | Density bins per axis (32–1024) |
 
-**Tabs**: right-click or double-click a tab to rename it, `✕` closes it, `+ Tab` adds one.
+**Tabs**: right-click or double-click a tab to rename it, `✕` closes it, `+ Tab` adds one. The **Plot size** slider at the right end of the tab strip resizes every plot on that tab (each tab keeps its own size, saved with templates and shared files).
 
 **Population tree**
 
