@@ -1,0 +1,1153 @@
+{
+  "version": 3,
+  "name": "Mat B add-on template v2",
+  "exported": "2026-10-24T01:22:34.217363+00:00",
+  "files": [
+    {
+      "sourceFile": "Tube 1",
+      "gates": [
+        {
+          "name": "Time",
+          "color": "#808080",
+          "noColor": true,
+          "parentName": "All Events",
+          "xParamName": "TIME",
+          "yParamName": "CD45 KO",
+          "xScale": "lin",
+          "yScale": "asinh",
+          "rawPts": [
+            {
+              "rx": 0.0,
+              "ry": 1048410.3125
+            },
+            {
+              "rx": 1048571.0,
+              "ry": 1048410.3125
+            },
+            {
+              "rx": 1048571.0,
+              "ry": -345.6728820800781
+            },
+            {
+              "rx": 0.0,
+              "ry": -345.6728820800781
+            }
+          ],
+          "children": [
+            {
+              "name": "Singlets",
+              "color": "#808080",
+              "noColor": true,
+              "parentName": "Time",
+              "xParamName": "FSC-A",
+              "yParamName": "FSC-H",
+              "xScale": "lin",
+              "yScale": "lin",
+              "rawPts": [
+                {
+                  "rx": 68577.28,
+                  "ry": 28874.239999999998
+                },
+                {
+                  "rx": 143329.28,
+                  "ry": 15818.24
+                },
+                {
+                  "rx": 436193.28,
+                  "ry": 55754.24
+                },
+                {
+                  "rx": 956385.2799999999,
+                  "ry": 119754.23999999999
+                },
+                {
+                  "rx": 957409.2799999999,
+                  "ry": 185034.24
+                },
+                {
+                  "rx": 442337.28,
+                  "ry": 109514.23999999999
+                }
+              ],
+              "children": [
+                {
+                  "name": "Viable",
+                  "color": "#808080",
+                  "noColor": true,
+                  "parentName": "Singlets",
+                  "xParamName": "SS INT LOG",
+                  "yParamName": "FSC-A",
+                  "xScale": "log",
+                  "yScale": "lin",
+                  "rawPts": [
+                    {
+                      "rx": 2538.998318649662,
+                      "ry": 237542.63167420798
+                    },
+                    {
+                      "rx": 12364.097276331178,
+                      "ry": 181923.84
+                    },
+                    {
+                      "rx": 22588.176016377278,
+                      "ry": 273425.72307692294
+                    },
+                    {
+                      "rx": 42395.39278567355,
+                      "ry": 290470.1914932126
+                    },
+                    {
+                      "rx": 95253.5484493566,
+                      "ry": 359545.14244343876
+                    },
+                    {
+                      "rx": 227922.61199571704,
+                      "ry": 516533.66733031673
+                    },
+                    {
+                      "rx": 309456.7166060936,
+                      "ry": 974940.16
+                    },
+                    {
+                      "rx": 29319.895175334645,
+                      "ry": 974940.16
+                    },
+                    {
+                      "rx": 9525.354844935655,
+                      "ry": 677110.5013574663
+                    },
+                    {
+                      "rx": 2279.226119957167,
+                      "ry": 373001.3017194569
+                    }
+                  ],
+                  "children": [
+                    {
+                      "name": "45-neg",
+                      "color": "#808080",
+                      "noColor": true,
+                      "parentName": "Viable",
+                      "xParamName": "SS INT LOG",
+                      "yParamName": "CD45 KO",
+                      "xScale": "log",
+                      "yScale": "log",
+                      "rawPts": [
+                        {
+                          "rx": 1289.2183422667804,
+                          "ry": 470.7891829782002
+                        },
+                        {
+                          "rx": 287686.99227926496,
+                          "ry": 470.7891829782002
+                        },
+                        {
+                          "rx": 287686.99227926496,
+                          "ry": 113.69887388004999
+                        },
+                        {
+                          "rx": 1289.2183422667804,
+                          "ry": 113.69887388004999
+                        }
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Lymphs",
+                      "color": "#00ff00",
+                      "noColor": false,
+                      "parentName": "Viable",
+                      "xParamName": "SS INT LOG",
+                      "yParamName": "CD45 KO",
+                      "xScale": "log",
+                      "yScale": "log",
+                      "rawPts": [
+                        {
+                          "rx": 2324.776266441597,
+                          "ry": 30478.834153594144
+                        },
+                        {
+                          "rx": 1942.0310230417565,
+                          "ry": 12177.5760590094
+                        },
+                        {
+                          "rx": 3361.533264877314,
+                          "ry": 3816.4062708503425
+                        },
+                        {
+                          "rx": 8489.481441605692,
+                          "ry": 5669.302112136643
+                        },
+                        {
+                          "rx": 25665.510869934107,
+                          "ry": 13204.35223100687
+                        },
+                        {
+                          "rx": 24099.396290438206,
+                          "ry": 127377.31813041144
+                        },
+                        {
+                          "rx": 11526.399375666331,
+                          "ry": 97253.35688975951
+                        },
+                        {
+                          "rx": 4860.64231383987,
+                          "ry": 70988.14876930624
+                        },
+                        {
+                          "rx": 4024.041150898062,
+                          "ry": 57722.09706412465
+                        }
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Monos",
+                      "color": "#cb67e4",
+                      "noColor": false,
+                      "parentName": "Viable",
+                      "xParamName": "SS INT LOG",
+                      "yParamName": "CD45 KO",
+                      "xScale": "log",
+                      "yScale": "log",
+                      "rawPts": [
+                        {
+                          "rx": 25241.976075835173,
+                          "ry": 18581.316283809338
+                        },
+                        {
+                          "rx": 32859.01955000276,
+                          "ry": 14181.844716626063
+                        },
+                        {
+                          "rx": 79022.06069272476,
+                          "ry": 32782.266444123
+                        },
+                        {
+                          "rx": 81271.04626167552,
+                          "ry": 155221.35696671897
+                        },
+                        {
+                          "rx": 45292.8449691042,
+                          "ry": 220442.4482972232
+                        },
+                        {
+                          "rx": 39933.934455350274,
+                          "ry": 179246.8266642186
+                        },
+                        {
+                          "rx": 23701.705673738415,
+                          "ry": 143151.2767439054
+                        }
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Grans",
+                      "color": "#0c6a0c",
+                      "noColor": false,
+                      "parentName": "Viable",
+                      "xParamName": "SS INT LOG",
+                      "yParamName": "CD45 KO",
+                      "xScale": "log",
+                      "yScale": "log",
+                      "rawPts": [
+                        {
+                          "rx": 24144.95919503636,
+                          "ry": 9119.58159202085
+                        },
+                        {
+                          "rx": 28644.76250064234,
+                          "ry": 4132.6146724166665
+                        },
+                        {
+                          "rx": 30506.260591208727,
+                          "ry": 364.3656378178081
+                        },
+                        {
+                          "rx": 245832.31775241517,
+                          "ry": 364.3656378178081
+                        },
+                        {
+                          "rx": 327822.66444123,
+                          "ry": 16363.686978767466
+                        },
+                        {
+                          "rx": 321978.20565289905,
+                          "ry": 74153.41616380423
+                        },
+                        {
+                          "rx": 91401.11122553752,
+                          "ry": 33603.24073600992
+                        },
+                        {
+                          "rx": 62084.43394303925,
+                          "ry": 25198.87564273833
+                        }
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Blasts",
+                      "color": "#808080",
+                      "noColor": true,
+                      "parentName": "Viable",
+                      "xParamName": "SS INT LOG",
+                      "yParamName": "CD45 KO",
+                      "xScale": "log",
+                      "yScale": "log",
+                      "rawPts": [
+                        {
+                          "rx": 28390.296215796046,
+                          "ry": 3597.562878753399
+                        },
+                        {
+                          "rx": 24395.51455243798,
+                          "ry": 5771.603382694501
+                        },
+                        {
+                          "rx": 14865.088816512582,
+                          "ry": 7984.367869106392
+                        },
+                        {
+                          "rx": 4034.3355271211863,
+                          "ry": 4027.4709250562087
+                        },
+                        {
+                          "rx": 3796.8902005330883,
+                          "ry": 1417.6212807100924
+                        },
+                        {
+                          "rx": 4034.3355271211863,
+                          "ry": 221.6807013006102
+                        },
+                        {
+                          "rx": 11314.089616350222,
+                          "ry": 181.94320921957848
+                        },
+                        {
+                          "rx": 30781.88602359518,
+                          "ry": 181.94320921957848
+                        }
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "19+ B cells",
+                      "color": "#ff9000",
+                      "noColor": false,
+                      "parentName": "Viable",
+                      "xParamName": "SS INT LOG",
+                      "yParamName": "CD19 ECD",
+                      "xScale": "log",
+                      "yScale": "asinh",
+                      "rawPts": [
+                        {
+                          "rx": 66226.16408003123,
+                          "ry": 6641.623046875
+                        },
+                        {
+                          "rx": 24716.258332478916,
+                          "ry": 1828.4432373046875
+                        },
+                        {
+                          "rx": 7210.13943120864,
+                          "ry": 1187.949951171875
+                        },
+                        {
+                          "rx": 2453.4634965109685,
+                          "ry": 5627.4130859375
+                        },
+                        {
+                          "rx": 4831.438723154544,
+                          "ry": 47640.6015625
+                        },
+                        {
+                          "rx": 17079.49058714081,
+                          "ry": 129560.65625
+                        },
+                        {
+                          "rx": 35770.87805729696,
+                          "ry": 129560.65625
+                        }
+                      ],
+                      "children": [
+                        {
+                          "name": "K+(19)",
+                          "color": "#0000ff",
+                          "noColor": false,
+                          "parentName": "19+ B cells",
+                          "xParamName": "Kappa AF488",
+                          "yParamName": "Lambda APC Fire-A750",
+                          "xScale": "asinh",
+                          "yScale": "asinh",
+                          "rawPts": [
+                            {
+                              "rx": 4793.64794921875,
+                              "ry": 2631.234375
+                            },
+                            {
+                              "rx": 284.0384216308594,
+                              "ry": 438.6928405761719
+                            },
+                            {
+                              "rx": 1.0405625104904175,
+                              "ry": -345.6728820800781
+                            },
+                            {
+                              "rx": 1048405.125,
+                              "ry": -345.6728820800781
+                            },
+                            {
+                              "rx": 1048405.125,
+                              "ry": 12074.16796875
+                            }
+                          ],
+                          "children": []
+                        },
+                        {
+                          "name": "L+(19)",
+                          "color": "#ff0000",
+                          "noColor": false,
+                          "parentName": "19+ B cells",
+                          "xParamName": "Kappa AF488",
+                          "yParamName": "Lambda APC Fire-A750",
+                          "xScale": "asinh",
+                          "yScale": "asinh",
+                          "rawPts": [
+                            {
+                              "rx": 12736.4755859375,
+                              "ry": 886389.75
+                            },
+                            {
+                              "rx": 8950.1611328125,
+                              "ry": 54491.046875
+                            },
+                            {
+                              "rx": 1621.007568359375,
+                              "ry": 3401.11767578125
+                            },
+                            {
+                              "rx": -345.6728820800781,
+                              "ry": 1188.1622314453125
+                            },
+                            {
+                              "rx": -345.6728820800781,
+                              "ry": 1048381.8125
+                            }
+                          ],
+                          "children": []
+                        }
+                      ]
+                    },
+                    {
+                      "name": "20+ B cells",
+                      "color": "#ff9000",
+                      "noColor": false,
+                      "parentName": "Viable",
+                      "xParamName": "SS INT LOG",
+                      "yParamName": "CD20 PB",
+                      "xScale": "log",
+                      "yScale": "asinh",
+                      "rawPts": [
+                        {
+                          "rx": 100390.74179497945,
+                          "ry": 23795.634765625
+                        },
+                        {
+                          "rx": 37466.816066764564,
+                          "ry": 6166.8701171875
+                        },
+                        {
+                          "rx": 10929.687020216785,
+                          "ry": 3893.401123046875
+                        },
+                        {
+                          "rx": 3719.149731879239,
+                          "ry": 20053.06640625
+                        },
+                        {
+                          "rx": 7323.868505630681,
+                          "ry": 175399.734375
+                        },
+                        {
+                          "rx": 25890.41285029574,
+                          "ry": 478383.9375
+                        },
+                        {
+                          "rx": 54224.263668512656,
+                          "ry": 478383.9375
+                        }
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "CD22+ B cells",
+                      "color": "#ff9000",
+                      "noColor": false,
+                      "parentName": "Viable",
+                      "xParamName": "SS INT LOG",
+                      "yParamName": "CD22 PC7",
+                      "xScale": "log",
+                      "yScale": "asinh",
+                      "rawPts": [
+                        {
+                          "rx": 79685.84150639172,
+                          "ry": 9053.8212890625
+                        },
+                        {
+                          "rx": 25901.979645931406,
+                          "ry": 2446.475341796875
+                        },
+                        {
+                          "rx": 6357.625909510656,
+                          "ry": 1578.8624267578125
+                        },
+                        {
+                          "rx": 1859.970958768104,
+                          "ry": 7655.66357421875
+                        },
+                        {
+                          "rx": 4027.6897181353534,
+                          "ry": 65572.25
+                        },
+                        {
+                          "rx": 16995.18964850578,
+                          "ry": 178480.65625
+                        },
+                        {
+                          "rx": 39480.66310992913,
+                          "ry": 178480.65625
+                        }
+                      ],
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "booleans": [
+        {
+          "name": "Pan B cells",
+          "color": "#808080",
+          "noColor": true,
+          "expr": {
+            "op": "or",
+            "args": [
+              "19+ B cells",
+              "20+ B cells",
+              "CD22+ B cells"
+            ]
+          },
+          "children": []
+        }
+      ],
+      "colorPrecedence": [],
+      "paramRanges": {
+        "TIME": {
+          "rawMin": 0.0,
+          "rawMax": 1048576.0
+        },
+        "CD45 KO": {
+          "rawMin": -345.733093261719,
+          "rawMax": 1048576.0,
+          "asinhCofactor": 300.0
+        },
+        "FSC-A": {
+          "rawMin": 0.0,
+          "rawMax": 1048576.0
+        },
+        "FSC-H": {
+          "rawMin": 0.0,
+          "rawMax": 262144.0
+        },
+        "SS INT LOG": {
+          "rawMin": 104.8576,
+          "rawMax": 1048576.0
+        },
+        "CD19 ECD": {
+          "rawMin": -345.733093261719,
+          "rawMax": 1048576.0,
+          "asinhCofactor": 300.0
+        },
+        "Kappa AF488": {
+          "rawMin": -345.733093261719,
+          "rawMax": 1048576.0,
+          "asinhCofactor": 300.0
+        },
+        "Lambda APC Fire-A750": {
+          "rawMin": -345.733093261719,
+          "rawMax": 1048576.0,
+          "asinhCofactor": 300.0
+        },
+        "CD20 PB": {
+          "rawMin": -345.733093261719,
+          "rawMax": 1048576.0,
+          "asinhCofactor": 300.0
+        },
+        "CD22 PC7": {
+          "rawMin": -345.733093261719,
+          "rawMax": 1048576.0,
+          "asinhCofactor": 300.0
+        },
+        "CD103 APC": {
+          "rawMin": -345.733093261719,
+          "rawMax": 1048576.0,
+          "asinhCofactor": 300.0
+        },
+        "CD25 PC5.5": {
+          "rawMin": -345.733093261719,
+          "rawMax": 1048576.0,
+          "asinhCofactor": 300.0
+        },
+        "CD123 PE": {
+          "rawMin": -345.733093261719,
+          "rawMax": 1048576.0,
+          "asinhCofactor": 300.0
+        },
+        "CD11c APC-A700": {
+          "rawMin": -345.733093261719,
+          "rawMax": 1048576.0,
+          "asinhCofactor": 300.0
+        }
+      }
+    }
+  ],
+  "plots": [
+    {
+      "fileIndex": 0,
+      "xParamName": "TIME",
+      "yParamName": "CD45 KO",
+      "inputPopName": "All Events",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": false,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "FSC-A",
+      "yParamName": "FSC-H",
+      "inputPopName": "Time",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": false,
+      "yAsinh": false,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "SS INT LOG",
+      "yParamName": "FSC-A",
+      "inputPopName": "Singlets",
+      "xLog": true,
+      "yLog": false,
+      "xAsinh": false,
+      "yAsinh": false,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "SS INT LOG",
+      "yParamName": "CD45 KO",
+      "inputPopName": "Viable",
+      "xLog": true,
+      "yLog": true,
+      "xAsinh": false,
+      "yAsinh": false,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "SS INT LOG",
+      "yParamName": "CD45 KO",
+      "inputPopName": "Viable",
+      "xLog": true,
+      "yLog": true,
+      "xAsinh": false,
+      "yAsinh": false,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "SS INT LOG",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Viable",
+      "xLog": true,
+      "yLog": false,
+      "xAsinh": false,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "Kappa AF488",
+      "yParamName": "Lambda APC Fire-A750",
+      "inputPopName": "19+ B cells",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "SS INT LOG",
+      "yParamName": "CD20 PB",
+      "inputPopName": "Viable",
+      "xLog": true,
+      "yLog": false,
+      "xAsinh": false,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "Kappa AF488",
+      "yParamName": "Lambda APC Fire-A750",
+      "inputPopName": "20+ B cells",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "SS INT LOG",
+      "yParamName": "CD22 PC7",
+      "inputPopName": "Viable",
+      "xLog": true,
+      "yLog": false,
+      "xAsinh": false,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "Kappa AF488",
+      "yParamName": "Lambda APC Fire-A750",
+      "inputPopName": "CD22+ B cells",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD22 PC7",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Lymphs",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD20 PB",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Lymphs",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD20 PB",
+      "yParamName": "CD22 PC7",
+      "inputPopName": "Lymphs",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD103 APC",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Lymphs",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD25 PC5.5",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Lymphs",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD123 PE",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Lymphs",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD11c APC-A700",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Lymphs",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD103 APC",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Pan B cells",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD25 PC5.5",
+      "yParamName": "CD20 PB",
+      "inputPopName": "Pan B cells",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD123 PE",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Pan B cells",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD11c APC-A700",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Pan B cells",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Gating"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "Kappa AF488",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Scratch Pad"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD123 PE",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Scratch Pad"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD25 PC5.5",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Scratch Pad"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD22 PC7",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Scratch Pad"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD103 APC",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Scratch Pad"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD11c APC-A700",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Scratch Pad"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "Lambda APC Fire-A750",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Scratch Pad"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD20 PB",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Scratch Pad"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD45 KO",
+      "yParamName": "CD19 ECD",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Scratch Pad"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "Kappa AF488",
+      "yParamName": "Kappa AF488",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Comp Sheet"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD123 PE",
+      "yParamName": "Kappa AF488",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Comp Sheet"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD19 ECD",
+      "yParamName": "Kappa AF488",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Comp Sheet"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD25 PC5.5",
+      "yParamName": "Kappa AF488",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Comp Sheet"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD22 PC7",
+      "yParamName": "Kappa AF488",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Comp Sheet"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD103 APC",
+      "yParamName": "Kappa AF488",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Comp Sheet"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD11c APC-A700",
+      "yParamName": "Kappa AF488",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Comp Sheet"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "Lambda APC Fire-A750",
+      "yParamName": "Kappa AF488",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Comp Sheet"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD20 PB",
+      "yParamName": "Kappa AF488",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Comp Sheet"
+    },
+    {
+      "fileIndex": 0,
+      "xParamName": "CD45 KO",
+      "yParamName": "Kappa AF488",
+      "inputPopName": "Viable",
+      "xLog": false,
+      "yLog": false,
+      "xAsinh": true,
+      "yAsinh": true,
+      "dotSize": 1.5,
+      "bins": 256,
+      "tabName": "Comp Sheet"
+    }
+  ]
+}
