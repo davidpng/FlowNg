@@ -120,7 +120,6 @@ Generated per tube from the Pool (**Starter**). One tab per tube, four plots, no
 
 ## 8. Open points
 
-- `samples/CLL_Example_Small_FlowNG_shared.html` embeds an older copy of the app and still has the old reparent check and per-plot scale. It is a sample, not regenerated.
 - Shortcuts for Undo/Redo/History/Add Plot, and for toggling the scale, are not defined.
 
 ## 9. Anatomy of a plot: card, header, canvas

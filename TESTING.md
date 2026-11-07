@@ -197,8 +197,7 @@ Use `daughter.html` (locked) and `daughter_unlocked.html`.
 | 9.7 | `showHistory()` | Modal lists entries newest first; Escape closes it |
 | 9.8 | Locked guard | Dropping a file on the page does nothing; `importGates`/`loadFCS` are undefined |
 | 9.9 | Unlocked daughter | Open/Import/Export present and working |
-| 9.10 | Old files | `samples/CLL_Example_Small_FlowNG_shared.html` (built by older code, `format:1`) still opens as one workspace; it has no Save button (known). Saving a format 1 file (`build_test_daughter.py` uses it) writes `format:2` |
-| 9.11 | Workspaces in a saved file | A two-workspace shared file reopens with both workspaces in the strip (`workspaces.length === 2`), the first active; a change made in the second one marks only that tab dirty (`•`), and `saveDaughter()` writes `format:2` with each workspace's own history; closing and Save buttons are hidden in the locked viewer |
+| 9.10 | Workspaces in a saved file | A two-workspace shared file reopens with both workspaces in the strip (`workspaces.length === 2`), the first active; a change made in the second one marks only that tab dirty (`•`), and `saveDaughter()` writes `format:2` with each workspace's own history; closing and Save buttons are hidden in the locked viewer |
 
 ## 10. Visual checks (screenshots)
 
