@@ -323,7 +323,7 @@ uv run scripts/kaluza_to_flowng.py --help
 
 Then open FlowNG.html, load the three LMD files, click **Import Template**, choose the JSON, and match each template entry to its tube.
 
-`samples/` holds the BTM Triage Template v10 Kaluza composite and its converted FlowNg template (`BTM Triage Template v10_FlowNgtmplt.json`, made with the three `TEST SAMPLE` LMDs in the repo root).
+`samples/` holds the example files: the BTM Triage Template v10 as a FlowNg template (`BTM Triage Template v10_FlowNgtmplt.json`), the three `TEST SAMPLE` LMD files it matches, and a shared analysis (`Complex_Analysis_FlowNg.html`).
 
 What is converted: gate hierarchy (polygons, rectangles, quadrants, boolean OR/AND/NOT populations), gate colours (`#rrggbb`; gates without a colour become "no colour"), axis scales (logicle is approximated as asinh, cofactor 300) and axis ranges, and every plot sheet as a tab with its plots. Linked copy gates are merged into their originals.
 
