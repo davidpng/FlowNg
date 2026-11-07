@@ -32,7 +32,7 @@ SP=<scratchpad dir>; mkdir -p $SP/t && cd /path/to/FlowNg
 python3 scripts/build_test_daughter.py $SP/t/daughter.html                    # locked file
 python3 scripts/build_test_daughter.py $SP/t/daughter_lod.html --lod 20000    # forces the large-population render path
 python3 scripts/build_test_daughter.py $SP/t/daughter_unlocked.html --unlocked
-cp FlowNG.html "TEST SAMPLE"*.LMD flowviz_B_cells.json $SP/t/ && mkdir -p $SP/t/samples && cp samples/*.json $SP/t/samples/
+cp FlowNG.html "TEST SAMPLE"*.LMD $SP/t/ && mkdir -p $SP/t/samples && cp samples/*.json $SP/t/samples/
 cd $SP/t && python3 -m http.server 8770 &
 ```
 
@@ -154,8 +154,7 @@ Boolean gates (BTM has some): after import, their counts are non-zero and change
 3. **Unmatched sections** show "(skip this section)", not the first file.
 4. **Version 2 and junk files are refused:** `importGates('{"version":2,"gates":[]}')` toast says version 2 is unsupported; `{"foo":1}` says "Not a FlowNG template".
 5. **Round trip:** export a template (`_buildTemplateV3('rt')`), clear the gates, re-apply with `_applyTemplateV3(t, fcsFiles)`; gate counts and plot count equal the originals.
-6. **Single-file template** (`flowviz_B_cells.json`): imports into one tube, 9 gates.
-7. **Converter regression:** run `scripts/kaluza_to_flowng.py` on a template and diff against the committed sample (ignore `exported`); output must be identical unless the change was intended. Converted templates that use raw channel names (`FL1 INT`) match no file and say so.
+6. **Converter regression:** run `scripts/kaluza_to_flowng.py` on a template and diff against the committed sample (ignore `exported`); output must be identical unless the change was intended. Converted templates that use raw channel names (`FL1 INT`) match no file and say so.
 
 ## 8. Export Shareable HTML
 
