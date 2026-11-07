@@ -777,7 +777,7 @@
     </div><!-- /sidebar-content -->
     <div class="kb-hints">
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin-bottom:4px;letter-spacing:0.5px">TOOLBAR</div>
-      <kbd>Select</kbd> — drag a gate to move it; select a plot (click its top bar) to get blue cofactor markers on its ASINH axes<br>
+      <kbd>Select</kbd> — drag a gate to move it; select a plot (click its top bar or empty space on it) to get blue cofactor markers on its ASINH axes<br>
       <kbd>Polygon</kbd> — click points, click the first point (or double-click) to close<br>
       <kbd>Rect</kbd> — drag a rectangle<br>
       <kbd>Quadrant</kbd> — click to place a crosshair (Q1–Q4 clockwise from upper right); drag it with Select or Edit<br>
@@ -787,7 +787,7 @@
       <kbd>Autocomp</kbd> — outline a population that should sit flat; spillover is fitted for you<br>
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> undo · <kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Y</kbd> redo<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">PLOTS</div>
-      <kbd>Click</kbd> a plot's top bar — select (highlight) it; the cofactor markers need this<br>
+      <kbd>Click</kbd> a plot's top bar, or any empty space on it (blank canvas with Select, Edit or Delete; the margins; gaps beside the axis menus) — select (highlight) it; the cofactor markers need this<br>
       <kbd>Click</kbd> empty canvas — deselect all<br>
       <kbd>Shift</kbd>+<kbd>Click</kbd> — range-select plots<br>
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Click</kbd> — toggle selection<br>
@@ -797,9 +797,9 @@
       <kbd>Drag</kbd> ⠿ — reorder plots; drop on a tab to move it<br>
       <kbd>Right-click</kbd> canvas — axis range / cofactor<br>
       <kbd>Right-click</kbd> header — switch source file<br>
-      <kbd>Slider</kbd> — density bins per axis<br>
+      <kbd>Slider</kbd> — density bins per axis (32–1024; high values suit the expanded view)<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">ARCSINH COFACTOR</div>
-      1. Click the plot's <b>top bar</b> (the row with the population menu and bins slider); the plot gets a blue outline<br>
+      1. Click the plot's <b>top bar</b> (the row with the population menu and bins slider), or any empty space on the plot; the plot gets a blue outline<br>
       2. With <kbd>Select</kbd> active, a blue marker appears on each <b>ASINH</b> axis: drag it along the axis to set that channel's cofactor live<br>
       <kbd>Esc</kbd> while dragging cancels; the change is undoable and appears in History<br>
       <kbd>Right-click</kbd> the plot to type an exact value<br>
@@ -2815,7 +2815,7 @@ function renderPlotCard(plot) {
         style="flex:1;min-width:0;font-size:10px;padding:2px 4px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:4px"
         onmousedown="event.stopPropagation()">${popOpts()}</select>
       <span id="res-val-${plot.id}" style="font-size:10px;color:var(--text2);flex-shrink:0;min-width:24px;text-align:right" title="Density bins per axis">${plot.bins || 256}</span>
-      <input type="range" min="32" max="512" step="32" value="${plot.bins || 256}" id="res-${plot.id}"
+      <input type="range" min="32" max="1024" step="32" value="${plot.bins || 256}" id="res-${plot.id}"
         oninput="changeBins(${plot.id},this.value)" onmousedown="event.stopPropagation()"
         style="width:56px;height:12px;cursor:pointer;flex-shrink:0" title="Density bins per axis (lower = chunkier, higher = finer)">
       <span id="event-count-${plot.id}" style="font-size:9px;color:var(--text2);flex-shrink:0;margin-left:2px"></span>
@@ -2847,10 +2847,9 @@ function renderPlotCard(plot) {
       e.preventDefault();
     }
   });
-  hdr.addEventListener('click', e => {
-    if (e.target.closest('.plot-drag-handle') || e.target.tagName === 'SELECT' ||
-        e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
-
+  // Selecting a plot: click its top bar, or any part of the card that has no other job (empty canvas
+  // in Select/Edit/Delete mode, the card margin, the gaps beside the axis controls).
+  const selectPlot = e => {
     const currentIndex = plots.findIndex(p => p.id === plot.id);
 
     if (e.shiftKey && lastClickedPlotIndex !== null && lastClickedPlotIndex !== currentIndex) {
@@ -2882,6 +2881,21 @@ function renderPlotCard(plot) {
       _focusedFileId = plot.fileId;
       renderPrecedenceList();
     }
+  };
+  plot._selectPlot = selectPlot;
+  hdr.addEventListener('click', e => {
+    if (e.target.closest('.plot-drag-handle') || e.target.tagName === 'SELECT' ||
+        e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+    selectPlot(e);
+  });
+  // Anywhere else on the card that is not a control, the header or the canvas (the canvas decides for
+  // itself, see the canvas click handler)
+  card.addEventListener('mousedown', e => {
+    if ((e.shiftKey || e.ctrlKey || e.metaKey) && !e.target.closest('select, input, button, canvas, .plot-header')) e.preventDefault();
+  });
+  card.addEventListener('click', e => {
+    if (e.target.closest('select, input, button, canvas, .plot-header, .cf-handle')) return;
+    selectPlot(e);
   });
 
   // Right-click plot header → file-switch context menu (only when multiple files loaded)
@@ -2929,10 +2943,15 @@ function renderPlotCard(plot) {
   // Mode buttons have onmousedown stopPropagation inline where needed
 
   const canvas = document.getElementById(`canvas-${plot.id}`);
-  canvas.addEventListener('click',     e => onCanvasClick(e, canvas, plot));
+  canvas.addEventListener('click',     e => {
+    onCanvasClick(e, canvas, plot);
+    // A click on empty canvas, with a tool that is not using it, selects the plot
+    if (plot._emptyDown && (plot.mode === 'pan' || plot.mode === 'edit' || plot.mode === 'delete')) plot._selectPlot(e);
+    plot._emptyDown = false;
+  });
   canvas.addEventListener('dblclick',  e => { if ((plot.mode==='gate' || plot.mode==='autocomp') && plot.gatePoints.length>=3) finalizeGate(plot); });
   canvas.addEventListener('contextmenu', e => { e.preventDefault(); showAxisRangeModal(plot, e.clientX, e.clientY); });
-  canvas.addEventListener('mousedown', e => { _markInteraction(); onCanvasMouseDown(e, canvas, plot); });
+  canvas.addEventListener('mousedown', e => { _markInteraction(); plot._emptyDown = false; onCanvasMouseDown(e, canvas, plot); });
   canvas.addEventListener('mousemove', e => { _markInteraction(); onCanvasMouseMove(e, canvas, plot); });
   canvas.addEventListener('mouseup',   e => { _markInteraction(); onCanvasMouseUp(e, canvas, plot); });
   canvas.addEventListener('mouseleave',e => { onCanvasMouseUp(e, canvas, plot); canvas.style.cursor = 'default'; });
@@ -3610,7 +3629,7 @@ const _ng2GrayAnchor = g => { const c = _ng2ToLin(g); return [c, c, c]; };
 
 function drawDensityNg2(ctx, plot, tf, pad, pw, ph, pop, renderPop, fcsFile, orderedGates) {
   const { data, nPar, nEvents } = fcsFile;
-  const nb = Math.max(16, Math.min(512, plot.bins || 256));
+  const nb = Math.max(16, Math.min(1024, plot.bins || 256));
   const xr = tf.xRange, yr = tf.yRange;
   const xSpan = xr.max - xr.min, ySpan = yr.max - yr.min;
 
@@ -4017,8 +4036,9 @@ function onCanvasMouseDown(e, canvas, plot) {
     renderPlot(plot);
     return;
   }
-  // Clicked empty space — deselect
+  // Clicked empty space — deselect the gate (and let the click select the plot)
   plot._editGate = null; plot._dragGate = null;
+  plot._emptyDown = (e.button === 0);
   renderPlot(plot);
 }
 
@@ -4313,6 +4333,7 @@ function onCanvasClick(e, canvas, plot) {
       showToast(`Deleted "${gate.name}"`);
       return;
     }
+    plot._emptyDown = true;   // nothing under the pointer: the click selects the plot
     return;
   }
   if (plot.mode === 'quad') {

@@ -21,7 +21,7 @@ The demo runs in your browser from GitHub Pages; the page is static and nothing 
 ### 📊 Visualization
 - **Blended density plots**: every plot is a binned density. Each bin takes the count-weighted colour of the populations that own its events and bleaches toward white as it gets denser, so back-gated populations show up in their own colours
 - **"+" dot toggle**: draw any population additionally as exact events
-- **Bins slider** per plot (32–512 per axis)
+- **Bins slider** per plot (32–1024 per axis; high values suit the expanded view)
 - **Decade ticks**: log and arcsinh axes label each power of ten with a raised exponent (arcsinh also labels zero and the negative decades)
 - **Axis cofactor handles**: select a plot, then drag the blue marker on an arcsinh axis to set that channel's cofactor live; gates are re-evaluated on release
 - **Tabs**: named tabs with plot counts, right-click to rename, drag a plot onto a tab to move it
@@ -135,7 +135,7 @@ The top bar has two groups, each in two rows, laid out like FlowNg2. They appear
 
 | Tool | Function |
 |------|----------|
-| **Select** | Drag a gate to move it; with a plot selected (click its top bar), drag an arcsinh axis marker to set its cofactor |
+| **Select** | Drag a gate to move it; with a plot selected (click its top bar or empty space on it), drag an arcsinh axis marker to set its cofactor |
 | **Polygon** | Click to draw a polygon gate |
 | **Rect** | Drag to draw a rectangular gate |
 | **Quadrant** | Click to place a crosshair that creates Q1–Q4; drag the crosshair with Select or Edit |
@@ -158,7 +158,7 @@ The panel at the bottom of the left sidebar is a live cheat sheet that matches t
 
 | Control | What it does |
 |---|---|
-| **Select** | Drag a gate to move it. With a plot selected (click its top bar), drag the blue marker on an arcsinh axis to change that channel's cofactor |
+| **Select** | Drag a gate to move it. With a plot selected (click its top bar or empty space on it), drag the blue marker on an arcsinh axis to change that channel's cofactor |
 | **Polygon** | Click points around a population; click the first point (or double-click) to close the gate |
 | **Rect** | Drag a rectangle |
 | **Quadrant** | Click to place a crosshair (Q1–Q4, clockwise from upper right); drag it with Select or Edit |
@@ -172,7 +172,7 @@ The panel at the bottom of the left sidebar is a live cheat sheet that matches t
 
 | Control | What it does |
 |---|---|
-| Click a plot's top bar (the row with the population menu and bins slider) | Select (highlight) that plot; the cofactor markers need this |
+| Click a plot's top bar (the row with the population menu and bins slider), or any empty space on the plot | Select (highlight) that plot; the cofactor markers need this. Empty space means blank canvas with Select, Edit or Delete (not while drawing or in Comp), the card margins, and the gaps beside the axis menus |
 | Click empty canvas | Deselect all |
 | `Shift`+click / `Ctrl`or`⌘`+click | Range-select / toggle plots; axis, population and bin changes then apply to every selected plot (including the LOG/LIN/ASINH scale: clicking the scale button on one selected plot gives that axis of every selected plot the same scale) |
 | `Del` / `⌫` | Remove the selected plot(s) |
@@ -180,7 +180,7 @@ The panel at the bottom of the left sidebar is a live cheat sheet that matches t
 | Drag ⠿ | Reorder plots, or drop one on a tab to move it there |
 | Right-click the plot | Set axis min/max and the arcsinh cofactor numerically |
 | Right-click the plot header | Switch the plot's source file (when several files are loaded) |
-| Bins slider | Density bins per axis (32–512) |
+| Bins slider | Density bins per axis (32–1024) |
 
 **Tabs**: right-click or double-click a tab to rename it, `✕` closes it, `+ Tab` adds one.
 
@@ -217,7 +217,7 @@ Both tools need a file with a spillover matrix (an FCS `$SPILLOVER` keyword, or 
 Autocomp fits one pair at a time from the population you outline; it is not the full AutoSpill algorithm that learns a whole matrix from single-stain controls. The outline is temporary and never becomes a gate.
 
 ### Changing a Cofactor by Dragging
-1. **Select the plot** by clicking its **top bar** (the row with the population menu and the bins slider). The plot gets a blue outline. Clicking inside the plot itself does not select it.
+1. **Select the plot** by clicking its **top bar** (the row with the population menu and the bins slider) or any empty space on it (blank canvas with Select active, the card margins). The plot gets a blue outline. Clicking on a gate or while drawing does not select it.
 2. Make sure **Select** is the active tool. Each **ASINH** axis of the selected plot now shows a small blue marker (axes set to LIN or LOG have none).
 3. Drag the marker along the axis: the position is geometric (1 to 100,000), the ticks and gate outlines follow live, and the zero point stays pinned at 20% of the axis.
 4. On release every gate is re-evaluated and every plot of that channel adopts the new cofactor. `Esc` during the drag puts the old value back, and **Undo** reverses a committed change.

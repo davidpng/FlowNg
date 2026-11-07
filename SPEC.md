@@ -20,7 +20,7 @@ The left toolbar group holds the modes: **Select, Polygon, Rect, Quadrant, Edit,
 
 - Choosing a mode **deselects all selected plots** and applies the mode to **every plot** in the workspace.
 - Reason: previously the mode went only to the selected plots, so with one plot selected the other plots kept their old mode and gates could not be drawn on them until the selection was cleared. Users expect a mode to be a property of the tool, not of a plot.
-- Consequence: cofactor markers need a selected plot. Choose **Select** first, then click the plot's top bar. The help text and tooltips say this in that order.
+- Consequence: cofactor markers need a selected plot. Choose **Select** first, then click the plot (top bar or empty space). The help text and tooltips say this in that order.
 - Check: `TESTING.md` 4.15.
 
 ### 2.2 Keyboard shortcuts
@@ -55,7 +55,11 @@ Rules:
 
 ## 3. Plot selection and multi-select
 
-- A plot is selected by clicking its top bar (the row with the population menu and bins slider). Clicking the canvas does not select, because the canvas is for drawing. Clicking empty canvas area deselects all; `Esc` also deselects.
+- A plot is selected by clicking its top bar (the row with the population menu and bins slider) **or any part of it that has no other job**:
+  - blank canvas, when the tool is **Select, Edit or Delete** and the click is not on a gate or quadrant crosshair (those start a move, a reshape or a delete). Drawing tools (Polygon, Rect, Quadrant, Autocomp) and Comp use the canvas, so a click there never selects;
+  - the card's margins and the empty gaps beside the axis menus (`xaxis-ctrl`, `yaxis-ctrl`) and the status strip.
+  Controls (menus, buttons, slider, grip, expand, swap, cofactor markers) never select. Modifier clicks work the same everywhere: `Shift` range, `Ctrl`/`Cmd` toggle. Because selection no longer needs the top bar, a gate drag is the only canvas action that does not select.
+- Clicking outside every plot deselects all; `Esc` also deselects.
 - `Shift`+click range-selects; `Ctrl`/`Cmd`+click toggles.
 - **With 2+ plots selected, these apply to all selected plots:** axis parameter, population, bins, and **scale (LOG / LIN / ASINH)**.
 - **Scale rule (changed from "always per plot"):** clicking the scale button on one selected plot computes that plot's next scale in the cycle (LOG to LIN to ASINH to LOG) and gives the **same resulting scale** to that axis of every selected plot, so the plots end up matching even if they started different. Reason: users comparing several plots want them on one scale and had to click each button. Only the clicked axis (X or Y) changes.
@@ -125,14 +129,14 @@ A plot is a **card** (`.plot-card`, `plot-card-<id>`, 352 px wide) with three pa
 
 | Part | Contains | Click does |
 |---|---|---|
-| **Header** (`.plot-header`, the top bar) | Drag grip `⠿`, file colour dot (only with 2+ files), population menu, bins slider and value, event count | Selects the plot (see section 10) |
+| **Header** (`.plot-header`, the top bar) | Drag grip `⠿`, file colour dot (only with 2+ files), population menu, bins slider (32-1024) and value, event count | Selects the plot (see section 10) |
 | **Canvas** (`<canvas id="canvas-<id>">`, 350 x 350) | The density plot, gates, quadrant crosshair, in-progress gate points | Acts according to the global mode (draw, move, edit, delete, ...) |
 | **Overlay controls** (on the canvas wrap) | X axis menu and scale button (bottom), Y axis menu and scale button (left, rotated), `⇄` swap axes (bottom-left), `⤢` expand (corner) | Their own action; never selects the plot and never draws |
 
 Definitions used throughout this spec:
 
 - **Canvas** means only the drawing surface of one plot. It never means the whole work area. The work area that holds all cards is the **canvas area** (`#canvas-area`).
-- **Header** is the only place a plot is selected, so a stray click while gating can never change the selection.
+- A plot is selected from the header or from any empty part of the card (section 10); a click that draws, moves or edits a gate never changes the selection.
 - **Right-click** targets differ by part: right-click the canvas opens Axis Range (min/max and the arcsinh cofactor, typed); right-click the header switches the plot's source file (only when 2+ files are loaded).
 - A drag or click on a control inside the header (menu, slider, button, the grip) does not count as a selection click.
 
