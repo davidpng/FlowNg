@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8"><body>
+<iframe id="f" src="/check/index.html" style="width:800px;height:600px"></iframe>
+<script>
+(async () => {
+  const out = { results: [], error: null };
+  try {
+    const f = document.getElementById('f');
+    while (!(f.contentWindow && f.contentWindow.FlowCheck)) await new Promise(r => setTimeout(r, 50));   // load can fire before a listener is attached
+    const FC = f.contentWindow.FlowCheck;
+    const jobs = await (await fetch('/_job/jobs.json')).json();
+    for (const j of jobs) {
+      let t = await (await fetch('/_job/src/' + j.n + '.html')).text();
+      if (j.variant === 'locked') t = FC.liteStrip(t);
+      const r = await FC.canonHash(t);
+      out.results.push({ n: j.n, variant: j.variant, hash: r.hash, hasBundle: r.hasBundle, problem: r.problem });
+    }
+  } catch (e) { out.error = String(e) + (e.stack || ''); }
+  await fetch('/result', { method: 'POST', body: JSON.stringify(out) });
+})();
+</script>

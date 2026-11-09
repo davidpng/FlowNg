@@ -305,19 +305,24 @@ Verified with the headless-Chrome harness on the TEST SAMPLE LMD (rows 15.1 to 1
 |---|---|---|
 | 16.1 | Load a file whose name, a parameter name and label, a population name, a tab name and a metadata keyword are all `"><img src=x onerror="window.__pwn=1"><b>`; then draw the plots and open the file menu, plot file menu, colour picker, axis range, global settings, metadata and template dialogs | `window.__pwn` stays 0, no `<img src="x">` or stray `<b>` is added to the page, and the payload text is visible as plain text (the unfixed code gave 13 executions) |
 
-## 17. Shared-file code manifest (security phase 1)
+## 17. Check page and shared-file manifest (security phases 1 to 3)
 
-Run: `/usr/bin/python3 scripts/test_manifest.py [shared files...]` (exit code 0 = all pass). After any change to `FlowNG.html` that will be released, rebuild the manifest with `/usr/bin/python3 scripts/build_manifest.py` and re-run.
+Run: `/usr/bin/python3 scripts/test_check.py shared_full.html shared_locked.html ...` (needs Chrome; exit 0 = all pass; about two minutes because the sample is 15 MB). The extra files are shared files made by the real app: name them `*full*` / `*locked*` and make them with the current build (headless Chrome: load a file, `generateStarterWorkspace()`, `showShareDialog()`, set `share-maxev` to 1000, `doExportShareable()`, capture the download). After any change to `FlowNG.html` that will be released, rebuild the manifest with `/usr/bin/python3 scripts/build_manifest.py` (the "update" tests need the repo's `FlowNG.html` to be the newest manifest entry) and re-run. Last run: 52 checks, 0 failed.
 
 | # | Check | Expected |
 |---|---|---|
-| 17.1 | `samples/Complex_Analysis_FlowNg.html` | In the manifest as a released `full` build |
-| 17.2 | A shared file made now by the app, locked and unlocked (headless Chrome: load the TEST SAMPLE LMD, `generateStarterWorkspace()`, `showShareDialog()`, `doExportShareable()` with the download captured) | Both listed for the current commit, `locked` and `full` |
-| 17.3 | The same from an older build (checked: `ce0647b2c5`, 6 Nov 2026) | Both listed for that commit |
-| 17.4 | Allowed changes: new `<title>`, new data block body, markup whitespace | Still pass |
-| 17.5 | Tamper: extra `<script>`, `onload`/`onerror` attribute, `<img>`, `<iframe>`, external `<link>`, `<meta refresh>`, one changed character of code, code added inside the app script, `style` on `<html>`, extra comment | Each rejected: code not in manifest |
-| 17.6 | Data-block tricks: a second look-alike `flowng-bundle` script, two exact blocks, a block moved, block type changed to JavaScript, block closed early then a script | Each rejected |
-| 17.7 | Plain source file, or a lite-stripped source (no data block) | Rejected: no data block |
-| 17.8 | Rebuild the manifest twice | Byte-identical |
-| 17.9 | Manifest content | Unique `(hash, variant)` entries; `standard` only for builds with `_h()`; no commit before `58c9f07755` |
-
+| 17.1 | `samples/Complex_Analysis_FlowNg.html` and shared files from the current and an older build (`ce0647b2c5`), full and locked | Pass, listed in the manifest with the right commit and variant |
+| 17.2 | Allowed edits: new `<title>`, valid replacement data block, markup whitespace | Still pass |
+| 17.3 | Code attacks on the sample: extra `<script>`, `onload`, `<img onerror>`, `<iframe>`, external `<link>`, `<meta refresh>`, `<base>`, `<svg onload>`, `<noscript>` or `<template>` wrapper, one changed character, code added inside the app script, `style` on `<html>`, an added comment | Each red: code not in manifest |
+| 17.4 | Data-block tricks: a second look-alike script, two exact blocks, block moved, type changed to JavaScript, closed early then a script | Each red |
+| 17.5 | Not a shared file: the plain app source, text that is not HTML, an empty file | Red: no data block |
+| 17.6 | Data checks: not JSON, bad format number, no files, size mismatch, non-base64 event data, array instead of object | Each red with that reason |
+| 17.7 | Older build, hostile file or parameter name (`"><img ...>`, `x'y`) | Red ("older FlowNG build cannot display safely") |
+| 17.8 | Older build, ordinary names with spaces and dots, History text with quotes | Pass |
+| 17.9 | Current build, hostile names | Pass (escaped by `_h`), other data rules still apply |
+| 17.10 | A manifest with the sample's hash revoked | Red with the revocation reason |
+| 17.11 | Update: the older sample, the current full file, the current locked file | Each produces a file that passes its own check with identical data and the same variant |
+| 17.12 | Update with an app source that is not the newest manifest entry | Refused |
+| 17.13 | Drop real files on the page: genuine, tampered, a plain web page | Green with the Update button; red "Do not open this file"; red |
+| 17.14 | After those drops | No script, iframe, image or stylesheet from the dropped files is in the page; a hostile file name is shown as text and does not run |
+| 17.15 | Rebuild the manifest twice | Byte-identical; unique `(hash, variant)`; `standard` only for builds with `_h()`; nothing before `58c9f07755` |

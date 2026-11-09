@@ -1,0 +1,6 @@
+<!doctype html><meta charset="utf-8"><body>
+<iframe id="f" src="/check/index.html" style="width:900px;height:700px"></iframe>
+<!-- the test code is in test.js: it contains script and comment markup in strings that must not sit inside an HTML script element -->
+<script>window.addEventListener("error", e => fetch("/progress", { method: "POST", body: "ERR " + e.message + " " + (e.filename || "") + ":" + e.lineno }));
+fetch("/progress", { method: "POST", body: "page loaded" });</script>
+<script src="/_tool/test.js"></script>
