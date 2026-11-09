@@ -231,7 +231,7 @@ If the markers are missing, check that the plot is highlighted, that Select is a
 
 ### Export to FCS and SpikeNG (full version only)
 
-Right-click a population (or a file) and choose **Export events as FCS…** to save its events as a minimal FCS file with identifying metadata removed. **💉 SpikeNG** (toolbar) then merges two such files: the *schlemiel* (donor population) is spiked into the *schlimazel* (recipient). It checks the column labels match first, then either places the spike after the recipient with a time gap of 3% of the longer acquisition (educational), or interleaves it at random positions (proficiency testing). Enter the spike as a percentage of the recipient's events; an answer key of the spiked rows can be downloaded with the result. Exports keep the raw values and the spillover matrix, and SpikeNG merges raw values and applies the recipient's matrix to all events. Not available in locked shared files. See SPEC.md section 14.
+Right-click a population (or a file) and choose **Export events as FCS…** to save its events as a minimal FCS file with identifying metadata removed. **💉 SpikeNG** (toolbar) then merges two such files: the *schlemiel* (donor population) is spiked into the *schlimazel* (recipient). It checks the column labels match first, then either places the spike after the recipient with a time gap of 3% of the longer acquisition (educational), or interleaves it at random positions (proficiency testing). Enter the spike as a percentage of the recipient's events; an answer key of the spiked rows can be downloaded with the result. Exports keep the raw values and the spillover matrix, and SpikeNG merges raw values and applies the recipient's matrix to all events. Not available in locked shared files. See doc/SPEC.md section 14.
 
 ### Copying Gates
 Right-click a gate row and choose **Copy** (or **Cut**), then right-click another row, in any loaded file, and choose **Paste**. The copy is a new independent gate under that row. It is matched to the target file by parameter name, so pasting into a file that lacks one of its channels is refused with a message. Quadrant gates cannot be copied.
@@ -460,7 +460,9 @@ FlowNG is one file, `FlowNG.html` (main script plus two worker scripts). To work
 
 | File | Purpose |
 |---|---|
-| [`TESTING.md`](TESTING.md) | A step-by-step test guide with expected results and performance baselines. Say "run TESTING.md" to have Claude run it, or follow it by hand |
+| [`doc/SPEC.md`](doc/SPEC.md) | Interface and interaction decisions, and why each was made |
+| [`doc/SECURITY.md`](doc/SECURITY.md) | Security risks of a single-file HTML app and how to scan a copy |
+| [`doc/TESTING.md`](doc/TESTING.md) | A step-by-step test guide with expected results and performance baselines. Say "run doc/TESTING.md" to have Claude run it, or follow it by hand |
 | `scripts/build_test_daughter.py` | Builds a locked shared file from the working tree for testing (`--lod N` forces the large-population path, `--unlocked` keeps import/export) |
 | `scripts/extract_js_for_graphify.py` | Pulls the scripts out of the HTML so graphify (the `graphifyy` Python package) can build a real call graph; the result is in `graphify-out/` (`GRAPH_REPORT.md`, `graph.html`) |
 | `scripts/kaluza_to_flowng.py` | Kaluza template converter (see above) |
