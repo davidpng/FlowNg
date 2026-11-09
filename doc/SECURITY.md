@@ -18,7 +18,7 @@ What the app does **not** do (checked in section 2): it has no external scripts,
 
 ## 2. Known issues to check
 
-- Some menus and dialogs build HTML from file and population names with template strings and `innerHTML`, for example the plot-header file menu puts `f.filename` into an attribute without escaping. A file whose name or parameter name contains a quote or tag characters could inject markup. This is a finding to verify and fix (escape all text taken from files before it goes into HTML, or use `textContent`). Until then, do not open files from untrusted sources with patient data loaded.
+- **Fixed:** menus and dialogs that put text from files into HTML (file, parameter, population, tab and template names, FCS keywords) now escape it with `_h()`. Before the fix, a file name or parameter name containing `"><img src=x onerror=...>` ran script when the plot, file menu, tab strip or other dialogs were drawn (13 executions in the test below); after it, 0 and the text shows as plain text. When adding a dialog, escape every value that came from a file or template with `_h()` or use `textContent`.
 - No Content Security Policy (see 1.4).
 
 ## 3. How to scan

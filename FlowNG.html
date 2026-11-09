@@ -1161,6 +1161,10 @@ function popIndicesArray(pop) {
   return Int32Array.from({ length: f.nEvents }, (_, i) => i);
 }
 
+// Escape text taken from files (file, parameter, population and tab names, template fields) before it goes into HTML.
+function _h(v) {
+  return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 function showToast(msg, dur=2500) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -2694,7 +2698,7 @@ function showPlotFileMenu(plotId, cx, cy) {
       <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${col};
                    ${isCurrent ? '' : 'opacity:0.5'}"></span>
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-            title="${f.filename}">${shortFilename(f.filename, 30)}</span>
+            title="${_h(f.filename)}">${_h(shortFilename(f.filename, 30))}</span>
       ${isCurrent ? '<span style="flex-shrink:0;color:var(--accent)">✓</span>' : ''}
     </div>`;
   }).join('');
@@ -3122,12 +3126,12 @@ function renderPlotCard(plot) {
 
   const pOpts = (sel) => sortedParamIndices().map(i => {
     const p = fcsFile ? fcsFile.params[i] : null; if (!p) return '';
-    return `<option value="${i}"${i===sel?' selected':''}>${p.name}${p.longName&&p.longName!==p.name?' · '+p.longName:''}</option>`;
+    return `<option value="${i}"${i===sel?' selected':''}>${_h(p.name)}${p.longName&&p.longName!==p.name?' · '+_h(p.longName):''}</option>`;
   }).join('');
   // Only show populations that belong to this plot's file
   const popOpts = () => populations
     .filter(p => p.fileId === plot.fileId)
-    .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${p.name} (${popCount(p).toLocaleString()})</option>`)
+    .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${_h(p.name)} (${popCount(p).toLocaleString()})</option>`)
     .join('');
 
   card.innerHTML = `
@@ -3137,7 +3141,7 @@ function renderPlotCard(plot) {
         style="width:8px;height:8px;border-radius:50%;flex-shrink:0;
                display:${fcsFiles.length > 1 ? 'inline-block' : 'none'};
                background:${fcsFile ? getFileColor(plot.fileId) : 'transparent'}"
-        title="${fcsFile ? fcsFile.filename : ''}"></span>
+        title="${fcsFile ? _h(fcsFile.filename) : ''}"></span>
       <span style="color:var(--text2);font-size:10px;flex-shrink:0">Pop:</span>
       <select id="pop-sel-${plot.id}" onchange="changePop(${plot.id},this.value)"
         title="Population shown on this plot. Every gate under it is drawn in its own colour."
@@ -3295,7 +3299,7 @@ function buildAxisControls(plot) {
   const pid = plot.id;
   const pOpts = (sel) => sortedParamIndices().map(i => {
     const p = fcsFile ? fcsFile.params[i] : null; if (!p) return '';
-    return `<option value="${i}"${i===sel?' selected':''}>${p.name}${p.longName&&p.longName!==p.name?' · '+p.longName:''}</option>`;
+    return `<option value="${i}"${i===sel?' selected':''}>${_h(p.name)}${p.longName&&p.longName!==p.name?' · '+_h(p.longName):''}</option>`;
   }).join('');
 
   // X axis controls (horizontal, bottom)
@@ -5280,7 +5284,7 @@ function updateAllPopSelects() {
     // Only show populations from the same file as this plot
     sel.innerHTML = populations
       .filter(p => p.fileId === plot.fileId)
-      .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${p.name} (${popCount(p).toLocaleString()})</option>`)
+      .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${_h(p.name)} (${popCount(p).toLocaleString()})</option>`)
       .join('');
   });
   updateAllFileSelects();
@@ -5331,7 +5335,7 @@ function changeFile(plotId, newFileId, propagate=true) {
   // Rebuild pop dropdown for this plot
   const popSel = document.getElementById(`pop-sel-${plotId}`);
   if (popSel) popSel.innerHTML = newFile.populations
-    .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${p.name} (${popCount(p).toLocaleString()})</option>`)
+    .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${_h(p.name)} (${popCount(p).toLocaleString()})</option>`)
     .join('');
 
   // Sync file dot indicator
@@ -5803,7 +5807,7 @@ function renderTabStrip() {
     el.className = 'tab-item' + (tab.id === activeTabId ? ' active' : '');
     el.dataset.tabId = tab.id;
     el.innerHTML = `
-      <button class="tab-main" title="Click to switch tabs. Right-click or double-click to rename. Drop a plot here to move it.">${tab.name} (${plotCount})</button>
+      <button class="tab-main" title="Click to switch tabs. Right-click or double-click to rename. Drop a plot here to move it.">${_h(tab.name)} (${plotCount})</button>
       <button class="tab-close" onclick="removeTab(${tab.id});event.stopPropagation()" title="Close tab">✕</button>`;
     el.querySelector('.tab-main').addEventListener('dblclick', () => renameTab(tab.id));
     el.querySelector('.tab-main').addEventListener('contextmenu', e => { e.preventDefault(); renameTab(tab.id); });
@@ -6231,7 +6235,7 @@ function showAxisRangeModal(plot, clientX, clientY) {
   let rowsHTML = '';
   axes.forEach(({ axis, paramIdx }) => {
     const p = fcsFile.params[paramIdx];
-    const label = p.longName && p.longName !== p.name ? `${p.name} · ${p.longName}` : p.name;
+    const label = _h(p.longName && p.longName !== p.name ? `${p.name} · ${p.longName}` : p.name);
     const scale = axis === 'x'
       ? plotScale(plot, 'x')
       : plotScale(plot, 'y');
@@ -6510,7 +6514,7 @@ function showColorPicker(popId, mx, my) {
 
       <div style="display:flex;flex-direction:column;gap:4px">
         <label style="font-size:10px;color:var(--text2)">Name</label>
-        <input class="modal-input" id="gate-rename-input" value="${pop.name.replace(/"/g,'&quot;')}"
+        <input class="modal-input" id="gate-rename-input" value="${_h(pop.name)}"
           style="width:100%" maxlength="80" placeholder="Gate name">
       </div>
 
@@ -6777,7 +6781,7 @@ function showExportNameDialog() {
       </div>
       <div style="display:flex;flex-direction:column;gap:4px">
         <label style="font-size:10px;color:var(--text2)">Template name</label>
-        <input class="modal-input" id="tmpl-name-input" value="${defaultName}" placeholder="e.g. PBMC Panel 1" style="width:100%">
+        <input class="modal-input" id="tmpl-name-input" value="${_h(defaultName)}" placeholder="e.g. PBMC Panel 1" style="width:100%">
       </div>
       <div class="modal-actions">
         <button onclick="document.getElementById('export-name-modal').remove()">Cancel</button>
@@ -7530,11 +7534,11 @@ function _importGatesV3(tmpl) {
 
   const rowsHTML = mapping.map((m, i) => `
     <tr>
-      <td style="padding:4px 8px;font-size:11px;color:var(--text2)">${m.templateFile.sourceFile || 'File '+i}${m.templateFile.tube ? `<br><span style="font-size:10px">${m.templateFile.tube}</span>` : ''}</td>
+      <td style="padding:4px 8px;font-size:11px;color:var(--text2)">${_h(m.templateFile.sourceFile || 'File '+i)}${m.templateFile.tube ? `<br><span style="font-size:10px">${_h(m.templateFile.tube)}</span>` : ''}</td>
       <td style="padding:4px 8px">
         <select id="import-v3-sel-${i}" style="width:100%;font-size:11px;padding:2px 4px;background:var(--bg2);color:var(--text1);border:1px solid var(--border);border-radius:3px">
           <option value="" ${m.fcsFile ? '' : 'selected'}>(skip this section)</option>
-          ${poolFiles.map(f => `<option value="${f.fileId}" ${m.fcsFile && m.fcsFile.fileId===f.fileId?'selected':''}>${f.filename||'File '+f.fileId}${_fileTubeName(f) ? ' — ' + _fileTubeName(f) : ''}</option>`).join('')}
+          ${poolFiles.map(f => `<option value="${f.fileId}" ${m.fcsFile && m.fcsFile.fileId===f.fileId?'selected':''}>${_h(f.filename||'File '+f.fileId)}${_fileTubeName(f) ? ' — ' + _h(_fileTubeName(f)) : ''}</option>`).join('')}
         </select>
       </td>
       <td style="padding:4px 8px;font-size:10px;color:${m.fcsFile ? 'var(--accent)' : '#e0a33e'}">${m.fcsFile ? 'by ' + m.how : 'no match'}</td>
@@ -7867,8 +7871,8 @@ function showMetadata(fileId) {
         <div style="margin-left:auto;color:var(--text2);font-size:10px">${keys.length} keywords</div>
       </div>
       <div style="background:var(--bg2);border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:11px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">
-        <div><span style="color:var(--text2)">File:</span> <span title="${fileObj.filename || ''}">${shortFilename(fileObj.filename || 'unknown', 40)}</span></div>
-        <div><span style="color:var(--text2)">Format:</span> ${fcsVer}</div>
+        <div><span style="color:var(--text2)">File:</span> <span title="${_h(fileObj.filename || '')}">${_h(shortFilename(fileObj.filename || 'unknown', 40))}</span></div>
+        <div><span style="color:var(--text2)">Format:</span> ${_h(fcsVer)}</div>
         <div><span style="color:var(--text2)">Events:</span> ${(fileObj.nEvents || 0).toLocaleString()}</div>
         <div><span style="color:var(--text2)">Parameters:</span> ${fileObj.nPar || 0}</div>
         <div style="grid-column:1/-1"><span style="color:var(--text2)">Compensation:</span> ${compStatus}</div>
@@ -7898,8 +7902,8 @@ function renderMetaRows(keys, meta) {
   const tbody = document.getElementById('meta-tbody');
   if (!tbody) return;
   tbody.innerHTML = keys.map(k => {
-    const v = String(meta[k]).replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const kh = k.replace(/</g,'&lt;');
+    const v = _h(meta[k]);
+    const kh = _h(k);
     return `<tr><td style="color:var(--accent);font-family:monospace">${kh}</td><td>${v}</td></tr>`;
   }).join('');
 }

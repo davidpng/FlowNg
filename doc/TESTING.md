@@ -298,3 +298,10 @@ When a test fails, fix the cause and rerun that section and section 2; do not we
 | 15.11 | Locked files | A shared file with Locked viewer has no SpikeNG button, `buildFCSBytes`, `showSpikeDialog` or export menu item |
 
 Verified with the headless-Chrome harness on the TEST SAMPLE LMD (rows 15.1 to 15.9 on synthetic recipient/donor data of 1,000 and 200 events plus a real LMD round trip).
+
+## 16. Hostile names (security)
+
+| # | Check | Expected |
+|---|---|---|
+| 16.1 | Load a file whose name, a parameter name and label, a population name, a tab name and a metadata keyword are all `"><img src=x onerror="window.__pwn=1"><b>`; then draw the plots and open the file menu, plot file menu, colour picker, axis range, global settings, metadata and template dialogs | `window.__pwn` stays 0, no `<img src="x">` or stray `<b>` is added to the page, and the payload text is visible as plain text (the unfixed code gave 13 executions) |
+
