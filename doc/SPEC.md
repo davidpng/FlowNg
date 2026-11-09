@@ -16,6 +16,8 @@ This file records the interface and interaction decisions for `FlowNG.html`, and
 
 The left toolbar group holds the modes: **Select, Polygon, Rect, Quadrant, Edit, Comp, Delete, Autocomp**, then Undo, Redo, History and Add Plot. The mode is global (`globalMode`); exactly one button is active.
 
+**Narrow windows:** the two toolbar groups (tools on the left, files and settings on the right) always stay side by side. When there is not enough width each group wraps its own buttons onto extra lines, and the header grows taller (`--header-h` follows it), rather than the right group dropping underneath the left one.
+
 ### 2.1 Changing mode (`setGlobalMode`)
 
 - Choosing a mode **deselects all selected plots** and applies the mode to **every plot** in the workspace.

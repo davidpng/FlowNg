@@ -84,14 +84,16 @@
   .header-right {
     display: flex;
     align-items: flex-start;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;          /* the two groups stay side by side; each group wraps its own buttons when narrow */
+    min-width: 0;
     gap: 6px 24px;
     padding: 6px 12px;
     overflow: hidden;
   }
   /* Two stacked rows per group, as in FlowNg2: tools / undo+history, files / settings+save */
-  .tb-group { display: flex; flex-direction: column; gap: 6px; }
+  .tb-group { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 0 1 auto; }
   .tb-right { margin-left: auto; align-items: flex-end; }
+  .tb-right .tb-row { justify-content: flex-end; }
   .tb-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .logo {
     font-size: 16px;

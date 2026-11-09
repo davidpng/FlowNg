@@ -131,7 +131,7 @@ Supported formats: FCS 2.0, 3.0, 3.1, and Beckman Coulter LMD files
 
 ### Toolbar
 
-The top bar has two groups, each in two rows, laid out like FlowNg2. They appear once a file is loaded.
+The top bar has two groups, each in two rows, laid out like FlowNg2. They appear once a file is loaded. On a narrow window the two groups stay side by side and each group wraps its own buttons onto more lines (the bar gets taller) instead of the groups stacking.
 
 - **Workspace strip** (above the plot tabs): one tab per workspace, plus **+ Template** to import one
 - **Left group, row 1 (drawing tools):** Select, Polygon, Rect, Quadrant, Edit, Comp, Delete
