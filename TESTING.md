@@ -280,3 +280,20 @@ End every run with a short report:
 5. Fixture state left behind: close extra tabs, stop the server (`pkill -f "http.server 8770"`), delete nothing in the repo.
 
 When a test fails, fix the cause and rerun that section and section 2; do not weaken the check.
+
+## 15. FCS export and SpikeNG (full version only)
+
+| # | Check | Expected |
+|---|---|---|
+| 15.1 | Write then parse: `buildFCSBytes(params, data, n)` then `parseFCS` | Same event count, parameter count, names and labels; values identical; TEXT holds only structural keywords, `$PnB/E/N/R/S`, no `$DATE`, `$SPILLOVER`, IDs |
+| 15.2 | Export a population (right-click, Export events as FCS…) | One download named after the population (`T_gate.fcs`), event count equals the population; an empty population is disabled; a file's context menu exports all events |
+| 15.3 | Column check | Matching files pass; a renamed, missing or extra column is refused with the differing names listed; same names in another order pass and the donor is reordered so spiked values land in the right columns; duplicates are refused |
+| 15.4 | Spike amount | 1% of 5,000 schlimazel events is 50; editing the events box updates the percent and the reverse; the summary shows total and the spike's share |
+| 15.5 | Donor too small | Requesting more than the donor holds uses all donor events once and warns |
+| 15.6 | Educational merge | Schlimazel rows untouched and first, spike rows last; first spike Time = schlimazel max Time + 3% of the longer Time span; no Time column gives a warning and no gap |
+| 15.7 | Proficiency merge | Schlimazel events keep their order; spike rows are spread through the file; the Time channel stays non-decreasing |
+| 15.8 | Seed | Same seed gives the same output; spike values are all from the donor |
+| 15.9 | Output reopens | The merged FCS parses with the expected event and parameter count; the answer key lists the spike rows |
+| 15.10 | Locked files | A shared file with Locked viewer has no SpikeNG button, `buildFCSBytes`, `showSpikeDialog` or export menu item |
+
+Verified with the headless-Chrome harness on the TEST SAMPLE LMD (rows 15.1 to 15.9 on synthetic recipient/donor data of 1,000 and 200 events plus a real LMD round trip).

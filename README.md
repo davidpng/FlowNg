@@ -135,7 +135,7 @@ The top bar has two groups, each in two rows, laid out like FlowNg2. They appear
 - **Workspace strip** (above the plot tabs): one tab per workspace, plus **+ Template** to import one
 - **Left group, row 1 (drawing tools):** Select, Polygon, Rect, Quadrant, Edit, Comp, Delete
 - **Left group, row 2:** Autocomp, Undo, Redo, History, + Add Plot
-- **Right group, row 1 (files and templates):** Open FCS File, Export Template, Import Template, Export Shareable HTML
+- **Right group, row 1 (files and templates):** Open FCS File, Export Template, Import Template, Export Shareable HTML, SpikeNG
 - **Right group, row 2:** Settings, Save and Reset to author's gates (the last two only in shared files)
 
 | Tool | Function |
@@ -228,6 +228,10 @@ Autocomp fits one pair at a time from the population you outline; it is not the 
 4. On release every gate is re-evaluated and every plot of that channel adopts the new cofactor. `Esc` during the drag puts the old value back, and **Undo** reverses a committed change.
 
 If the markers are missing, check that the plot is highlighted, that Select is active, and that the axis button reads ASINH. You can also right-click a plot and type a cofactor in the Axis Range dialog.
+
+### Export to FCS and SpikeNG (full version only)
+
+Right-click a population (or a file) and choose **Export events as FCS…** to save its events as a minimal FCS file with identifying metadata removed. **💉 SpikeNG** (toolbar) then merges two such files: the *schlemiel* (donor population) is spiked into the *schlimazel* (recipient). It checks the column labels match first, then either places the spike after the recipient with a time gap of 3% of the longer acquisition (educational), or interleaves it at random positions (proficiency testing). Enter the spike as a percentage of the recipient's events; an answer key of the spiked rows can be downloaded with the result. Not available in locked shared files. See SPEC.md section 14.
 
 ### Copying Gates
 Right-click a gate row and choose **Copy** (or **Cut**), then right-click another row, in any loaded file, and choose **Paste**. The copy is a new independent gate under that row. It is matched to the target file by parameter name, so pasting into a file that lacks one of its channels is refused with a message. Quadrant gates cannot be copied.

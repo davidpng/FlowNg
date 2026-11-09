@@ -175,6 +175,22 @@ Definitions used throughout this spec:
 - **Adding (`+ Tab`), renaming and closing a tab are undoable and logged** ("Added tab ...", "Renamed tab ... to ...", "Closed tab ... (its N plots moved to ...)"). Closing a tab never deletes plots: they move to the first remaining tab, and Undo reopens the tab at its old position and sends exactly those plots back; Redo repeats it. The last tab cannot be closed. Tabs made by the program (starter template, template import) are not individual undo steps.
 - A workspace (one loaded template and its files) has its own tabs, plots, undo and history; the workspace strip sits above the tab strip.
 
-## 14. Provenance of this spec
+## 14. FCS export and SpikeNG (full version only)
 
-Sections 1 to 8 record decisions made while changing the app. Sections 9 to 13 describe the current behaviour as implemented in `FlowNG.html` (rendering in `renderPlotCard`, selection in the header click handler, reordering in the grip and card drag handlers, `togglePlotExpand`, `renderTabStrip`) and in `README.md`. The author's earlier design discussions are not visible to this document's writer, so reasons are given only where the code or README states them; anything missing should be added when remembered.
+These tools write event data, so they exist only in the full app. They sit inside the `@lite` markers and are physically removed from locked shared files (see 8.4 in TESTING.md).
+
+- **Export events as FCS:** right-click a population (or a file in the file list, for all events) and choose *Export events as FCS…*. It writes a minimal FCS 3.1 file: float32 list-mode data, parameter names (`$PnN`), labels (`$PnS`), ranges and `$TIMESTEP`. Everything else is dropped: patient and sample IDs, dates, instrument and cytometer settings, `$SPILLOVER`. The file is named after the population, never the source file, because source file names often hold patient identifiers.
+  - Values are the data as shown in the app (already compensated), so no `$SPILLOVER` is needed and the file reads the same everywhere.
+  - Parameter names and labels are kept because SpikeNG needs them to match files.
+- **SpikeNG** (toolbar button, always available): merges a donor file into a recipient file. The donor is the *schlemiel* (the population being spiked in, usually an exported population) and the recipient is the *schlimazel* (the sample receiving the spike). Both may be FCS or LMD.
+  - **Column check first.** `$PnN` names must match (case and spacing ignored). If the same set is present in a different order the donor columns are reordered to match and the dialog says so. If `$PnS` labels are both given and differ, or any name is missing or duplicated, the merge is refused and the differences are listed.
+  - **Spike amount** is a percentage of the *schlimazel* event count, with a linked box showing the equivalent number of events (editing either updates the other). The summary shows the result's total and the spike's share of it. If the schlemiel has fewer events than requested, all of them are used and a warning is shown. Events are never duplicated, since duplicates would be detectable.
+  - Spike events are a random subset of the schlemiel chosen with a seed (same seed, same events), kept in their original order.
+  - **Educational mode (time based):** the schlimazel events come first, then the spike events, with the Time channel of the spike shifted so there is a gap equal to 3% of the longer acquisition (the larger Time span of the two files). With no Time parameter the spike is simply appended and a warning is given.
+  - **Proficiency mode (interleaved):** each spike event is inserted at a random position among the schlimazel events. A spike event takes the Time value of the schlimazel event just before it, so the Time channel stays continuous and gives nothing away.
+  - Output `$PnR` is the larger of the two files' ranges. An optional **answer key** (CSV of 1-based output rows that are spiked) is downloaded beside the FCS file so the author can check a trainee's result.
+  - Not done: no compensation is applied or removed in SpikeNG; the two files are merged as parsed (compensated if they carried `$SPILLOVER`).
+
+## 15. Provenance of this spec
+
+Sections 1 to 8 record decisions made while changing the app. Sections 9 to 14 describe the current behaviour as implemented in `FlowNG.html` (rendering in `renderPlotCard`, selection in the header click handler, reordering in the grip and card drag handlers, `togglePlotExpand`, `renderTabStrip`) and in `README.md`. The author's earlier design discussions are not visible to this document's writer, so reasons are given only where the code or README states them; anything missing should be added when remembered.

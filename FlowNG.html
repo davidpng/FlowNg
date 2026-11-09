@@ -739,6 +739,7 @@
         <button class="tool-btn" onclick="document.getElementById('file-input').click()" id="open-btn" title="Open one or more FCS / LMD files (or drop them on the page)">📂 Open FCS File</button>
         <button class="tool-btn" onclick="exportGates()" id="export-btn" style="display:none" title="Save gates, plots and axis settings as a JSON template (no event data)">↓ Export Template</button>
         <button class="tool-btn" onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Apply a saved JSON template to the loaded file(s)">↑ Import Template</button>
+        <button class="tool-btn" onclick="showSpikeDialog()" id="spike-btn" title="SpikeNG: spike a donor population (schlemiel) into a recipient file (schlimazel) after checking their column labels match">💉 SpikeNG</button>
         <button class="tool-btn" onclick="showShareDialog()" id="share-btn" style="display:none" title="Export one self-contained HTML containing the event data, compensation, gates and plots (not the original FCS/LMD file)">🔗 Export Shareable HTML</button>
         <input type="file" id="import-input" accept=".json" style="display:none">
 <!--@lite:end-->
@@ -1719,6 +1720,293 @@ async function parseFCS(buffer) {
            rawData: fcsRawData, spillMatrix: fcsSpillMatrix, spillParamIdx: fcsSpillParamIdx };
 }
 /*@lite:end*/
+/*@lite:begin*/
+// ─── FCS EXPORT + SpikeNG (full version only; stripped from locked shared files) ──────────────
+// Write a minimal FCS 3.1 file: only what a reader needs (float32 list-mode data, parameter
+// names/labels/ranges). Patient/sample IDs, dates, instrument settings and $SPILLOVER are not written.
+// params: [{name, longName, range}], data: Float32Array(nEvents*nPar); opts.timestep copies $TIMESTEP.
+function buildFCSBytes(params, data, nEvents, opts = {}) {
+  const nPar = params.length;
+  const D = '|';
+  const clean = s => String(s == null ? '' : s).split(D).join('_');
+  const kv = [['$BYTEORD', '1,2,3,4'], ['$DATATYPE', 'F'], ['$MODE', 'L'], ['$NEXTDATA', '0'],
+              ['$PAR', String(nPar)], ['$TOT', String(nEvents)]];
+  if (opts.timestep) kv.push(['$TIMESTEP', clean(opts.timestep)]);
+  params.forEach((p, i) => {
+    const n = i + 1;
+    kv.push([`$P${n}B`, '32'], [`$P${n}E`, '0,0'], [`$P${n}N`, clean(p.name)]);
+    kv.push([`$P${n}R`, String(Math.max(1, Math.ceil(p.range || 262144)))]);
+    if (p.longName && p.longName !== p.name) kv.push([`$P${n}S`, clean(p.longName)]);
+  });
+  const dataBytes = nEvents * nPar * 4;
+  const mk = (ds, de) => D + [...kv, ['$BEGINANALYSIS', '0'], ['$ENDANALYSIS', '0'], ['$BEGINSTEXT', '0'], ['$ENDSTEXT', '0'],
+    ['$BEGINDATA', String(ds)], ['$ENDDATA', String(de)]].map(([k, v]) => k + D + v).join(D) + D;
+  let dataStart = 58, text = '';
+  for (let i = 0; i < 6; i++) {                       // offsets depend on their own digit count: iterate to a fixed point
+    text = mk(dataStart, dataStart + dataBytes - 1);
+    const next = 58 + new TextEncoder().encode(text).length;
+    if (next === dataStart) break;
+    dataStart = next;
+  }
+  const textBytes = new TextEncoder().encode(text);
+  const dataEnd = dataStart + dataBytes - 1;
+  const f8 = n => (n > 99999999 ? '0' : String(n)).padStart(8, ' ');
+  const header = 'FCS3.1    ' + f8(58) + f8(57 + textBytes.length) + f8(dataStart) + f8(dataEnd) + f8(0) + f8(0);
+  const out = new Uint8Array(dataStart + dataBytes);
+  for (let i = 0; i < 58; i++) out[i] = header.charCodeAt(i);
+  out.set(textBytes, 58);
+  const dv = new DataView(out.buffer);
+  let o = dataStart;
+  const total = nEvents * nPar;
+  for (let i = 0; i < total; i++, o += 4) dv.setFloat32(o, data[i], true);
+  return out;
+}
+
+function _downloadBytes(bytes, name, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([bytes], { type: type || 'application/octet-stream' }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+const _safeFileName = s => String(s || 'events').replace(/[^a-z0-9_\-\s.+]/gi, '_').replace(/\s+/g, '_').slice(0, 80);
+
+// Export the events of one population (gate or whole file) as a minimal FCS file.
+// File name comes from the population name, never the source file name (which may hold patient IDs).
+function exportPopulationFCS(popId) {
+  const pop = populations.find(p => p.id === popId); if (!pop) return;
+  const f = getFileById(pop.fileId); if (!f) return;
+  const P = f.nPar;
+  let data, n;
+  if (pop._isAll) { data = f.data; n = f.nEvents; }
+  else {
+    const idx = pop.indices; n = idx.length;
+    if (!n) { showToast(`"${pop.name}" has no events to export`, 3500); return; }
+    data = new Float32Array(n * P);
+    for (let i = 0; i < n; i++) data.set(f.data.subarray(idx[i] * P, idx[i] * P + P), i * P);
+  }
+  const bytes = buildFCSBytes(f.params, data, n, { timestep: f.meta && f.meta['$TIMESTEP'] });
+  const name = _safeFileName(pop._isAll ? 'All_events' : pop.name) + '.fcs';
+  _downloadBytes(bytes, name);
+  showToast(`Exported ${n.toLocaleString()} events of "${pop.name}" to ${name} (identifying metadata removed)`, 6000);
+}
+
+// ─── SpikeNG ───
+// schlimazel = recipient file; schlemiel = donor population that is spiked in.
+const _SPIKE_GAP_FRACTION = 0.03;
+let _spike = { recip: null, donor: null };
+
+function _normLabel(s) { return String(s || '').trim().replace(/\s+/g, ' ').toUpperCase(); }
+
+// Compare column labels. Returns { ok, map, reordered, problems }; map[i] = donor column that matches recipient column i.
+function spikeCompareColumns(recip, donor) {
+  const problems = [];
+  if (recip.nPar !== donor.nPar) problems.push(`Different number of parameters: schlimazel has ${recip.nPar}, schlemiel has ${donor.nPar}`);
+  const rN = recip.params.map(p => _normLabel(p.name)), dN = donor.params.map(p => _normLabel(p.name));
+  const dup = a => a.find((x, i) => a.indexOf(x) !== i);
+  if (dup(rN) !== undefined || dup(dN) !== undefined) problems.push(`Duplicate parameter name "${dup(rN) ?? dup(dN)}" — cannot match columns unambiguously`);
+  if (problems.length) return { ok: false, problems };
+  const map = [];
+  rN.forEach((n, i) => {
+    const j = dN.indexOf(n);
+    if (j < 0) problems.push(`"${recip.params[i].name}" is in the schlimazel but not the schlemiel`);
+    map.push(j);
+  });
+  dN.forEach((n, j) => { if (!rN.includes(n)) problems.push(`"${donor.params[j].name}" is in the schlemiel but not the schlimazel`); });
+  if (problems.length) return { ok: false, problems };
+  recip.params.forEach((rp, i) => {
+    const dp = donor.params[map[i]];
+    const rs = _normLabel(rp.longName), ds = _normLabel(dp.longName), nm = _normLabel(rp.name);
+    if (rs && ds && rs !== nm && ds !== _normLabel(dp.name) && rs !== ds)
+      problems.push(`Label differs for ${rp.name}: "${rp.longName}" vs "${dp.longName}"`);
+  });
+  if (problems.length) return { ok: false, problems };
+  return { ok: true, map, reordered: map.some((j, i) => j !== i), problems };
+}
+
+function _spikeRng(seed) {                                  // mulberry32
+  let a = (seed >>> 0) || 1;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function _timeCol(file) { return file.params.findIndex(p => /^time$/i.test(String(p.name).trim()) || /^time$/i.test(String(p.longName || '').trim())); }
+function _colRange(data, n, P, c) {
+  let lo = Infinity, hi = -Infinity;
+  for (let e = 0; e < n; e++) { const v = data[e * P + c]; if (v < lo) lo = v; if (v > hi) hi = v; }
+  return n ? [lo, hi] : [0, 0];
+}
+
+// Number of spike events for a requested percentage of the schlimazel (recipient) events.
+function spikeEventsFor(pct, nRecip) { return Math.max(0, Math.round(nRecip * pct / 100)); }
+
+// Core merge. mode: 'time' (educational) or 'interleave' (proficiency testing).
+// Returns { params, data, nEvents, spikeRows (0-based output rows), nSpike, gap, warnings }.
+function spikeMerge(recip, donor, { mode, nSpike, seed = 1 }) {
+  const cmp = spikeCompareColumns(recip, donor);
+  if (!cmp.ok) throw new Error('Column labels do not match:\n' + cmp.problems.join('\n'));
+  const P = recip.nPar, nR = recip.nEvents, nD = donor.nEvents, warnings = [];
+  const rng = _spikeRng(seed);
+  if (nSpike > nD) { warnings.push(`Only ${nD.toLocaleString()} schlemiel events available; spiking ${nD.toLocaleString()} instead of ${nSpike.toLocaleString()}`); nSpike = nD; }
+  // Donor columns in recipient order
+  const dmap = cmp.map;
+  // Random subset of donor events (partial Fisher–Yates), kept in original order
+  const pick = new Int32Array(nD); for (let i = 0; i < nD; i++) pick[i] = i;
+  for (let i = 0; i < nSpike; i++) { const j = i + Math.floor(rng() * (nD - i)); const t = pick[i]; pick[i] = pick[j]; pick[j] = t; }
+  const chosen = pick.slice(0, nSpike).sort();
+  const spike = new Float32Array(nSpike * P);
+  for (let k = 0; k < nSpike; k++) for (let c = 0; c < P; c++) spike[k * P + c] = donor.data[chosen[k] * P + dmap[c]];
+
+  const total = nR + nSpike;
+  const out = new Float32Array(total * P);
+  const spikeRows = new Int32Array(nSpike);
+  const tR = _timeCol(recip);
+  let gap = 0;
+  if (mode === 'time') {
+    out.set(recip.data.subarray(0, nR * P), 0);
+    out.set(spike, nR * P);
+    for (let k = 0; k < nSpike; k++) spikeRows[k] = nR + k;
+    if (tR >= 0 && nSpike) {
+      const [r0, r1] = _colRange(recip.data, nR, P, tR);
+      const dT = _timeCol(donor);
+      const [d0, d1] = dT >= 0 ? _colRange(donor.data, nD, donor.nPar, dT) : [0, 0];
+      gap = _SPIKE_GAP_FRACTION * Math.max(r1 - r0, d1 - d0);          // 3% of the longer acquisition
+      const [s0] = _colRange(spike, nSpike, P, tR);
+      const shift = (r1 + gap) - s0;
+      for (let k = 0; k < nSpike; k++) out[(nR + k) * P + tR] += shift;
+    } else if (nSpike) warnings.push('No Time parameter found: the schlemiel events are appended after the schlimazel with no time gap');
+  } else {
+    // Interleave: each spike event goes into a random slot among the recipient events
+    const slot = new Int32Array(nSpike);
+    for (let k = 0; k < nSpike; k++) slot[k] = Math.floor(rng() * (nR + 1));
+    slot.sort();
+    let ri = 0, o = 0;
+    for (let k = 0; k <= nSpike; k++) {
+      const upto = k < nSpike ? slot[k] : nR;
+      if (upto > ri) { out.set(recip.data.subarray(ri * P, upto * P), o * P); o += upto - ri; ri = upto; }
+      if (k < nSpike) {
+        out.set(spike.subarray(k * P, k * P + P), o * P);
+        if (tR >= 0 && nR) out[o * P + tR] = recip.data[Math.max(0, ri - 1) * P + tR];   // inherit local time so it blends in
+        spikeRows[k] = o; o++;
+      }
+    }
+  }
+  const params = recip.params.map((p, i) => ({ name: p.name, longName: p.longName, range: Math.max(p.range || 0, donor.params[dmap[i]].range || 0) }));
+  return { params, data: out, nEvents: total, spikeRows, nSpike, gap, warnings, timestep: recip.meta && recip.meta['$TIMESTEP'] };
+}
+
+async function _spikeParseFile(file) {
+  const buf = await file.arrayBuffer();
+  const u8 = new Uint8Array(buf);
+  const r = isLMD(u8) ? await parseLMD(buf) : await parseFCS(buf);
+  hideProgress();
+  return r;
+}
+
+function showSpikeDialog() {
+  document.getElementById('spike-modal')?.remove();
+  _spike = { recip: null, donor: null };
+  const o = document.createElement('div');
+  o.id = 'spike-modal'; o.className = 'modal-overlay';
+  o.innerHTML = `
+    <div class="modal-box" style="max-width:460px">
+      <h2>💉 SpikeNG</h2>
+      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Spike a donor population (schlemiel) into a recipient file (schlimazel).
+        Both must have identical column labels. Use <i>Export events as FCS</i> on a population to make the schlemiel.</p>
+      <label style="font-size:11px;display:block;margin-bottom:6px">Schlimazel (recipient) FCS / LMD
+        <input id="spike-recip" type="file" accept=".fcs,.lmd,.LMD" style="width:100%" onchange="_spikeLoad('recip',this.files[0])"></label>
+      <div id="spike-recip-info" style="font-size:10px;color:var(--text2);margin-bottom:6px"></div>
+      <label style="font-size:11px;display:block;margin-bottom:6px">Schlemiel (donor) FCS / LMD
+        <input id="spike-donor" type="file" accept=".fcs,.lmd,.LMD" style="width:100%" onchange="_spikeLoad('donor',this.files[0])"></label>
+      <div id="spike-donor-info" style="font-size:10px;color:var(--text2);margin-bottom:6px"></div>
+      <div id="spike-check" style="font-size:11px;margin-bottom:8px;min-height:14px"></div>
+      <div style="font-size:11px;margin-bottom:8px">
+        <label style="display:block;margin-bottom:3px"><input type="radio" name="spike-mode" value="time" checked onchange="_spikeUpdate()">
+          <b>Educational</b>: time based. Schlemiel events follow the schlimazel, separated by a gap of 3% of the longer acquisition.</label>
+        <label style="display:block"><input type="radio" name="spike-mode" value="interleave" onchange="_spikeUpdate()">
+          <b>Proficiency testing</b>: schlemiel events are interleaved at random positions among the schlimazel events.</label>
+      </div>
+      <div style="font-size:11px;margin-bottom:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span>Spike</span>
+        <input id="spike-pct" type="number" min="0" step="any" value="1" style="width:80px" oninput="_spikeUpdate('pct')">
+        <span>% of schlimazel events =</span>
+        <input id="spike-n" type="number" min="0" step="1" style="width:90px" oninput="_spikeUpdate('n')">
+        <span>events</span>
+      </div>
+      <div id="spike-summary" style="font-size:11px;color:var(--text2);margin-bottom:8px;min-height:14px"></div>
+      <label style="font-size:11px;display:block;margin-bottom:6px">Random seed (same seed = same events picked)
+        <input id="spike-seed" type="number" step="1" value="1" style="width:100%"></label>
+      <label style="font-size:11px;display:block;margin-bottom:6px">Output file name
+        <input id="spike-name" type="text" value="SpikeNG" style="width:100%"></label>
+      <label style="font-size:11px;display:block;margin-bottom:10px">
+        <input id="spike-key" type="checkbox" checked> Also download an answer key (CSV of the spiked event rows)</label>
+      <div id="spike-status" style="font-size:11px;color:var(--text2);min-height:14px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="document.getElementById('spike-modal').remove()">Close</button>
+        <button class="primary" id="spike-go" onclick="runSpike()" disabled>Create spiked FCS</button>
+      </div>
+    </div>`;
+  document.body.appendChild(o);
+}
+
+async function _spikeLoad(which, file) {
+  const info = document.getElementById(`spike-${which}-info`);
+  _spike[which] = null; _spikeUpdate();
+  if (!file) { info.textContent = ''; return; }
+  info.textContent = 'Reading…';
+  try {
+    const r = await _spikeParseFile(file);
+    _spike[which] = r;
+    info.textContent = `${r.nEvents.toLocaleString()} events · ${r.nPar} parameters`;
+  } catch (e) { info.textContent = 'Could not read this file: ' + e.message; }
+  _spikeUpdate(which === 'recip' ? 'pct' : undefined);
+}
+
+function _spikeUpdate(src) {
+  const { recip, donor } = _spike;
+  const pctEl = document.getElementById('spike-pct'), nEl = document.getElementById('spike-n');
+  if (!pctEl) return;
+  if (recip) {
+    if (src === 'n') pctEl.value = (100 * (parseInt(nEl.value) || 0) / (recip.nEvents || 1)).toFixed(4).replace(/\.?0+$/, '');
+    else nEl.value = spikeEventsFor(parseFloat(pctEl.value) || 0, recip.nEvents);
+  }
+  const chk = document.getElementById('spike-check'), sum = document.getElementById('spike-summary'), go = document.getElementById('spike-go');
+  let ok = false;
+  chk.textContent = ''; sum.textContent = '';
+  if (recip && donor) {
+    const c = spikeCompareColumns(recip, donor);
+    if (c.ok) { ok = true; chk.style.color = '#4caf7a'; chk.textContent = `✓ ${recip.nPar} column labels match` + (c.reordered ? ' (schlemiel columns reordered to match)' : ''); }
+    else { chk.style.color = '#e06c75'; chk.innerHTML = '✗ Column labels do not match:<br>' + c.problems.slice(0, 8).map(s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')).join('<br>') + (c.problems.length > 8 ? '<br>…' : ''); }
+    const n = parseInt(nEl.value) || 0, use = Math.min(n, donor.nEvents);
+    sum.textContent = `${use.toLocaleString()} of ${donor.nEvents.toLocaleString()} schlemiel events → ${(recip.nEvents + use).toLocaleString()} events total (${(100 * use / (recip.nEvents + use || 1)).toFixed(3)}% of the result)` +
+      (n > donor.nEvents ? ` — only ${donor.nEvents.toLocaleString()} available` : '');
+    if (use <= 0) ok = false;
+  }
+  go.disabled = !ok;
+}
+
+async function runSpike() {
+  const { recip, donor } = _spike; if (!recip || !donor) return;
+  const status = document.getElementById('spike-status'), go = document.getElementById('spike-go');
+  go.disabled = true; status.textContent = 'Merging…';
+  try {
+    await new Promise(r => setTimeout(r, 20));
+    const mode = document.querySelector('input[name="spike-mode"]:checked').value;
+    const nSpike = parseInt(document.getElementById('spike-n').value) || 0;
+    const seed = parseInt(document.getElementById('spike-seed').value) || 1;
+    const r = spikeMerge(recip, donor, { mode, nSpike, seed });
+    const bytes = buildFCSBytes(r.params, r.data, r.nEvents, { timestep: r.timestep });
+    const base = _safeFileName(document.getElementById('spike-name').value || 'SpikeNG');
+    _downloadBytes(bytes, base + '.fcs');
+    if (document.getElementById('spike-key').checked) {
+      const lines = [`# SpikeNG answer key. Mode: ${mode === 'time' ? 'educational (time based)' : 'proficiency (interleaved)'}; seed ${seed}; ${r.nSpike} spiked of ${r.nEvents} events`,
+        'row_1_based'];
+      for (let k = 0; k < r.spikeRows.length; k++) lines.push(r.spikeRows[k] + 1);
+      _downloadBytes(lines.join('\n') + '\n', base + '_key.csv', 'text/csv');
+    }
+    const msg = `Wrote ${base}.fcs: ${r.nEvents.toLocaleString()} events (${r.nSpike.toLocaleString()} spiked)` + (r.warnings.length ? ' — ' + r.warnings.join('; ') : '');
+    status.textContent = msg; showToast(msg, 8000);
+  } catch (e) { console.error(e); status.textContent = 'Failed: ' + e.message; }
+  go.disabled = false;
+}
+/*@lite:end*/
 // ─── TRANSFORM (log10) ────────────────────────────────────────────────────────
 const LOG10E = Math.LOG10E;  // 1/ln(10) ≈ 0.4343
 
@@ -2341,6 +2629,11 @@ function showFileContextMenu(fileId, cx, cy) {
       style="padding:6px 14px;font-size:11px;cursor:pointer;color:var(--text)"
       onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
       📋 Paste gate here
+    </div>` : ''}
+    ${typeof exportPopulationFCS === 'function' ? `<div class="ctx-item" onclick="exportPopulationFCS(${(getFileById(fileId) || {})._rootPopId});document.getElementById('file-ctx-menu')?.remove()"
+      style="padding:6px 14px;font-size:11px;cursor:pointer;color:var(--text)"
+      onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
+      ⬇ Export all events as FCS…
     </div>` : ''}
     <div class="ctx-item" onclick="removeFile(${fileId});document.getElementById('file-ctx-menu')?.remove()"
       style="padding:6px 14px;font-size:11px;cursor:pointer;color:#e06c75"
@@ -5082,6 +5375,7 @@ function showGateMenu(popId, x, y) {
     { label: 'Copy',  disabled: isQuad || !!pop.boolInfo, run: () => copyGate(popId, false) },
     { label: 'Cut',   disabled: isQuad || !!pop.boolInfo, run: () => copyGate(popId, true) },
     { label: 'Paste', disabled: !_gateClipboard, run: () => pasteGate(popId) },
+    ...(typeof exportPopulationFCS === 'function' ? [{ label: 'Export events as FCS…', disabled: !popCount(pop), run: () => exportPopulationFCS(popId) }] : []),
     { label: 'Delete', danger: true, run: () => deleteGateFromTree(popId) },
   ]);
 }
