@@ -1,0 +1,311 @@
+{
+ "format": 1,
+ "canon": "scripts/flowng_canon.py",
+ "entries": [
+  {
+   "hash": "ab2934554c6cfad530d2867a14d5c2a8dd92435cf98fb9e442cdad70a6864554",
+   "variant": "full",
+   "commit": "40d1292ccf",
+   "date": "2026-10-23",
+   "subject": "Template import: match files by tube name or antibody panel, not just file name",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "5fd0c7b86293dfa71da93698a4251ed9e3ef75b7c258125586da0ef408f8d07d",
+   "variant": "full",
+   "commit": "58c9f07755",
+   "date": "2026-10-23",
+   "subject": "Shareable export: no PHI in output (pristine app snapshot, no filename leaks, no collectio",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "f6656182516600ab2191ea0039f6d990aecdbda89f18d64b38df7242c814ac18",
+   "variant": "locked",
+   "commit": "58c9f07755",
+   "date": "2026-10-23",
+   "subject": "Shareable export: no PHI in output (pristine app snapshot, no filename leaks, no collectio",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "9e02424ec9ef996ce9297929b49a7c65937c9cd67f47e5d1d03f58d70950cfb0",
+   "variant": "full",
+   "commit": "095ed15373",
+   "date": "2026-11-03",
+   "subject": "Fix stale plots on load: a removed plot must not paint onto a new plot with the same id",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "c1a6ed03754ddc02dab1f592666a07f4daae4a4443d822eed6e824f5180e33e1",
+   "variant": "locked",
+   "commit": "095ed15373",
+   "date": "2026-11-03",
+   "subject": "Fix stale plots on load: a removed plot must not paint onto a new plot with the same id",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "479ef31c66d69ded8822b1b443303756e69d5be78d83eaa7176dbf655406f929",
+   "variant": "full",
+   "commit": "1b34280f8d",
+   "date": "2026-11-03",
+   "subject": "Drop version-2 template import; add scale and refresh helpers; log swallowed errors",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "a01d81265cbaaeeb835151910656e0f9f607307645752a97b5f7f8c12825ec2f",
+   "variant": "locked",
+   "commit": "1b34280f8d",
+   "date": "2026-11-03",
+   "subject": "Drop version-2 template import; add scale and refresh helpers; log swallowed errors",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "8e708b3afae91b756300ae1a9f4508c4c80240dcbaa30edccccf800dae8dae52",
+   "variant": "full",
+   "commit": "259adacd14",
+   "date": "2026-11-03",
+   "subject": "Top bar: two groups of two rows, ordered like FlowNg2",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "41c97a4c4bdb836fe12180d56f40de248b17c658b71463e8d4031a061ff142d7",
+   "variant": "locked",
+   "commit": "259adacd14",
+   "date": "2026-11-03",
+   "subject": "Top bar: two groups of two rows, ordered like FlowNg2",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "718ba911a803e9cacfc937109a72269086eb3303ee67b7f435e29e589a109316",
+   "variant": "full",
+   "commit": "2f9221a42b",
+   "date": "2026-11-03",
+   "subject": "Help panel and README: explain that cofactor markers need the plot selected by clicking it",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "31d87eea8b26007e7bddc7f7a9c0f69f2c23c47e1ecc2613e1ae0976904b10e5",
+   "variant": "locked",
+   "commit": "2f9221a42b",
+   "date": "2026-11-03",
+   "subject": "Help panel and README: explain that cofactor markers need the plot selected by clicking it",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "a8af4693567e1cc865b17ecbbd1a7726a102c7207944563549c305fd52c4ce1a",
+   "variant": "full",
+   "commit": "4505e715ed",
+   "date": "2026-11-03",
+   "subject": "Fix load failure in Safari: polyfill requestIdleCallback",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "369d4e548755e187c8c9018e597d82b23e541896fe5942dd7b5d063fae699aa5",
+   "variant": "locked",
+   "commit": "4505e715ed",
+   "date": "2026-11-03",
+   "subject": "Fix load failure in Safari: polyfill requestIdleCallback",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "0009907ee9c33f02c837fd693ede8ef95fc41ccd5efac1d9caa036e3f9165270",
+   "variant": "full",
+   "commit": "4718098ef2",
+   "date": "2026-11-03",
+   "subject": "Shared files persist: Save writes a new copy with working state and change History; Histor",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "e60b9e80ab3e233dc485e9bc246d7d1346c4c9e3243d3f453c3c3e67fd4865e6",
+   "variant": "locked",
+   "commit": "4718098ef2",
+   "date": "2026-11-03",
+   "subject": "Shared files persist: Save writes a new copy with working state and change History; Histor",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "7fa8fb35700923aa4629e8c6abb44b1aa3a5db735d4929b0c555d963aad3be95",
+   "variant": "full",
+   "commit": "a6cfe7ae36",
+   "date": "2026-11-03",
+   "subject": "Workspaces: load several templates at once, each with its own files",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "434e787bb1a8e7210af6bf474c038a7eec5a84b61517e971ce5d922b9021f61e",
+   "variant": "locked",
+   "commit": "a6cfe7ae36",
+   "date": "2026-11-03",
+   "subject": "Workspaces: load several templates at once, each with its own files",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "0596eabf2c53cdf674077b370c8c0e716b40a818f45c6eca500843a22232b039",
+   "variant": "full",
+   "commit": "c61d7ca609",
+   "date": "2026-11-03",
+   "subject": "Fix first-file UI init when several files are opened at once",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "eb9a7bf4cb1c14460876beb703c7600e435a4435df6ce13e3176eb386f89606d",
+   "variant": "locked",
+   "commit": "c61d7ca609",
+   "date": "2026-11-03",
+   "subject": "Fix first-file UI init when several files are opened at once",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "b93fb21659f6158e3f6491fcba8e3c89815f5e6e32890b05d989e92c6944c0af",
+   "variant": "full",
+   "commit": "e1bc73e08d",
+   "date": "2026-11-03",
+   "subject": "Merge pull request #22 from davidpng/help-cofactor-selection",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "3de1b78efd6f6dd782ee85b336440cdadf3bc659b25fc079c51454600f58d68a",
+   "variant": "locked",
+   "commit": "e1bc73e08d",
+   "date": "2026-11-03",
+   "subject": "Merge pull request #22 from davidpng/help-cofactor-selection",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "0c40d29d6b623d36e5ec96431eea307068b9063eeb61613ff5d14257eda46773",
+   "variant": "full",
+   "commit": "eeb3b646a9",
+   "date": "2026-11-03",
+   "subject": "Remove dead WebGL/heatmap/background-render code and unused state",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "2676e6803c6bfe5b65636c00dd90e8b5dce47eff8f4170d7a9934a85510398b0",
+   "variant": "locked",
+   "commit": "eeb3b646a9",
+   "date": "2026-11-03",
+   "subject": "Remove dead WebGL/heatmap/background-render code and unused state",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "cf392ea53f178a47ff74c7c4e7eb24bfb23c1cdc838530f5ecae1c87932139d7",
+   "variant": "full",
+   "commit": "fcb8a21667",
+   "date": "2026-11-03",
+   "subject": "About dialog: link to the README and user guide",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "63ea476e17063c5c655f208c8ebef8de630c3a89b60ff703fefa179516a36281",
+   "variant": "locked",
+   "commit": "fcb8a21667",
+   "date": "2026-11-03",
+   "subject": "About dialog: link to the README and user guide",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "a5d8a3d92d8f7f8bc7c8d4d8dce1bd9e6a1888fbb7126bc5bc0638223382e07c",
+   "variant": "full",
+   "commit": "ce0647b2c5",
+   "date": "2026-11-06",
+   "subject": "Mode shortcuts, undoable plot/tab changes, reparent and selection fixes, SPEC.md",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "39a0bcc3e9b304afbf7603676ae6d3b8912929fccddf02534a8379bae066104a",
+   "variant": "locked",
+   "commit": "ce0647b2c5",
+   "date": "2026-11-06",
+   "subject": "Mode shortcuts, undoable plot/tab changes, reparent and selection fixes, SPEC.md",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "fa3ce36b164dee2f0e68d23ad9beab1d0c51457fb0d4fe544a30a6c8495437ee",
+   "variant": "full",
+   "commit": "dfd8905688",
+   "date": "2026-11-06",
+   "subject": "Edit mode: dragging a corner of a rectilinear gate keeps it rectilinear",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "2a529a3d8bd5119d34aa51c5972fb5f78e065334b1fe2035acde9144ba2b891f",
+   "variant": "locked",
+   "commit": "dfd8905688",
+   "date": "2026-11-06",
+   "subject": "Edit mode: dragging a corner of a rectilinear gate keeps it rectilinear",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "077bfc4471e8f596d747c47a27a3f85bc155d4c32e0c1caf0b7ee477b0ab3eaf",
+   "variant": "full",
+   "commit": "0e24980a7f",
+   "date": "2026-11-07",
+   "subject": "Select a plot from any empty part of it; bins slider up to 1024",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "9b57d8c15eb524943d6c95b681ed7b3ec776753d06161749ea3901f6cd1f1efa",
+   "variant": "locked",
+   "commit": "0e24980a7f",
+   "date": "2026-11-07",
+   "subject": "Select a plot from any empty part of it; bins slider up to 1024",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "852e27e0c411bed14dc3bf33236e88a67b70060a118b9a4620660f13242d3083",
+   "variant": "full",
+   "commit": "510cc804db",
+   "date": "2026-11-07",
+   "subject": "Plot size slider per tab, saved with templates and shared files",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "562fd6ea300b3218311dc32a566d3ec193362d79172af5a87e9067eb0e1e1626",
+   "variant": "locked",
+   "commit": "510cc804db",
+   "date": "2026-11-07",
+   "subject": "Plot size slider per tab, saved with templates and shared files",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "8e661359fcd5e05d1d44b67568e7f1f2638845f6284970b74d2a6288b36b3863",
+   "variant": "full",
+   "commit": "54707ad44c",
+   "date": "2026-11-09",
+   "subject": "Add Export events as FCS and SpikeNG (spike a donor population into a recipient file); ful",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "3cac2fdf32d88413e607f537979c451eef68178c2f921c1ce26f1c8d005f7f85",
+   "variant": "locked",
+   "commit": "54707ad44c",
+   "date": "2026-11-09",
+   "subject": "Add Export events as FCS and SpikeNG (spike a donor population into a recipient file); ful",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "73cb1ade9b3e579a63d8e53bb83f35058a2482fb2cf954a2e1490d45e52344b1",
+   "variant": "full",
+   "commit": "5ac408a70a",
+   "date": "2026-11-09",
+   "subject": "SpikeNG: merge in uncompensated space; export keeps raw values and the spillover matrix",
+   "dataRules": "strict"
+  },
+  {
+   "hash": "0f5e3f1fe9844046661e1a1cc81eb94179ce0cc48d9ee94ddcfd159604f420f1",
+   "variant": "full",
+   "commit": "eb00718964",
+   "date": "2026-11-09",
+   "subject": "Escape file-derived names before putting them into HTML (_h); closes the injection finding",
+   "dataRules": "standard"
+  },
+  {
+   "hash": "10bd9bd1ae339afe5e81af8cc07508ccf0473fe2be265e4786224f426a8edbb5",
+   "variant": "locked",
+   "commit": "eb00718964",
+   "date": "2026-11-09",
+   "subject": "Escape file-derived names before putting them into HTML (_h); closes the injection finding",
+   "dataRules": "standard"
+  }
+ ],
+ "revoked": []
+}

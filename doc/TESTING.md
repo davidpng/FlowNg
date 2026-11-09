@@ -305,3 +305,19 @@ Verified with the headless-Chrome harness on the TEST SAMPLE LMD (rows 15.1 to 1
 |---|---|---|
 | 16.1 | Load a file whose name, a parameter name and label, a population name, a tab name and a metadata keyword are all `"><img src=x onerror="window.__pwn=1"><b>`; then draw the plots and open the file menu, plot file menu, colour picker, axis range, global settings, metadata and template dialogs | `window.__pwn` stays 0, no `<img src="x">` or stray `<b>` is added to the page, and the payload text is visible as plain text (the unfixed code gave 13 executions) |
 
+## 17. Shared-file code manifest (security phase 1)
+
+Run: `/usr/bin/python3 scripts/test_manifest.py [shared files...]` (exit code 0 = all pass). After any change to `FlowNG.html` that will be released, rebuild the manifest with `/usr/bin/python3 scripts/build_manifest.py` and re-run.
+
+| # | Check | Expected |
+|---|---|---|
+| 17.1 | `samples/Complex_Analysis_FlowNg.html` | In the manifest as a released `full` build |
+| 17.2 | A shared file made now by the app, locked and unlocked (headless Chrome: load the TEST SAMPLE LMD, `generateStarterWorkspace()`, `showShareDialog()`, `doExportShareable()` with the download captured) | Both listed for the current commit, `locked` and `full` |
+| 17.3 | The same from an older build (checked: `ce0647b2c5`, 6 Nov 2026) | Both listed for that commit |
+| 17.4 | Allowed changes: new `<title>`, new data block body, markup whitespace | Still pass |
+| 17.5 | Tamper: extra `<script>`, `onload`/`onerror` attribute, `<img>`, `<iframe>`, external `<link>`, `<meta refresh>`, one changed character of code, code added inside the app script, `style` on `<html>`, extra comment | Each rejected: code not in manifest |
+| 17.6 | Data-block tricks: a second look-alike `flowng-bundle` script, two exact blocks, a block moved, block type changed to JavaScript, block closed early then a script | Each rejected |
+| 17.7 | Plain source file, or a lite-stripped source (no data block) | Rejected: no data block |
+| 17.8 | Rebuild the manifest twice | Byte-identical |
+| 17.9 | Manifest content | Unique `(hash, variant)` entries; `standard` only for builds with `_h()`; no commit before `58c9f07755` |
+

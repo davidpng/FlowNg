@@ -172,4 +172,19 @@ Goal: students and proficiency-testing sites can open a single shared HTML file 
 
 **Tests required** (see `doc/TESTING.md`, section 17): tamper tests in the command-line checker and the Check page; hostile names in the data block; an older release's file passes or fails according to the manifest and revocation list; every feature still works under the CSP.
 
-**Status:** phase 1 in progress.
+**Status:** phase 1 done (normaliser, manifest, tests); phases 2 to 6 not started.
+
+### Phase 1 as built
+
+- `scripts/flowng_canon.py` turns a shared file or a source file into a canonical token stream and hashes it. It removes the data block (only in its exact written form, once, directly before the loader script; the body must contain no `<`), ignores the `<title>` text and the run-time `--header-h` style on `<html>`, ignores whitespace outside script/style, and keeps everything else: tags, sorted attributes, comments, script and style text exactly, and end tags of elements that change parsing.
+- `scripts/build_manifest.py` rebuilds `check/manifest.json` from git history: for each commit of `FlowNG.html` it hashes the `full` and `locked` variants (the locked variant strips the `@lite` regions the way the share export does). Each entry has `dataRules`: `strict` before the escaping fix (`function _h(` absent) and `standard` after. Run it on `main` at release time; entries for commits that are only on a feature branch are listed too until then.
+- `scripts/test_manifest.py` runs the tamper tests (below) against `samples/Complex_Analysis_FlowNg.html` and any shared files given on the command line.
+- Run the scripts with the system Python on macOS (`/usr/bin/python3`): an x86 Python cannot launch the git shim.
+
+### Findings from building phase 1
+
+- **Cut-off at the pristine-snapshot fix.** Builds before `58c9f07755` (23 Oct 2026) wrote the live page into shared files, including UI state, the loaded file name and an open dialog. Those files cannot be reproduced, so those builds are not in the manifest and their files show red (as agreed).
+- **A bare "skip anything that looks like a data block" rule was exploitable.** A second `<script id="flowng-bundle">` with no JSON type would run as JavaScript and still hash as clean. The rule is now an exact text match, exactly once, in the right place; any other look-alike stays in the code and changes the hash.
+- **Residual risk, to close in phase 3: parser differences.** The canonical form is made with Python's tolerant HTML parser, and a browser parses differently in corner cases. A file could in principle be written that gives the same tokens in Python but runs extra code in a browser. The Check page must therefore compute the canonical form with the browser's own parser (`DOMParser`), and the manifest must be built with the same code (run in headless Chrome), keeping the Python version as a cross-check; any disagreement means reject. Until then, treat a pass from the Python checker as strong but not final.
+- **Data rules not yet enforced.** The manifest records `strict` or `standard`, but the data-block checks (JSON shape, size, `strict` character rules) belong to phase 2.
+
