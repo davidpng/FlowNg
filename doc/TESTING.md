@@ -12,6 +12,11 @@ The app keeps loaded files in a **Pool** and each loaded template in its own **w
 | Workspaces, Pool, file loading, starter template | + 13 |
 | Export, shared files, Save, History | + 8, 9, 11, 13 |
 | Rendering, evaluation, loading | + 11 (performance) |
+| Toolbar or layout | + 3, 10 |
+| Cofactors, Global Settings | + 5, 18 |
+| Export FCS, SpikeNG | + 15 |
+| Share dialog options, hostile text from files | + 8, 16, 17 |
+| Check page, manifest, publisher check, offline copy, repository rules | + 17 (and `doc/SECURITY.md`) |
 
 ## 0. Rules and traps (learned the hard way)
 
@@ -29,9 +34,12 @@ The app keeps loaded files in a **Pool** and each loaded template in its own **w
 
 ```bash
 SP=<scratchpad dir>; mkdir -p $SP/t && cd /path/to/FlowNg
-python3 scripts/build_test_daughter.py $SP/t/daughter.html                    # locked file
-python3 scripts/build_test_daughter.py $SP/t/daughter_lod.html --lod 20000    # forces the large-population render path
-python3 scripts/build_test_daughter.py $SP/t/daughter_unlocked.html --unlocked
+# The daughters need a shared file to take their data from. The repo example (samples/Complex_Analysis_FlowNg.html) is a
+# bigger, different analysis, so the expected numbers in section 9 assume a shared file exported in section 8 from the three
+# fixtures after the BTM import, with no event cap (save it as $SP/t/s8_full.html), and pass it with --bundle:
+python3 scripts/build_test_daughter.py $SP/t/daughter.html --bundle $SP/t/s8_full.html                    # locked file
+python3 scripts/build_test_daughter.py $SP/t/daughter_lod.html --bundle $SP/t/s8_full.html --lod 20000    # forces the large-population render path
+python3 scripts/build_test_daughter.py $SP/t/daughter_unlocked.html --bundle $SP/t/s8_full.html --unlocked
 cp FlowNG.html samples/"TEST SAMPLE"*.LMD $SP/t/ && mkdir -p $SP/t/samples && cp samples/*.json $SP/t/samples/
 cd $SP/t && python3 -m http.server 8770 &
 ```
@@ -84,7 +92,7 @@ After loading the fixtures (section 1) and `openPoolInWorkspace()`:
 ```js
 JSON.stringify({ plots: plots.length, canvases: document.querySelectorAll('canvas[id^=canvas-]').length, tree: document.querySelectorAll('.pop-tree-node').length })
 ```
-Expected: one default plot per file, canvases equal plots, the tree lists three file roots. Take a screenshot: a green workspace tab above the plot tabs, no Pool node (empty); the top bar has two groups of two rows: left Select, Polygon, Rect, Quadrant, Edit, Comp, Delete / Autocomp, Undo, Redo, History, + Add Plot; right Open FCS File, Export Template, Import Template, Export Shareable HTML / Settings (plus Save and Reset in shared files); at 1,400 px or wider the groups sit side by side (use `resize_window`, and reset it afterwards); plots are white with decade ticks; no console errors.
+Expected: one default plot per file, canvases equal plots, the tree lists three file roots. Take a screenshot: a green workspace tab above the plot tabs, no Pool node (empty); the top bar has two groups of two rows: left Select, Polygon, Rect, Quadrant, Edit, Comp, Delete / Autocomp, Undo, Redo, History, + Add Plot; right Open FCS File, Export Template, Import Template, SpikeNG, Export Shareable HTML / Settings (plus Save and Reset in shared files); at 1,400 px the groups sit side by side, and at 800 px they **still** sit side by side with each group wrapping its own buttons onto more lines (header taller, `--header-h` equal to the header's height, no horizontal scroll) (use `resize_window`, and reset it afterwards); plots are white with decade ticks; no console errors.
 
 ## 4. Gating
 
@@ -131,7 +139,7 @@ Boolean gates (BTM has some): after import, their counts are non-zero and change
 | 5.1 | `const m = f.spillMatrix.map(r => [...r]); m[3][8] = 0.02; pushUndo('test'); recomputeCompensation(m, f.fileId); reevaluateAllGates(f)` | Compensated data changes; gate counts update; no error |
 | 5.2 | `undo()` | Matrix and counts return to the originals |
 | 5.3 | Autocomp on a flat population: add a CD5 PC5.5 vs CD20 PB plot of Lymphs, `setGlobalMode('autocomp')`, `fire` clicks at (3000,-300), (200000,-300), (200000,1500), (3000,1500), then the first point again | Toast "already flat"; no Undo entry and nothing added to History |
-| 5.4 | Autocomp on a sloped region: points (-1000,-1000), (300000,-1000), (300000,100000), (-1000,100000) | Coefficient changes (measured 0 to about -0.051); toast and History show before and after; `undo()` restores 0 |
+| 5.4 | Autocomp on a sloped region: **choose Autocomp again** (the tool returns to Select after each outline), then points (-1000,-1000), (300000,-1000), (300000,100000), (-1000,100000), then the first point | Coefficient changes (measured 0 to about -0.051); toast and History show before and after; `undo()` restores 0 |
 | 5.5 | Cofactor handle: `setGlobalMode('pan')`, select an asinh plot the way a user does (`card.querySelector('.plot-header').click()`; clicking the canvas does not select), then wait a moment, dispatch `mousedown` on `.cf-handle-x`, then `mousemove` and `mouseup` on `window` at a different x | The channel's cofactor changes (measured 300 to 5,508 when dragged to 75% of the axis), gates are re-evaluated, History "Set cofactor of ..."; `undo()` restores. A `keydown` Escape on `window` mid-drag restores the old value with no history entry |
 
 ## 6. Plots, tabs, tree
@@ -140,22 +148,22 @@ Boolean gates (BTM has some): after import, their counts are non-zero and change
 - Multi-select scale: with 2+ plots selected (add class `selected` to their `.plot-card`), `toggleAxisScale(id,'x')` gives the X axis of **every** selected plot the same new scale (`xLog`/`xAsinh` equal across them); with none selected it changes only that plot.
 - `switchTab` through every tab: each shows its plots. `renameTab`, `removeTab` work and the tab strip shows "Name (count)".
 - Delete plots: select two middle plots (add class `selected`), `keydown` `Delete`; History shows "Removed 2 plots", both cards gone. `undo()` restores both at their old positions (`plots` order and `.plot-card` DOM order match the original) and canvases draw; `redo()` removes them again; `Ctrl+Z` after a single-plot delete restores it.
-- Tabs undo: `addTabUndoable()` twice, move plots 0 and 1 to tab 2 (`plots[i].tabId = id`), `renameTab(id)` (stub `prompt`), `removeTab(id)`. History shows "Added tab", "Renamed tab ... to ...", "Closed tab ... (its 2 plots moved to ...)". Four `undo()` calls step back through the close (tab returns at its position, the two plots return to it), the rename, and both adds; four `redo()` calls reapply them.
+- Tabs undo: `addTabUndoable()` twice, move plots 0 and 1 to tab 2 (`plots[i].tabId = id`), `renameTab(id)` (stub `prompt` to return a **new** name; a prompt that returns the default leaves the name unchanged and logs nothing), `removeTab(id)`. History shows "Added tab", "Renamed tab ... to ...", "Closed tab ... (its 2 plots moved to ...)". Four `undo()` calls step back through the close (tab returns at its position, the two plots return to it), the rename, and both adds; four `redo()` calls reapply them.
 - Selection: with `setGlobalMode('pan')`, click empty canvas (`mousedown`, `mouseup`, `click` on the canvas) selects that plot; a click on a gate does not; `Ctrl` toggles; `Shift` ranges. The same blank-canvas click selects in Edit and Delete modes and does not in Polygon mode. Clicking the card itself, the gap in `#xaxis-ctrl-<id>`, or the header selects; clicking the axis menu, scale button or expand button does not.
 - Bins: slider runs 32 to 1024; `changeBins(id,1024)` redraws with no error at normal and expanded size (measured about 16 ms vs 12 ms at 512 on 33,000 events with 8 gates; cost beyond that is the bins x bins pass, a few ms).
-- Plot size slider (`#tab-size-slider`, range 280 to 800): set the value and dispatch `input`; every canvas on the active tab is that size (`canvas.width`/`height`, card width +2 px) and redrawn; the label `#tab-size-val` matches; other tabs are unchanged. Switching tabs moves the slider to that tab's size. A new plot on a resized tab gets its size; `expandPlot` then `collapsePlot` returns to the tab's size. `_buildTemplateV3('x').tabs` lists `{name,size}` for resized tabs only; clearing the plots and `_applyTemplateV3` restores the size; a template with the `tabs` field deleted opens at 350. Shared round trip (section 8 then 9.11) keeps it.
+- Plot size slider (`#tab-size-slider`, range 280 to 800): set the value and dispatch `input`; every canvas on the active tab is that size (`canvas.width`/`height`, card width +2 px) and redrawn; the label `#tab-size-val` matches; other tabs are unchanged. Switching tabs moves the slider to that tab's size. A new plot on a resized tab gets its size; `expandPlot` then `collapsePlot` returns to the tab's size. `_buildTemplateV3('x').tabs` lists `{name,size}` for resized tabs only; clearing the plots and `_applyTemplateV3` restores the size; a template with the `tabs` field deleted opens at 350. Shared round trip (section 8 then 9.10) keeps it.
 - Expand and collapse a plot (`togglePlotExpand`, `collapsePlot`).
 - Axis Range dialog: `showAxisRangeModal(pl,100,100)` then `applyAxisRangeModal(pl.id)` and `resetAxisRangeModal(pl.id)`; no "Display Mode" block; History records both.
 - Drag-reorder of plots and tree rows (dispatch `dragstart`/`dragover`/`drop` on `.plot-drag-handle` and `.pop-grip`) reorders them.
 
 ## 7. Templates and the Kaluza converter
 
-1. **BTM import by tube name.** Load the fixtures into the Pool (do not open them), use a template whose file names do not match: `importGates(txt)` then read `#import-v3-modal tbody tr`. Expected: each row "by tube name" (or "by file name" for the repo sample), then `_doImportV3([0,1,2])`: a new workspace named after the template, Pool now empty, gate counts `[31,41,30]`, 255 plots, 15 tabs, no skipped gates. With an empty Pool `importGates(txt)` only toasts.
+1. **BTM import by tube name.** Load the fixtures into the Pool (do not open them). Take the repo's BTM template and rename each `files[i].sourceFile`: with no `tube` field (the converted sample has none) each row reads "by antibody panel"; add `files[i].tube` (`LL panel B cell tube`, ...) as an app-exported template has and each row reads "by tube name"; with the original file names each row reads "by file name". Use `importGates(txt)` then read the last cell of `#import-v3-modal tbody tr`. Then `_doImportV3([0,1,2])`: a new workspace named after the template, Pool now empty, gate counts `[31,41,30]`, 255 plots, 15 tabs, no skipped gates. With an empty Pool `importGates(txt)` only toasts.
 2. **Matcher unit checks** (no UI): build a template with `_buildTemplateV3('t')`, rename each `sourceFile`, then `_matchTemplateFiles(tfs, fcsFiles)` (the second argument is the candidate list; the default is the Pool) returns `tube name` for every file; remove `tube` and it returns `antibody panel`; a template using only channels shared by all tubes returns **no match** (never a guess).
 3. **Unmatched sections** show "(skip this section)", not the first file.
 4. **Version 2 and junk files are refused:** `importGates('{"version":2,"gates":[]}')` toast says version 2 is unsupported; `{"foo":1}` says "Not a FlowNG template".
 5. **Round trip:** export a template (`_buildTemplateV3('rt')`), clear the gates, re-apply with `_applyTemplateV3(t, fcsFiles)`; gate counts and plot count equal the originals.
-6. **Converter regression:** run `scripts/kaluza_to_flowng.py` on a template and diff against the committed sample (ignore `exported`); output must be identical unless the change was intended. Converted templates that use raw channel names (`FL1 INT`) match no file and say so.
+6. **Converter regression:** the Kaluza file is no longer in `samples/`; take it from git history: `git show "99f4f15^:samples/BTM Triage Template v10.composite" > btm.composite`, run `scripts/kaluza_to_flowng.py btm.composite --lmd <the three TEST SAMPLE files in order> --name "BTM Triage Template v10" -o out.json` and diff against `samples/BTM Triage Template v10_FlowNgtmplt.json` (ignore `exported`); output must be identical unless the change was intended (checked 9 Nov 2026: identical). Converted templates that use raw channel names (`FL1 INT`) match no file and say so.
 
 ## 8. Export Shareable HTML
 
@@ -172,32 +180,33 @@ JSON.stringify({ estMB: (est / 1048576).toFixed(2), actualMB: (cap.size / 104857
 | # | Check | Expected |
 |---|---|---|
 | 8.1 | Estimate vs actual | Estimate within about 20% of actual and not more than 10% below it (measured: 2.15 MB estimated, 2.19 MB actual for 3 tubes at 20,000 events) |
-| 8.2 | **PHI scan** of `await cap.text()` | Zero hits for: any original file name or its parts (`TEST SAMPLE`, `26125127597b`, the accession-like numbers), `$DATE`, `$BTIM`, `$ETIM`, `@SAMPLEID`, `@BARCODE`; titles and history use the renamed tubes |
+| 8.2 | **PHI scan** of `await cap.text()` | Zero hits for: any original file name or its parts (`TEST SAMPLE`, `26125127597b`, the accession-like numbers), `$DATE`, `$BTIM`, `$ETIM`, `@SAMPLEID`, `@BARCODE`; titles and workspace names use the renamed tubes (the author's History is empty by default, see 8.9) |
 | 8.3 | Title | `<title>Shared analysis — FlowNG</title>` (not a file name) |
-| 8.4 | Locked content | Output has no `function loadFCS`, `parseLMD`, `showShareDialog`, `doExportTemplate`, `importGates`; no `@lite` markers; no open/import/export buttons |
+| 8.4 | Locked content | Output has no `function loadFCS`, `function parseLMD`, `function showShareDialog`, `function doExportTemplate`, `function importGates`, `function buildFCSBytes`, `function showSpikeDialog`, `function exportPopulationFCS`, `function startOTflowSuggest`; no `@lite:begin` / `@lite:end` markers; no open, import, export, share or SpikeNG buttons. (The strings `exportPopulationFCS` and `startOTflowSuggest` still appear in `typeof ... === 'function'` guards, and `#file-input` in a style rule: dead code in a locked file, not a defect.) |
 | 8.5 | Events stored once | Bundle has `rawData` and `rawDataFmt:"i32cs"` and `data:null` for LMD tubes |
 | 8.6 | Large file warning | With a file over 500,000 events the cap defaults to 500,000 |
 | 8.7 | Size sanity | 3 tubes x 20,000 events is about 2 MB |
+| 8.9 | Share dialog defaults | **Anonymise** ticked: no `created`, no template `exported`, empty History in the bundle and each workspace, `checkNotice: true`, `sterile: true`; the "Shared file saved" dialog (`#share-done`) appears after export and must be closed before the next export (see also 17.17 to 17.19) |
 | 8.8 | Workspaces | Bundle has `format:2` and `workspaces`, one entry per open workspace, each with `fileIdx`, `template`, `history`; `files` holds every workspace file once; Pool files are not exported. Workspace names are never an original file name (the PHI scan in 8.2 covers them) |
 
 For a real case file, never print contents: scan with a script that reports counts only.
 
 ## 9. Daughter (shared) files
 
-Use `daughter.html` (locked) and `daughter_unlocked.html`.
+Use `daughter.html` (locked) and `daughter_unlocked.html`, built from the section 8 export (see section 1). The numbers below are for three tubes of about 33,000 events; the older 3 x 100,000-event baselines are kept in section 11.
 
 | # | Do | Expected |
 |---|---|---|
-| 9.1 | Open `daughter.html`; poll `fcsFiles.length === 3 && plots.length > 100` | Ready in about 6 s for 3 x 100k events; gates `[31,41,30]`, 255 plots; Save and History buttons visible; **no** Open/Import/Export buttons; `typeof loadFCS === 'undefined'` |
+| 9.1 | Open `daughter.html`; poll `fcsFiles.length === 3 && plots.length > 100` | Ready in under 2 s for 3 x 33k events (about 6 s for 3 x 100k); gates `[31,41,30]`, 255 plots; Save and History buttons visible; **no** Open/Import/Export/Share buttons; `typeof loadFCS === 'undefined'`; the check reminder `#check-notice` is shown (default export) and its Dismiss button removes it |
 | 9.2 | Make changes (quadrant, delete a gate, paste, change a coefficient) | Save button shows "Save changes •"; History lists each change with a time |
 | 9.3 | `await saveDaughter()` (stubs from section 8) | Blob about the original size; button back to "Save"; toast names the file |
 | 9.4 | Open the saved blob in an iframe; poll with `fr.contentWindow.eval(...)` | Changes present, coefficient preserved, History entries marked prior (`h.prior === true`), `_dirty === false` |
 | 9.5 | `resetToAuthorGates()` in the saved copy | Deleted gate returns, author compensation returns, quadrant gone; `undo()` brings the working state back |
 | 9.6 | Second save and reopen | Still opens; `_bundleObj.template` (the author's gates) is unchanged across generations |
-| 9.7 | `showHistory()` | Modal lists entries newest first; Escape closes it |
+| 9.7 | `showHistory()` | Modal lists entries newest first; Escape closes it (dispatch `keydown` on `#history-modal`, which holds focus) |
 | 9.8 | Locked guard | Dropping a file on the page does nothing; `importGates`/`loadFCS` are undefined |
 | 9.9 | Unlocked daughter | Open/Import/Export present and working |
-| 9.10 | Workspaces in a saved file | A two-workspace shared file reopens with both workspaces in the strip (`workspaces.length === 2`), the first active; a change made in the second one marks only that tab dirty (`•`), and `saveDaughter()` writes `format:2` with each workspace's own history; closing and Save buttons are hidden in the locked viewer |
+| 9.10 | Workspaces in a saved file | A two-workspace shared file reopens with both workspaces in the strip (`workspaces.length === 2`), the first active; a change made in the second one marks only that tab dirty (`•`; fixed 9 Nov 2026: the live tab's dot used to appear only after switching workspaces), and `saveDaughter()` writes `format:2` with each workspace's own history; closing and Save buttons are hidden in the locked viewer |
 
 ## 10. Visual checks (screenshots)
 
@@ -217,7 +226,7 @@ JSON.stringify(first.filter((p, i) => settled[i] !== fresh[i]).map(p => p.id))  
 - Linear axes show plain numbers, log and asinh show decade ticks with raised exponents; gate outlines and labels are visible; quadrant crosshair has four corner labels with percentages.
 - Toolbar buttons are labelled, the active tool is highlighted, Undo/Redo grey out when empty.
 - Tabs read "Name (n)  x" with a dashed "+ Tab"; tree rows show count, % of parent, `+`, `x`.
-- Hover a toolbar button: a tooltip appears (a `title` exists on every visible control: query `button, select, input[type=range]` for an empty `title`).
+- Hover a toolbar button: a tooltip appears (a `title` exists on every visible control: query `button, select, input[type=range]` for an empty `title`; this caught the plot size slider, `#tab-size-slider`, on 9 Nov 2026).
 
 ## 11. Performance
 
@@ -241,6 +250,8 @@ Measure with `performance.now()` around synchronous calls (reliable even in a hi
 | `createQuadrant` call (100k) | **1.3 s** |
 | Save daughter (9.9 MB) | 335 ms |
 | Reopen saved daughter | 5.4 s |
+
+Re-measured 9 Nov 2026 (headless Chrome, three 33k-event fixtures; the daughter was built from an export of those fixtures, so its rows are 3 x 33k, not 3 x 100k and far below the 100k baselines): load one LMD 136 ms; import BTM (synchronous part) 973 ms; `renderAllPlots` on the first tab (12 plots) 35 ms; switch all 15 tabs 518 ms; `evalGate` 18 ms; `reevaluateAllGates` 141 ms; `createQuadrant` 117 ms, `undo` 115 ms, `redo` 119 ms; recompensate 16 ms (+140 ms to re-gate); export 129 ms, 3.55 MB uncapped; daughter open under 1.5 s, `renderAllPlots` 54 ms, `reevaluateAllGates` 138 ms, `createQuadrant` 131 ms, Save 30 ms (3.75 MB), reopen under 1.5 s. All within 1.5x of the 33k baselines. Measure `renderAllPlots` on the first tab: on the last tab (more plots) it reads about 60 ms.
 
 Known slow spots (not regressions, but the first things to improve): `reevaluateAllGates` and quadrant creation run on the main thread and freeze the page for seconds at 100k events; opening a 10 MB daughter takes several seconds because the bundle is decoded and every gate re-evaluated.
 
@@ -266,7 +277,7 @@ Start from a fresh page and load the fixtures (section 1); each check below uses
 | 13.6 | `openPoolInWorkspace()` with one Pool file, and `addPoolFileToWorkspace(id)` with a workspace open | Blank workspace named by tube (never a file name) with one plot; the second moves the file into the live workspace with a default plot |
 | 13.7 | `closeWorkspace(activeWsId)` twice | Files and plots of that workspace are gone, another workspace becomes live with its DOM rebuilt; closing the last one returns to the welcome drop zone with the sidebar hidden |
 | 13.8 | `removeFile` on a Pool file | Leaves the Pool, its compute worker is terminated, workspaces untouched |
-| 13.9 | Shared round trip (section 8 then 9.11) with two workspaces | Both restore with their plots and history |
+| 13.9 | Shared round trip (section 8 then 9.10) with two workspaces | Both restore with their plots and history |
 | 13.10 | Locked viewer (`daughter.html`) | Workspace strip shows, but the close buttons and "+ Template" are hidden; `typeof openPoolInWorkspace === 'undefined'` |
 
 ## 14. Reporting
@@ -280,6 +291,8 @@ End every run with a short report:
 5. Fixture state left behind: close extra tabs, stop the server (`pkill -f "http.server 8770"`), delete nothing in the repo.
 
 When a test fails, fix the cause and rerun that section and section 2; do not weaken the check.
+
+**Last full run: 9 Nov 2026**, headless Chrome (not the browser pane, which refuses localhost here) on the PR 27 build, driven by throwaway test pages that follow this file row by row. Sections 2 to 13 and 15 to 18 all pass. Documentation and app problems found by the run and fixed: 4.x/5.4 (Autocomp must be chosen again), 6 (tab rename stub must return a new name), 7.1 (match method depends on the `tube` field), 7.6 (the Kaluza file is only in git history), 8.4 (function definitions, not every mention), section 9 and 13.9 (stale numbers and row references; daughters now built from an export of the fixtures), 9.10 (a change in the live workspace did not show the dot on its tab until you switched: fixed), 10 (the plot size slider had no tooltip: fixed). Not tested: real mouse drags, real Safari/Firefox, files over 500,000 events (the cap default was tested by faking the event count), the real Save As dialog, a screenshot reviewed by eye, and OT-flow on a real FCS file (only on one made from the LMD data).
 
 ## 15. FCS export and SpikeNG (full version only)
 
@@ -326,10 +339,10 @@ Run: `/usr/bin/python3 scripts/test_check.py shared_full.html shared_locked.html
 | 17.13 | Offline copy (`--offline`): all of the above, with `fetch` counted | Same results; 0 network requests while dropping files and updating |
 | 17.14 | `scripts/check_shared.py` on the current sample and on a file from an earlier build | Sample PASS with its build and event count and listed in `SHA256SUMS`; earlier build FAIL; exit code 1 |
 | 17.15 | Manifest policy | Built from `main` it lists only PR merge commits on or after 7 Nov 2026 (not branch commits, not direct commits to `main`); identical code listed once; releases without `_h()` or the pristine-snapshot fix appear in `revoked` (with `auto`) and not in `entries`; unique `(hash, variant)`; rebuilt twice gives identical entries |
+| 17.16 | After a PR is merged | Rebuilding on `main` (without `--tip`) lists the merge commit with the same hash the PR's manifest had as `pending` |
 | 17.17 | Export Shareable HTML, box **Secure distribution channel** unticked (default) | The bundle has `checkNotice: true`; a "Shared file saved" dialog shows the SHA-256 (equal to the SHA-256 of the saved bytes) and a paste-in message with the Check page address; opening the file shows a dismissible bottom notice linking to the Check page; the file still passes the Check page |
 | 17.18 | Same with the box ticked | `checkNotice: false`; the dialog says recipients will not be reminded and points to `scripts/check_shared.py`; opening the file shows no notice; the file still passes the Check page |
 | 17.19 | Export Shareable HTML, **Anonymise** (ticked by default) with a History entry present | No `created`, no `exported` in the template or workspaces, History empty (bundle and each workspace), and no ISO date-time anywhere in the file; unticked, they are kept |
-| 17.16 | After a PR is merged | Rebuilding on `main` (without `--tip`) lists the merge commit with the same hash the PR's manifest had as `pending` |
 
 ## 18. Cofactors
 

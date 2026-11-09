@@ -843,7 +843,7 @@
       <div class="tab-add" onclick="addTabUndoable()" title="Add a new tab (a separate page of plots)">+ Tab</div>
       <div class="tab-size-ctl" id="tab-size-ctl" title="Plot size: the width and height of every plot on this tab. Saved with templates and shared files.">
         <span>Plot size</span>
-        <input type="range" id="tab-size-slider" min="280" max="800" step="10" value="350" oninput="setTabPlotSize(this.value)">
+        <input type="range" id="tab-size-slider" min="280" max="800" step="10" value="350" oninput="setTabPlotSize(this.value)" title="Plot size: the width and height of every plot on this tab (280 to 800 px)">
         <span class="tab-size-val" id="tab-size-val">350</span>
       </div>
     </div>
@@ -5646,6 +5646,7 @@ function logChange(what) {
 function updateSaveButton() {
   const b = document.getElementById('save-btn');
   if (b) { b.classList.toggle('dirty', _dirty); b.textContent = _dirty ? '💾 Save changes •' : '💾 Save'; }
+  const tab = document.querySelector('#ws-strip .ws-item.active'); if (tab) tab.classList.toggle('dirty', _dirty);   // the live workspace's tab shows the dot too
 }
 function _plotPair(plot) {
   const f = getFileForPlot(plot);

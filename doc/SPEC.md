@@ -119,6 +119,14 @@ Generated per tube from the Pool (**Starter**). One tab per tube, four plots, no
 | Scale button affects all selected plots | Adopted (reversing "per plot") | Bulk comparison |
 | Reparent check by tree, not event overlap | Adopted | Siblings sharing events were wrongly refused |
 | Starter plot orientation | CD45 vs Time, FSC-H vs FSC-A, FSC-A vs SSC, CD45 vs SSC | Author's preferred layout |
+| Plot selected from any empty area, not only the top bar | Adopted (section 3) | Users did not find the top bar |
+| Plot and tab removal, tab add/rename/close undoable | Adopted (sections 10, 13) | Deleting a plot could not be undone |
+| Rect gates stay rectangular when a corner is dragged | Adopted (4a) | Dragging a corner skewed the rectangle |
+| Bins slider to 1024; plot size slider per tab | Adopted (sections 9, 13) | Larger expanded view; bigger plots without expanding |
+| Toolbar groups stay side by side when narrow | Adopted (section 2) | Stacked groups wasted the plot area |
+| FCS export and SpikeNG, full version only | Adopted (section 14) | Proficiency testing and teaching spike-ins |
+| Cofactors start at 300; OT-flow on request; template overrides manual | Adopted (section 15) | Predictable, reproducible starting point |
+| Export Shareable HTML: Anonymise on, Secure-channel box, result dialog | Adopted (section 16) | Anonymity for proficiency testing; trusted distribution |
 
 ## 8. Open points
 
@@ -126,12 +134,12 @@ Generated per tube from the Pool (**Starter**). One tab per tube, four plots, no
 
 ## 9. Anatomy of a plot: card, header, canvas
 
-A plot is a **card** (`.plot-card`, `plot-card-<id>`, 352 px wide) with three parts. The parts have different jobs, and the split is deliberate: the canvas is for gating, the header is for managing the plot.
+A plot is a **card** (`.plot-card`, `plot-card-<id>`, 352 px wide at the default size; the plot size slider changes it per tab, see section 13) with three parts. The parts have different jobs, and the split is deliberate: the canvas is for gating, the header is for managing the plot.
 
 | Part | Contains | Click does |
 |---|---|---|
 | **Header** (`.plot-header`, the top bar) | Drag grip `⠿`, file colour dot (only with 2+ files), population menu, bins slider (32-1024) and value, event count | Selects the plot (see section 10) |
-| **Canvas** (`<canvas id="canvas-<id>">`, 350 x 350) | The density plot, gates, quadrant crosshair, in-progress gate points | Acts according to the global mode (draw, move, edit, delete, ...) |
+| **Canvas** (`<canvas id="canvas-<id>">`, 350 x 350 at the default size) | The density plot, gates, quadrant crosshair, in-progress gate points | Acts according to the global mode (draw, move, edit, delete, ...) |
 | **Overlay controls** (on the canvas wrap) | X axis menu and scale button (bottom), Y axis menu and scale button (left, rotated), `⇄` swap axes (bottom-left), `⤢` expand (corner) | Their own action; never selects the plot and never draws |
 
 Definitions used throughout this spec:
@@ -143,7 +151,7 @@ Definitions used throughout this spec:
 
 ## 10. Selection model
 
-- **Where:** click a plot's header. Not the canvas, not the overlay controls.
+- **Where:** click a plot's header, or any empty part of the card as listed in section 3 (blank canvas with Select, Edit or Delete; the margins; the gaps beside the axis menus). Not a gate, the overlay controls, or a drawing tool's canvas.
 - **Single click** selects only that plot and deselects the rest. `Ctrl`/`Cmd`+click toggles one plot in or out. `Shift`+click selects the range between the last clicked plot and this one, in plot order.
 - **Visual:** a selected card gets an accent border, a glow and a tinted header.
 - **Deselect:** click empty canvas area, or press `Esc`. Choosing a tool also deselects (section 2.1).
@@ -201,6 +209,18 @@ These tools write event data, so they exist only in the full app. They sit insid
 - **OT-flow suggestions** (Global Settings, full version only, since the worker lives in the loading code): runs on every fluorescent channel of the open FCS files, replaces manual cofactors, re-evaluates gates and is one undo step. LMD files are skipped (unreliable on that data). Files from shared (locked) HTML do not show the button.
 - Reason: a fixed, predictable starting point (300) makes gates and templates reproducible between files and between users; a per-file computed value made the same template land differently on different files.
 
-## 16. Provenance of this spec
+## 16. Export Shareable HTML options
 
-Sections 1 to 8 record decisions made while changing the app. Sections 9 to 15 describe the current behaviour as implemented in `FlowNG.html` (rendering in `renderPlotCard`, selection in the header click handler, reordering in the grip and card drag handlers, `togglePlotExpand`, `renderTabStrip`) and in `README.md`. The author's earlier design discussions are not visible to this document's writer, so reasons are given only where the code or README states them; anything missing should be added when remembered.
+The dialog (full version only) writes one HTML with the event data, gates and plots; the options and their reasons:
+
+- **Max events per file** (blank = all; defaults to 500,000 when a file is larger) keeps files small. A size estimate is shown and measured on a sample of the real data.
+- **Tube / file names** shown in the shared file are editable; file names often hold patient names or accession numbers, so they are replaced rather than copied.
+- **Include full FCS header metadata** is off: sample IDs, dates and times are dropped unless ticked.
+- **Anonymise** is on by default: the file carries no creation time, no template export time and none of the author's History, so nothing in it says who made it or when. Untick it to keep the History for teaching. (A recipient's own Save adds its own time and History.) Reason: anonymity matters for proficiency testing.
+- **Secure distribution channel** is off by default. Off: the shared file shows a small dismissible reminder on open (bottom of the window) to check it at the Check page, and the result dialog gives a paste-in message with the file's SHA-256. On: no reminder, and the dialog points to `scripts/check_shared.py` (checks the file and writes `SHA256SUMS`). The reminder is only a prompt and not a safeguard: a tampered file would not show it (see `SECURITY.md`).
+- **Locked viewer** is on by default: the code for loading, importing and exporting files is physically removed from the output.
+- **Result dialog** after export: where the file went, its SHA-256, and what to tell recipients.
+
+## 17. Provenance of this spec
+
+Sections 1 to 8 record decisions made while changing the app. Sections 9 to 16 describe the current behaviour as implemented in `FlowNG.html` (rendering in `renderPlotCard`, selection in the header click handler, reordering in the grip and card drag handlers, `togglePlotExpand`, `renderTabStrip`) and in `README.md`. The author's earlier design discussions are not visible to this document's writer, so reasons are given only where the code or README states them; anything missing should be added when remembered.

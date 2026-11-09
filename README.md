@@ -1,6 +1,6 @@
 # FlowNG: Privacy-Focused Browser-Based Flow Cytometry Analysis
 
-**FlowNG** is a lightweight, client-side flow cytometry analysis and visualization tool that runs entirely in your web browser. Load your FCS or LMD files and start analyzing with interactive gating (polygon, rectangle and quadrant), spectral compensation, and automatic cofactor optimization. When you are done, export your analysis as one self-contained HTML file that a colleague can open, continue, save and pass on, all without your data ever leaving your computer.
+**FlowNG** is a lightweight, client-side flow cytometry analysis and visualization tool that runs entirely in your web browser. Load your FCS or LMD files and start analyzing with interactive gating (polygon, rectangle and quadrant), spectral compensation, and adjustable arcsinh cofactors. When you are done, export your analysis as one self-contained HTML file that a colleague can open, continue, save and pass on, all without your data ever leaving your computer.
 
 **[Try the live demo →](https://davidpng.github.io/FlowNg/FlowNG.html)** | **[Open the example shared analysis →](https://davidpng.github.io/FlowNg/samples/Complex_Analysis_FlowNg.html)** | **[Check a shared file →](https://davidpng.github.io/FlowNg/check/)** | [Privacy Policy](#data-security--privacy)
 
@@ -42,7 +42,7 @@ The demo runs in your browser from GitHub Pages; the page is static and nothing 
 - Recipients open it with your gating applied and can move, redraw and add gates; **Reset to author's gates** restores yours
 - Events are stored once (the uncompensated values plus the spillover matrix; compensation is rebuilt on open), column by column in byte planes and gzipped, as text inside the HTML. A browser cannot embed raw binary in an HTML file, so base64 text is the compact single-file option. A 34k-event, 14-parameter LMD (3.0 MB) shares as about 1.3 MB
 - **Saving a shared file and its History**: a shared file keeps working. Click **💾 Save** to write a new copy that contains your changes (gates, plots, axis settings, compensation) and the **🕘 History**, then pass that copy on; the next person opens it exactly where you left off. The original file is never altered, so keep it or download it again to start over, and **↺ Reset to author's gates** inside any copy goes back to the author's gates and compensation (undoable). In Chrome and Edge, Save opens a Save As dialog, so you can choose where the copy goes; elsewhere it downloads. The save button shows a dot while there are unsaved changes, and the browser warns before closing with unsaved changes
-- **History**: every gating action is logged with its time and a plain description, for example `Drew gate "Blasts" on SS INT LOG vs CD45 KO (984 events)`, `Moved gate "Lymphs"`, `Adjusted spillover CD5 into CD20: 0.0000 to 0.0123`, `Set cofactor of CD19 ECD to 3085`, `Pasted gate "Viable" under "Singlets"`, plus undo, redo and reset. There are no user names or accounts, only what was done and when. The log keeps the latest 500 entries and travels inside saved files; an author's own history is included when exporting a shared file (file names in it are replaced with the tube names you chose)
+- **History**: every gating action is logged with its time and a plain description, for example `Drew gate "Blasts" on SS INT LOG vs CD45 KO (984 events)`, `Moved gate "Lymphs"`, `Adjusted spillover CD5 into CD20: 0.0000 to 0.0123`, `Set cofactor of CD19 ECD to 3085`, `Pasted gate "Viable" under "Singlets"`, plus undo, redo and reset. There are no user names or accounts, only what was done and when. The log keeps the latest 500 entries and travels inside saved files; an author's own history is included when exporting a shared file only if you untick **Anonymise** (file names in it are replaced with the tube names you chose)
 - **Check before opening**: a shared file is a program, not a document. Drop it on the **[FlowNG Check page](https://davidpng.github.io/FlowNg/check/)** to confirm it contains only released FlowNG code and a data block (see [Checking a shared file](#checking-a-shared-file-before-opening-it))
 - **Example**: [`samples/Complex_Analysis_FlowNg.html`](samples/Complex_Analysis_FlowNg.html) is a shared analysis with several tabs of gated plots. Download it and open it in a browser.
 - **Privacy**: file names, dates and IDs often identify a patient. The export dialog asks you to rename the tubes, drops collection date/time and IDs from the FCS header, and writes only the pristine app, never the live page. Check the result before sharing
@@ -56,7 +56,7 @@ The demo runs in your browser from GitHub Pages; the page is static and nothing 
 
 ### 🔒 Privacy-First Design
 - **Client-side only**: All data processing occurs in your browser; data never transmitted to any server
-- **No external dependencies**: Single-file application (about 350 KB) with zero external libraries
+- **No external dependencies**: Single-file application (about 420 KB) with zero external libraries
 - **Works offline**: No internet connection required after initial page load
 - **Transparent code**: GNU AGPLv3 licensed with full source visible in the HTML file
 
@@ -246,11 +246,11 @@ A shared analysis is a single HTML file, which means it is also a program: anyon
 - **No network, no GitHub?** Opening a shared file never contacts anything; the Check page is an extra. If the Check page cannot be reached, use the **offline copy**: one HTML file with the list of releases and the newest FlowNG built in, which uses no network at all. Get it from the same trusted channel as the files (it is made with `scripts/build_offline_check.py` and handed out with each release; it shows how recent its list is, and a file from a newer release shows red until you get a newer copy).
 - **Distributing files over a secure channel** (test providers, teachers): run `scripts/check_shared.py file1.html file2.html …` once before publishing. It uses the same check, prints PASS or FAIL for each file, and writes `SHA256SUMS` for the passing ones. Publish only those files, with `SHA256SUMS`, from a site you control. Recipients who get files from that site do not need to run the online check.
 - **Sending files by email or chat** instead: tell recipients to check them at the official address. In **Export Shareable HTML**, leave **Secure distribution channel** unticked (default) and the file shows a small reminder to check it when opened, and the export dialog gives you a message to paste with the file's SHA-256. Tick the box when you publish the file yourself from a site you control: no reminder is shown.
-- The list of releases is `check/manifest.json`. It is rebuilt for each merged pull request with `scripts/build_manifest.py` (releases are merge commits on main from 7 November 2026; branch commits are not releases), and a build with a problem can be withdrawn through its `revoked` list. How it works, what is not yet done (a stricter content policy in the app itself, an anonymise option and optional author signing in the share dialog) and how to scan a file yourself are in [`doc/SECURITY.md`](doc/SECURITY.md).
+- The list of releases is `check/manifest.json`. It is rebuilt for each merged pull request with `scripts/build_manifest.py` (releases are merge commits on main from 7 November 2026; branch commits are not releases), and a build with a problem can be withdrawn through its `revoked` list. How it works, what is deliberately not done (a stricter content policy in the app itself and optional author signing, both deferred) and how to scan a file yourself are in [`doc/SECURITY.md`](doc/SECURITY.md).
 
 ### Export to FCS and SpikeNG (full version only)
 
-Right-click a population (or a file) and choose **Export events as FCS…** to save its events as a minimal FCS file with identifying metadata removed. **💉 SpikeNG** (toolbar) then merges two such files: the *schlemiel* (donor population) is spiked into the *schlimazel* (recipient). It checks the column labels match first, then either places the spike after the recipient with a time gap of 3% of the longer acquisition (educational), or interleaves it at random positions (proficiency testing). Enter the spike as a percentage of the recipient's events; an answer key of the spiked rows can be downloaded with the result. Exports keep the raw values and the spillover matrix, and SpikeNG merges raw values and applies the recipient's matrix to all events. Not available in locked shared files. See doc/SPEC.md section 14.
+Right-click a population (or a file) and choose **Export events as FCS…** to save its events as a minimal FCS file with identifying metadata removed. **💉 SpikeNG** (toolbar) then merges two such files: the *schlemiel* (donor population) is spiked into the *schlimazel* (recipient). It checks the column labels match first, then either places the spike after the recipient with a time gap of 3% of the longer acquisition (educational), or interleaves it at random positions (proficiency testing). Enter the spike as a percentage of the recipient's events; tick the answer-key box (off by default) to also download a CSV of the spiked rows, which arrives a second after the FCS file. Exports keep the raw values and the spillover matrix, and SpikeNG merges raw values and applies the recipient's matrix to all events. Not available in locked shared files. See doc/SPEC.md section 14.
 
 ### Copying Gates
 Right-click a gate row and choose **Copy** (or **Cut**), then right-click another row, in any loaded file, and choose **Paste**. The copy is a new independent gate under that row. It is matched to the target file by parameter name, so pasting into a file that lacks one of its channels is refused with a message. Quadrant gates cannot be copied.
@@ -265,7 +265,8 @@ Click the **LIN / LOG / ASINH** button next to an axis's parameter drop-down to 
 
 **Global Settings**
 - Click the **Settings** (⚙) button to access:
-  - **Asinh cofactor**: one cofactor applied to every arcsinh axis (the per-channel optimum is the default; drag a marker to tune a single channel)
+  - **Asinh cofactor**: one cofactor applied to every arcsinh axis (the default is 300; drag a marker to tune a single channel)
+  - **Suggest cofactors with OT-flow** (full version only): computes OTflow cofactors for the open FCS files on request, replacing manual ones (see Cofactor Optimization below)
   - **Min Value Percentile**: set each fluorescent axis's lower limit from that percentile of its data
 
 **Per-Plot Configuration**
@@ -298,7 +299,7 @@ Files open at cofactor **300** and are never changed automatically. Only a manua
 - Selects cofactors that minimize deviation from normality
 - Automatically excludes scatter parameters (FSC, SSC) and time channels
 
-**Where you see it:** the optimum is computed automatically when a file loads and is each channel's starting cofactor. You can change it three ways: drag the blue marker on an arcsinh axis (see *Changing a Cofactor by Dragging*), right-click a plot to type a cofactor in the Axis Range dialog, or set one cofactor for every arcsinh axis from **Settings**. Every change is undoable and recorded in History.
+**Where you see it:** every fluorescent channel starts at 300. You can change a channel by dragging the blue marker on an arcsinh axis (see *Changing a Cofactor by Dragging*), by typing a cofactor in the Axis Range dialog (right-click a plot), by setting one cofactor for every arcsinh axis in **Settings**, by applying a template, or by asking for OT-flow suggestions in **Settings**. Every change is undoable and recorded in History.
 
 #### Spectral Compensation (Spillover Adjustment)
 For multi-colour experiments with compensation matrices:
@@ -317,7 +318,7 @@ Measured on one Mac (three tubes of about 33,000 events in the full app; three t
 
 | Action | Time |
 |---|---|
-| Load one LMD (parse, cofactors, first plot) | 0.1-0.15 s |
+| Load one LMD (parse, first plot) | 0.1-0.15 s |
 | Import a 106-gate, 255-plot template | about 1 s |
 | Redraw a tab of 12 plots (33k events) | 30 ms |
 | Re-evaluate every gate after a compensation or cofactor change (31 gates, 33k / 100k events) | 0.15 s / 2.1 s |
@@ -334,10 +335,10 @@ Gate re-evaluation and quadrant creation run on the page itself, so at 100,000 e
 
 ```bash
 # See the tubes (Kaluza datasets) and plot sheets in the template
-uv run scripts/kaluza_to_flowng.py "samples/BTM Triage Template v10.composite" --list
+uv run scripts/kaluza_to_flowng.py "BTM Triage Template v10.composite" --list
 
 # Convert; pass the LMD files in Kaluza dataset order (B, T, myeloid for BTM)
-uv run scripts/kaluza_to_flowng.py "samples/BTM Triage Template v10.composite" \
+uv run scripts/kaluza_to_flowng.py "BTM Triage Template v10.composite" \
     --lmd "B.LMD" --lmd "T.LMD" --lmd "M.LMD" -o btm_FlowNgtmplt.json
 
 # All options
@@ -346,7 +347,7 @@ uv run scripts/kaluza_to_flowng.py --help
 
 Then open FlowNG.html, load the three LMD files, click **Import Template**, choose the JSON, and match each template entry to its tube.
 
-`samples/` holds the example files: the BTM Triage Template v10 as a FlowNg template (`BTM Triage Template v10_FlowNgtmplt.json`), the three `TEST SAMPLE` LMD files it matches, and a shared analysis (`Complex_Analysis_FlowNg.html`).
+`samples/` holds the example files: ready-made FlowNg templates (`*_FlowNgtmplt.json`, including `BTM Triage Template v10`), the three `TEST SAMPLE` LMD files the BTM template matches, and a shared analysis (`Complex_Analysis_FlowNg.html`). The original Kaluza `BTM Triage Template v10.composite` is no longer in the folder; it is in git history (`git show 99f4f15^:"samples/BTM Triage Template v10.composite"`) if you want to rerun the converter.
 
 What is converted: gate hierarchy (polygons, rectangles, quadrants, boolean OR/AND/NOT populations), gate colours (`#rrggbb`; gates without a colour become "no colour"), axis scales (logicle is approximated as asinh, cofactor 300) and axis ranges, and every plot sheet as a tab with its plots. Linked copy gates are merged into their originals.
 
@@ -486,8 +487,9 @@ FlowNG is one file, `FlowNG.html` (main script plus two worker scripts). To work
 | [`doc/TESTING.md`](doc/TESTING.md) | A step-by-step test guide with expected results and performance baselines. Say "run doc/TESTING.md" to have Claude run it, or follow it by hand |
 | `scripts/build_test_daughter.py` | Builds a locked shared file from the working tree for testing (`--lod N` forces the large-population path, `--unlocked` keeps import/export) |
 | `scripts/extract_js_for_graphify.py` | Pulls the scripts out of the HTML so graphify (the `graphifyy` Python package) can build a real call graph; the result is in `graphify-out/` (`GRAPH_REPORT.md`, `graph.html`) |
-| [`check/index.html`](check/index.html), `check/manifest.json`, `scripts/build_manifest.py`, `scripts/build_offline_check.py`, `scripts/check_shared.py`, `scripts/test_check.py` | **FlowNG Check**: a page where anyone drops a shared file to confirm it contains released FlowNG code and a data-only block (live at `https://davidpng.github.io/FlowNg/check/` once merged), the manifest of released code hashes (main releases only), an offline copy of the page, a publisher-side batch check, and the tests. Run the scripts with `/usr/bin/python3` on macOS. See `doc/SECURITY.md` section 5 |
+| [`check/index.html`](check/index.html), `check/manifest.json`, `scripts/build_manifest.py`, `scripts/build_offline_check.py`, `scripts/check_shared.py`, `scripts/test_check.py` | **FlowNG Check**: a page where anyone drops a shared file to confirm it contains released FlowNG code and a data-only block (at `https://davidpng.github.io/FlowNg/check/`), the manifest of released code hashes (main releases only), an offline copy of the page, a publisher-side batch check, and the tests. Run the scripts with `/usr/bin/python3` on macOS. See `doc/SECURITY.md` section 5 |
 | `scripts/kaluza_to_flowng.py` | Kaluza template converter (see above) |
+| `.github/` | Repository rules saved as JSON (`rulesets/`), `CODEOWNERS` and the security policy; see `doc/SECURITY.md` |
 
 Notes for contributors: code between `/*@lite:begin*/` and `/*@lite:end*/` (and `<!--@lite:...-->`) is removed from locked shared files, so anything a locked file needs (Save, History, rendering, gating) must stay outside those markers. Worker scripts cannot call main-script functions; a helper used in a worker needs its own copy.
 
@@ -544,7 +546,7 @@ A: No. FlowNG is designed for research and educational use only. It is not valid
 A: Theoretically limited by available browser memory (~2GB on most systems). Typical FCS files with 10-100M events work smoothly.
 
 **Q: Can I export my gated populations?**  
-A: You can export gate templates for reuse on other files. Direct export of gated populations as FCS files is not currently supported.
+A: Yes, in the full version: right-click a population (or a file) and choose **Export events as FCS…** (one population at a time, identifying metadata removed). You can also export gate templates for reuse on other files. Locked shared files do not include the export.
 
 **Q: Does it work offline?**  
 A: Yes. After the initial page load, FlowNG requires no internet connection.
@@ -569,13 +571,17 @@ A: Yes. Load several files; each appears as its own root in the population tree,
 ## Changelog
 
 ### Latest
+- **SpikeNG and FCS export** (full version): export a population's events as a minimal FCS file; merge a donor population into a recipient file, time-based (educational) or interleaved (proficiency testing), with the column labels checked first
+- **Shared-file safety**: the FlowNG Check page, a manifest of released builds, an offline copy of the page, a publisher check; export dialog options **Anonymise** (default), **Secure distribution channel** and a result dialog with the file's SHA-256; names from files are escaped before they reach the page
+- **Cofactors**: every channel starts at 300 for FCS and LMD files; OT-flow runs only on request in Settings; templates take over from manual corrections
+- **Interface**: tool shortcut keys, undoable plot and tab changes, plot selection from any empty area, bins up to 1024, a plot size slider per tab, toolbar groups that stay side by side on narrow windows
 - **Workspaces**: several templates loaded at once, each with its own files, tabs, plots, undo and history; a Pool for unassigned files; a starter-template generator; shared files hold every workspace
 - **Shared analyses**: Export Shareable HTML, a locked viewer option, Save and History inside shared files, privacy-aware export (renamed tubes, no dates or IDs), single-copy compressed event storage, and a size estimate
 - **Gating**: quadrant gates, undo/redo, Autocomp, right-click menu with copy/cut/paste, sibling reorder that sets colour priority, axis cofactor handles, and a "+" dot toggle
 - **Plots**: blended density plots coloured by population, decade ticks, bins slider, labeled toolbar and tooltips; the zoom tool was removed
 - **Templates**: matching by file name, tube name or antibody panel; version 3 only (version 2 import removed); Kaluza converter
 - **Fixes**: Safari load error (`requestIdleCallback`), stale first-row plots on load
-- **Cleanup**: about 1,100 lines of old WebGL/heatmap code removed; `TESTING.md` added
+- **Cleanup**: about 1,100 lines of old WebGL/heatmap code removed; `TESTING.md` added (now in `doc/`, with `SPEC.md` and `SECURITY.md`)
 
 ### Version 1.0
 - Initial release with core gating and analysis features

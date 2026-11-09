@@ -5,19 +5,19 @@
  "canon": "check/index.html FlowCheck.canonHash",
  "entries": [
   {
-   "hash": "b1693ad86a16fa21f889d345ce2b5fe1f4dcf2f2b7b50e38ae80eb4a9d298c40",
+   "hash": "adbe0edbd480ef8da05bb31976f2fb4144c56289dfd4433f9198b59621b501bd",
    "variant": "full",
    "seq": 2,
-   "commit": "cea2e40a02",
+   "commit": "96077d3c85",
    "date": "2026-11-09",
    "subject": "pending release: the tip of this pull request",
    "pending": true
   },
   {
-   "hash": "8ac73c0e311d0005eb2debb17d15287ea07acc63dfc72138a3dda30aa08cd56f",
+   "hash": "003be48d3c72725bc64481e96b1199c4ea37ba2be12a0c070062ade4aef0cfd9",
    "variant": "locked",
    "seq": 2,
-   "commit": "cea2e40a02",
+   "commit": "96077d3c85",
    "date": "2026-11-09",
    "subject": "pending release: the tip of this pull request",
    "pending": true

@@ -159,7 +159,7 @@ Saved in `.github/rulesets/` and created with `gh api -X POST repos/davidpng/Flo
 - **Repository settings:** squash and rebase merges off, branches deleted after merge, secret scanning with push protection on, private vulnerability reporting on, the Actions token read-only, and workflows from outside contributors need approval.
 - **Still your own job:** two-factor authentication (a hardware key if possible) on the owner account, and watching the collaborator and invitation lists (`gh api repos/davidpng/FlowNg/collaborators`, `.../invitations`).
 
-Phases 4 and 6 are **deferred** (not needed for this model); phase 5 is limited to the anonymise default.
+Phase 4 (Content Security Policy and Trusted Types in the app) and the signing part of phase 5 are **deferred** (not needed for this model). The anonymise default and the secure-channel box (phase 5) and the repository rules (phase 6) are done.
 
 Goal: students and proficiency-testing sites can open a single shared HTML file from many different authors without having to trust the author, and without per-author keys.
 
@@ -189,7 +189,7 @@ Goal: students and proficiency-testing sites can open a single shared HTML file 
 
 **Tests required** (see `doc/TESTING.md`, section 17): tamper tests in the command-line checker and the Check page; hostile names in the data block; an older release's file passes or fails according to the manifest and revocation list; every feature still works under the CSP.
 
-**Status:** phases 1 to 3 built (canonical form, manifest, data-block checks, Check page with Update); phases 4 to 6 not started. The Check page goes live at `https://davidpng.github.io/FlowNg/check/` once this branch is merged to `main` (GitHub Pages serves the repo root).
+**Status (9 Nov 2026):** phases 1 to 3 built (canonical form, manifest, data-block checks, Check page with Update, offline copy, publisher check); phase 5 built except signing (secure-channel box, anonymise, result dialog); phase 6 built (repository rules above) apart from your own two-factor setup; phase 4 and signing deferred. The Check page is live at `https://davidpng.github.io/FlowNg/check/` once this work is merged to `main` (GitHub Pages serves the repo root).
 
 ### What is built
 
@@ -207,4 +207,4 @@ Goal: students and proficiency-testing sites can open a single shared HTML file 
 - **A "skip anything that looks like a data block" rule was exploitable.** A second `<script id="flowng-bundle">` with no JSON type would run as JavaScript and still hash as clean. The rule is now an exact text match, once, in the right place; any look-alike stays in the code and changes the hash. Tests cover it.
 - **Earlier builds are not supported.** Releases on `main` so far (PRs 25 and 26, 7 Nov 2026) do not escape names in the page, so they are withdrawn; files from before 7 Nov are not recognised. `samples/Complex_Analysis_FlowNg.html` was re-wrapped with the current build (same data) so the example passes.
 - **Verified by generation.** Shared files made by the real app (current build, locked and full) and the repo's sample match their manifest entries.
-- **Not yet done:** the CSP and Trusted Types in the app itself (phase 4), the anonymise and signing options in the share dialog (phase 5), and repository protection (phase 6). Until phase 4, a file that passes the check can still be made to misbehave by a bug in the app's own data handling; the check proves the code is released code, not that released code has no bugs.
+- **Deliberately not done (deferred):** the CSP and Trusted Types in the app itself (phase 4) and author signing (phase 5). Until phase 4, a file that passes the check can still be made to misbehave by a bug in the app's own data handling; the check proves the code is released code, not that released code has no bugs.
