@@ -1,0 +1,39 @@
+<!doctype html><meta charset="utf-8"><body><script>const REPORT={rows:[],errors:[],notes:[]};const R=(id,name,pass,detail)=>REPORT.rows.push({id,name,pass:!!pass,detail:typeof detail==='string'?detail:JSON.stringify(detail===undefined?'':detail)});
+const finish=async n=>fetch('/result_'+n,{method:'POST',body:JSON.stringify(REPORT)});</script>
+<iframe id="f" src="FlowNG.html" style="width:1400px;height:900px"></iframe>
+<script>
+const res={};const post=()=>fetch('/result',{method:'POST',body:JSON.stringify(res)});
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+(async()=>{ try{
+ const f=document.getElementById('f'); await sleep(2000);
+ const w=f.contentWindow; const E=s=>w.eval(s);
+ const fn='TEST SAMPLE 26125127597b 00028336 001.LMD';
+ const buf=await (await fetch(encodeURIComponent(fn))).arrayBuffer();
+ const PAY='"><img src=x onerror="window.__pwn=(window.__pwn||0)+1"><b>';
+ w.__PAY=PAY; w.__buf=buf; E(`loadFCS(__buf, "x"+__PAY+".lmd")`);
+ await sleep(8000); E('generateStarterWorkspace()'); await sleep(2500);
+ res.loaded=E('fcsFiles.length');
+ E(`(()=>{const f=fcsFiles[0];f.params[2].name=__PAY;f.params[2].longName=__PAY+'L';f.meta['$X'+__PAY]=__PAY;
+   const g={id:popIdCounter++,name:__PAY,color:'#f00',indices:Int32Array.from([1,2,3]),parentId:f.populations[0].id,fileId:f.fileId,gateInfo:{rawPts:[],xParam:0,yParam:1}};
+   f.populations.push(g);rebuildPopulationsView();tabs[0].name=__PAY;renderTabStrip();renderTabPlots();
+   showMetadata(f.fileId);document.getElementById('meta-modal')?.remove();
+   showFileContextMenu(f.fileId,10,10);showPlotFileMenu(plots[0].id,10,10);showColorPicker(g.id,10,10);
+   try{showAxisRangeModal(plots[0].id,'x')}catch(e){};
+   try{showGlobalSettingsDialog()}catch(e){};
+   doExportTemplate&&0;
+ })()`);
+ try{E(`showExportDialog&&showExportDialog()`)}catch(e){}
+ try{E(`exportGates()`)}catch(e){}
+ E(`showMetadata(fcsFiles[0].fileId)`);
+ await sleep(800);
+ res.pwn=E('window.__pwn||0');
+ res.imgs=E(`document.querySelectorAll('img[src="x"]').length`);
+ res.injectedB=E(`document.querySelectorAll('b').length>0 && [...document.querySelectorAll('b')].filter(b=>b.previousSibling&&b.previousSibling.tagName=='IMG').length`);
+ res.rendered=E(`document.body.innerText.includes('onerror')`);
+ res.paramOpt=E(`document.querySelector('#x-sel-'+plots[0].id+' option:nth-child(3)')?.textContent.slice(0,30)`);
+ }catch(e){res.error=String(e)+e.stack}
+ if(res.error)R('0','harness error',false,res.error);
+ R('16.1','hostile file, parameter, population, tab and metadata names: nothing runs, no injected elements, shown as text',res.pwn===0&&res.imgs===0&&res.injectedB===0&&res.rendered===true,res);
+ await finish('s16');
+})();
+</script>

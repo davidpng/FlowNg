@@ -1,0 +1,55 @@
+<!doctype html><meta charset="utf-8"><body><script src="lib.js"></script><script>
+(async () => { try {
+ let L = await fresh({ fixtures: true }); let E = L.E, w = L.w;
+ // 13.1
+ const s1 = E(`({pool:!!document.querySelector('.pool-row'), poolRows:document.querySelectorAll('.pool-row').length, head:(document.querySelector('#pop-list')||document.body).innerText.slice(0,80), ph:/3 files in the Pool/.test(document.body.innerText), importVisible:getComputedStyle(document.getElementById('import-btn')).display!=='none', addPlotHidden:getComputedStyle(document.getElementById('add-plot-btn')).display==='none', exportHidden:getComputedStyle(document.getElementById('export-btn')).display==='none', shareHidden:getComputedStyle(document.getElementById('share-btn')).display==='none', ws:workspaces.length, tubes:[...document.querySelectorAll('.pool-tube')].map(e=>e.textContent)})`);
+ R('13.1', 'POOL(3) with tube names and tick boxes; no workspace; placeholder; Import visible, Add Plot/Export/Share hidden', s1.poolRows === 3 && s1.ph && s1.importVisible && s1.addPlotHidden && s1.exportHidden && s1.shareHidden && s1.ws === 0 && s1.tubes.length === 3, s1);
+ // 13.2 two BTM imports
+ const txt = await (await fetch('/samples/' + encodeURIComponent('BTM Triage Template v10_FlowNgtmplt.json'))).text(); w.__t = txt;
+ E('importGates(__t)'); await sleep(800); E('_doImportV3([0,1,2])'); await sleep(5000);
+ const ws1 = E(`({n:workspaces.length,name:getActiveWs().name,ids:fcsFiles.map(f=>f.fileId),g:fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length),plots:plots.length,cards:document.querySelectorAll('.plot-card').length,pool:poolFiles.length})`);
+ await loadFixtures(L); E('importGates(__t)'); await sleep(800); E('_doImportV3([0,1,2])'); await sleep(5000);
+ const ws2 = E(`({n:workspaces.length,names:workspaces.map(x=>x.name),ids:fcsFiles.map(f=>f.fileId),g:fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length),plots:plots.length,cards:document.querySelectorAll('.plot-card').length,pool:poolFiles.length})`);
+ R('13.2', 'two workspaces "BTM Triage Template v10" and "... (2)", own file ids, counts [31,41,30], 255 plots, 255 cards, Pool empty', ws2.n === 2 && /\(2\)/.test(ws2.names[1]) && JSON.stringify(ws2.g) === '[31,41,30]' && ws2.plots === 255 && ws2.cards === 255 && ws2.pool === 0 && ws1.ids.join() !== ws2.ids.join(), { ws1, ws2 });
+ // 13.3 delete gate in ws2; switch
+ const gid = E(`(()=>{const kids=new Set(fcsFiles[0].populations.map(p=>p.parentId));const g=fcsFiles[0].populations.find(p=>p.gateInfo&&!p.boolInfo&&kids.has(p.id));return g.id})()`);
+ E(`deleteGateFromTree(${gid}, true)`); await sleep(1500);
+ const ws2g = E(`fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length)`); const u2 = E('_undoStack.length');
+ const id1 = E('workspaces[0].id'), id2 = E('workspaces[1].id');
+ E(`switchWorkspace(${id1})`); await sleep(2500);
+ const w1 = E(`({g:fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length),undo:_undoStack.length,dirty:[...document.querySelectorAll('.ws-item')].map(e=>e.className+'|'+e.textContent)})`);
+ E(`switchWorkspace(${id2})`); await sleep(2500);
+ const w2 = E(`({g:fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length),undo:_undoStack.length})`);
+ R('13.3', 'workspace states independent: ws1 [31,41,30] undo 1, ws2 reduced, undo 2; dirty marker on ws2 only', JSON.stringify(w1.g) === '[31,41,30]' && w1.undo === 1 && w2.g[0] < 31 && w2.undo === 2, { w1, w2, ws2g, u2 });
+ // 13.4 undo per workspace
+ E('undo()'); await sleep(2000); const afterUndo2 = E(`fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length)`); E(`switchWorkspace(${id1})`); await sleep(2500);
+ R('13.4', 'undo only affects the live workspace', JSON.stringify(afterUndo2) === '[31,41,30]' && JSON.stringify(E(`fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length)`)) === '[31,41,30]', { afterUndo2 });
+ // 13.5 starter
+ L = await fresh({ fixtures: true }); E = L.E; w = L.w;
+ E('generateStarterWorkspace()'); await sleep(3500);
+ const st5 = E(`({tabs:tabs.map(t=>t.name), plotsPerTab:tabs.map(t=>plots.filter(p=>p.tabId===t.id).length), gates:fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length), order:plots.filter(p=>p.tabId===tabs[0].id).map(p=>fcsFiles[0].params[p.yParam].name+' vs '+fcsFiles[0].params[p.xParam].name), toast:document.getElementById('toast').textContent})`);
+ R('13.5', 'starter: one tab per tube, plots Y vs X in the documented order, no gates', st5.tabs.length === 3 && st5.gates.every(g => g === 0) && /CD45/.test(st5.order[0]) && /TIME/i.test(st5.order[0].split(' vs ')[1] || ''), st5);
+ // 13.6
+ L = await fresh({ fixtures: 1 }); E = L.E; E('openPoolInWorkspace()'); await sleep(3000);
+ const o6 = E(`({ws:workspaces.map(x=>x.name),plots:plots.length,pool:poolFiles.length})`);
+ await loadFixtures(L, 1); const pid = E('poolFiles[poolFiles.length-1].fileId'); E(`addPoolFileToWorkspace(${pid})`); await sleep(2500);
+ R('13.6', 'openPoolInWorkspace: blank workspace named by tube (not file name), one plot; addPoolFileToWorkspace adds file + plot', /tube/i.test(o6.ws[0]) && !/TEST SAMPLE/.test(o6.ws[0]) && o6.plots === 1 && E('fcsFiles.length') === 2 && E('plots.length') === 2, { o6, now: E('({files:fcsFiles.length,plots:plots.length})') });
+ // 13.7 closeWorkspace
+ L = await fresh({ fixtures: true, btm: true }); E = L.E; w = L.w; w.__t = txt; await loadFixtures(L); E('importGates(__t)'); await sleep(800); E('_doImportV3([0,1,2])'); await sleep(5000);
+ E('closeWorkspace(activeWsId)'); await sleep(3500);
+ const c1 = E(`({ws:workspaces.length,files:fcsFiles.length,plots:plots.length,cards:document.querySelectorAll('.plot-card').length})`);
+ E('closeWorkspace(activeWsId)'); await sleep(3000);
+ const c2 = E(`({ws:workspaces.length,files:fcsFiles.length,plots:plots.length,drop:!!document.getElementById('drop-zone')&&getComputedStyle(document.getElementById('drop-zone')).display!=='none',side:getComputedStyle(document.getElementById('sidebar')).display})`);
+ R('13.7', 'closeWorkspace twice: first leaves the other live with DOM rebuilt; last returns to the drop zone, sidebar hidden', c1.ws === 1 && c1.files === 3 && c1.cards === c1.plots && c2.ws === 0 && c2.files === 0 && c2.side === 'none', { c1, c2 });
+ // 13.8 removeFile on pool file
+ L = await fresh({ fixtures: 2 }); E = L.E; const rid = E('poolFiles[0].fileId');
+ E(`removeFile(${rid})`); await sleep(800);
+ R('13.8', 'removeFile on a Pool file removes it from the Pool', E('poolFiles.length') === 1 && !E(`poolFiles.some(f=>f.fileId===${rid})`), E('poolFiles.length'));
+ // 13.10 locked viewer
+ L = await newFrame('daughter.html'); await sleep(6000);
+ const lv = L.E(`({ws:document.querySelectorAll('.ws-item').length, close:[...document.querySelectorAll('.ws-close')].filter(b=>getComputedStyle(b).display!=='none').length, addTmpl:!!document.querySelector('.ws-add')&&getComputedStyle(document.querySelector('.ws-add')).display!=='none', open:typeof openPoolInWorkspace})`);
+ R('13.10', 'locked viewer: strip shows, no close buttons or "+ Template"; openPoolInWorkspace undefined', lv.ws >= 1 && lv.close === 0 && !lv.addTmpl && lv.open === 'undefined', lv);
+ R('13.err', 'console errors', REPORT.errors.length === 0, REPORT.errors);
+} catch (e) { REPORT.errors.push('HARNESS ' + e + e.stack); }
+await finish('s13'); })();
+</script>

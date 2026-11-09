@@ -1,0 +1,123 @@
+<!doctype html><meta charset="utf-8"><body><script src="lib.js"></script><script>
+(async () => { try {
+ const L = await fresh({ fixtures: true, btm: true }); const E = L.E, w = L.w;
+ R('7.1pre', 'BTM import rows', true, L.btmRows);
+ R('7.1a', 'gate counts [31,41,30], 255 plots, 15 tabs, pool empty', JSON.stringify(E('fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length)')) === '[31,41,30]' && E('plots.length') === 255 && E('tabs.length') === 15 && E('poolFiles.length') === 0, E('({g: fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length), plots: plots.length, tabs: tabs.length, pool: poolFiles.length})'));
+ // helpers inside the app
+ E(`window.cx=(plot,rx,ry)=>({x:plot._tf.dataToCanvasX(rx), y:plot._tf.dataToCanvasY(ry)});
+    window.fireC=(plot,type,x,y,opt)=>{const c=document.getElementById('canvas-'+plot.id),r=c.getBoundingClientRect();c.dispatchEvent(new MouseEvent(type,Object.assign({bubbles:true,button:0,clientX:r.left+x*r.width/c.width,clientY:r.top+y*r.height/c.height},opt||{})));};
+    window.fire=(plot,type,rx,ry)=>{const p=cx(plot,rx,ry);fireC(plot,type,p.x,p.y);};
+    window.gates=f=>f.populations.filter(p=>p.gateInfo);
+    window.f0=fcsFiles[0]; window.ix=n=>f0.params.findIndex(p=>p.name===n);
+    addPlot(ix('Kappa FITC'), ix('Lambda PE'), f0.fileId); window.pl=plots[plots.length-1]; switchTab(pl.tabId); changePop(pl.id, f0.populations.find(p=>p.name==='Viable').id);`);
+ await sleep(1500);
+ const viable = E(`f0.populations.find(p=>p.name==='Viable')`) && E(`(()=>{const v=f0.populations.find(p=>p.name==='Viable');return {id:v.id,n:popCount(v)}})()`);
+ // 4.1 polygon
+ const g0 = E('gates(f0).length'); const h0 = E('_history.length');
+ E(`setGlobalMode('gate'); [[200,200],[6000,200],[6000,6000],[200,6000]].forEach(p=>fire(pl,'click',p[0],p[1])); fire(pl,'click',200,200)`); await sleep(2500);
+ const r41 = E(`(()=>{const gs=gates(f0);const g=gs[gs.length-1];return {n:gs.length,name:g.name,count:popCount(g),parent:popCount(populations.find(p=>p.id===g.parentId)),id:g.id,hist:_history[_history.length-1].what}})()`);
+ R('4.1', 'polygon gate drawn', r41.n === g0 + 1 && r41.count >= 0 && r41.count <= r41.parent && /Drew gate/.test(r41.hist), r41); window.__g1 = r41.id;
+ // 4.2 rect
+ E(`setGlobalMode('rectgate'); fire(pl,'mousedown',300,300); fire(pl,'mousemove',3000,3000); fire(pl,'mouseup',3000,3000)`); await sleep(2000);
+ const r42 = E(`(()=>{const gs=gates(f0);const g=gs[gs.length-1];return {n:gs.length,pts:g.gateInfo.rawPts.length,id:g.id}})()`);
+ R('4.2', 'rect gate has 4 points', r42.n === g0 + 2 && r42.pts === 4, r42); window.__g2 = r42.id;
+ // second plot (no other gates) for quadrant tests
+ E(`const ca=f0.params.findIndex(p=>/CD45/.test(p.name+p.longName)); addPlot(ix('CD5 PC5.5'), ix('CD20 PB'), f0.fileId); window.pl2=plots[plots.length-1]; switchTab(pl2.tabId); changePop(pl2.id, f0.populations.find(p=>p.name==='Lymphs'||p.name==='Viable').id)`); await sleep(1500);
+ const med = E(`(()=>{const pop=populations.find(p=>p.id===pl2.inputPop);const idx=popIndicesArray(pop);const P=f0.nPar;const a=[],b=[];for(let i=0;i<Math.min(idx.length,3000);i++){a.push(f0.data[idx[i]*P+pl2.xParam]);b.push(f0.data[idx[i]*P+pl2.yParam]);}a.sort((x,y)=>x-y);b.sort((x,y)=>x-y);return {x:a[a.length>>1],y:b[b.length>>1],n:popCount(pop),name:pop.name}})()`);
+ // 4.3 quadrant
+ E(`createQuadrant(pl2, ${med.x}, ${med.y})`); await sleep(2800);
+ E(`window.__q=gates(f0).filter(g=>g.gateInfo.quad).slice(-4).map(g=>g.id)`);
+ const q = E(`(()=>{const gs=__q.map(i=>populations.find(p=>p.id===i));const par=populations.find(p=>p.id===gs[0].parentId);return {names:gs.map(g=>g.name),counts:gs.map(g=>popCount(g)),sum:gs.reduce((a,g)=>a+popCount(g),0),parent:popCount(par)}})()`);
+ R('4.3', 'four quadrants sum to parent', q.names.length >= 4 && q.sum === q.parent, q);
+ // 4.4 move gate (select mode): body of polygon gate on pl; centre in canvas px
+ const before = E(`JSON.stringify(populations.find(p=>p.id===${window.__g1}).gateInfo.rawPts)`); const c1 = E(`populations.find(p=>p.id===${window.__g1}).count||popCount(populations.find(p=>p.id===${window.__g1}))`);
+ const cen = E(`cx(pl, 5000, 5000)`);   // inside the polygon, outside the smaller rectangle
+ E(`setGlobalMode('pan'); fireC(pl,'mousedown',${cen.x},${cen.y}); fireC(pl,'mousemove',${cen.x + 40},${cen.y}); fireC(pl,'mouseup',${cen.x + 40},${cen.y})`); await sleep(2500);
+ const after = E(`JSON.stringify(populations.find(p=>p.id===${window.__g1}).gateInfo.rawPts)`); const c2 = E(`popCount(populations.find(p=>p.id===${window.__g1}))`);
+ R('4.4', 'gate moved, History "Moved gate"', before !== after && hist(L).some(h => /Moved gate/.test(h)), { countBefore: c1, countAfter: c2 });
+ // 4.5 edit vertex; click without move adds nothing
+ const vtx = E(`(()=>{const g=populations.find(p=>p.id===${window.__g1});const q0=g.gateInfo.rawPts[0];return cx(pl,q0.rx,q0.ry)})()`);
+ let hn = E('_history.length'); E(`setGlobalMode('edit'); fireC(pl,'mousedown',${vtx.x},${vtx.y}); fireC(pl,'mouseup',${vtx.x},${vtx.y})`); await sleep(600);
+ const noMove = E('_history.length') === hn;
+ E(`fireC(pl,'mousedown',${vtx.x},${vtx.y}); fireC(pl,'mousemove',${vtx.x + 30},${vtx.y + 30}); fireC(pl,'mouseup',${vtx.x + 30},${vtx.y + 30})`); await sleep(2000);
+ R('4.5', 'edit: drag logs "Reshaped gate"; click without movement adds no entry', noMove && hist(L).some(h => /Reshaped gate/.test(h)), { noMove, last: hist(L).slice(-2) });
+ // 4.6 quadrant centre drag on pl2
+ E(`setGlobalMode('pan')`); const qc = E(`cx(pl2, ${med.x}, ${med.y})`); const qb = E(`__q.map(i=>popCount(populations.find(p=>p.id===i))).join()`);
+ E(`fireC(pl2,'mousedown',${qc.x},${qc.y}); fireC(pl2,'mousemove',${qc.x + 50},${qc.y - 40}); fireC(pl2,'mouseup',${qc.x + 50},${qc.y - 40})`); await sleep(3000);
+ const qa = E(`(()=>{const gs=__q.map(i=>populations.find(p=>p.id===i));const par=populations.find(p=>p.id===gs[0].parentId);return {counts:gs.map(g=>popCount(g)).join(),sum:gs.reduce((a,g)=>a+popCount(g),0),parent:popCount(par)}})()`);
+ R('4.6', 'quadrant crosshair drag: counts change, still sum to parent', qa.counts !== qb && qa.sum === qa.parent, { before: qb, after: qa });
+ // 4.7 delete gate; plots fall back to All Events
+ E(`addPlot(ix('Kappa FITC'), ix('Lambda PE'), f0.fileId); window.pl3=plots[plots.length-1]; changePop(pl3.id, ${window.__g2})`); await sleep(800);
+ const root = E('f0._rootPopId'); E(`deleteGateFromTree(${window.__g2}, true)`); await sleep(1500);
+ R('4.7', 'delete gate: gone; plot falls back to All Events', !E(`populations.some(p=>p.id===${window.__g2})`) && E('pl3.inputPop') === root, { inputPop: E('pl3.inputPop'), root });
+ // 4.8 reparent/reorder
+ E(`setGlobalMode('rectgate'); fire(pl3,'mousedown',500,500); fire(pl3,'mousemove',9000,9000); fire(pl3,'mouseup',9000,9000)`); await sleep(1500);
+ E(`fire(pl3,'mousedown',700,700); fire(pl3,'mousemove',2500,2500); fire(pl3,'mouseup',2500,2500)`); await sleep(1500);
+ const ids = E(`gates(f0).filter(g=>!g.gateInfo.quad&&g.gateInfo.xParam===pl3.xParam&&g.parentId===${root}).slice(-2).map(g=>g.id)`);
+ R('4.13pre', 'two sibling rects drawn on All Events', ids.length === 2, ids);
+ E(`reparentGate(${ids[1]}, ${ids[0]})`); await sleep(800);
+ R('4.13', 'reparent sibling under overlapping sibling', E(`populations.find(p=>p.id===${ids[1]}).parentId`) === ids[0], toastText(L));
+ const t0 = E(`populations.find(p=>p.id===${ids[0]}).parentId`);
+ E(`reparentGate(${ids[0]}, ${ids[1]})`); await sleep(500);
+ R('4.14', 'cannot reparent onto own descendant', /Cannot reparent a gate onto one of its own descendants/.test(toastText(L)) && E(`populations.find(p=>p.id===${ids[0]}).parentId`) === t0, toastText(L));
+ // reorder: two gates under Viable (4.1's polygon is under Viable?) use ids of two siblings at root level: create another
+ E(`reparentGate(${ids[1]}, ${root})`); await sleep(500);
+ const o1 = E(`f0.populations.filter(p=>p.parentId===${root}&&p.gateInfo).map(p=>p.id).join()`);
+ E(`reorderSibling(${ids[1]}, ${ids[0]}, true)`); await sleep(500);
+ const o2 = E(`f0.populations.filter(p=>p.parentId===${root}&&p.gateInfo).map(p=>p.id).join()`);
+ R('4.8', 'reorderSibling changes order; colour precedence follows tree', o1 !== o2, { o1, o2, prec: E('f0.colorPrecedence.slice(0,6)') });
+ // 4.9 copy/paste
+ E(`copyGate(${ids[0]}, false); pasteGate(${root})`); await sleep(800);
+ R('4.9a', 'paste creates "... copy" with same shape', E(`gates(f0).some(g=>/ copy/.test(g.name))`), toastText(L));
+ E(`copyGate(${ids[0]}, false); pasteGate(fcsFiles[1]._rootPopId)`); await sleep(500);
+ R('4.9b', 'paste into file missing a channel refused', /Cannot paste/.test(toastText(L)), toastText(L));
+ // 4.10 dot boost
+ E(`cycleDotBoost(${ids[0]})`); const b1 = E(`populations.find(p=>p.id===${ids[0]}).dotBoost`); E(`cycleDotBoost(${ids[0]})`); E(`cycleDotBoost(${ids[0]})`); const b3 = E(`populations.find(p=>p.id===${ids[0]}).dotBoost`);
+ R('4.10', 'dot boost toggles', b1 > 0, { b1, b3 });
+ E(`populations.find(p=>p.id===${ids[0]}).dotBoost=0`);
+ // 4.11 undo/redo
+ const g1n = E('gates(f0).length'); const hh = E('_history.length');
+ E(`setGlobalMode('rectgate'); fire(pl3,'mousedown',1200,1200); fire(pl3,'mousemove',1800,1800); fire(pl3,'mouseup',1800,1800)`); await sleep(1500);
+ const g2n = E('gates(f0).length'); const gc = E(`popCount(gates(f0)[gates(f0).length-1])`);
+ E('undo()'); await sleep(800); const g3n = E('gates(f0).length'); E('redo()'); await sleep(1200); const g4n = E('gates(f0).length'); const gc2 = E(`popCount(gates(f0)[gates(f0).length-1])`);
+ R('4.11', 'undo removes the drawn gate, redo restores it with identical count; logged', g2n === g1n + 1 && g3n === g1n && g4n === g2n && gc === gc2 && E('_history.length') >= hh + 3, { g1n, g2n, g3n, g4n, gc, gc2, tail: hist(L).slice(-3) });
+ // 4.12 worker vs main
+ const gid = ids[0]; const cnt = E(`popCount(populations.find(p=>p.id===${gid}))`);
+ E(`(()=>{const g=populations.find(p=>p.id===${gid});g.indices=new Int32Array(0);evalGateAsync(g)})()`); await sleep(3000);
+ R('4.12', 'worker membership equals main-thread', E(`popCount(populations.find(p=>p.id===${gid}))`) === cnt, { cnt });
+ // 4.15 mode deselects
+ E(`document.querySelector('#plot-card-'+plots[0].id).classList.add('selected'); setGlobalMode('gate')`);
+ R('4.15', 'mode change deselects and applies to all plots', E('getSelectedPlots().length') === 0 && E(`plots.every(p=>p.mode==='gate')`), E('plots.filter(p=>p.mode!=="gate").length'));
+ // 4.16 shortcuts
+ const key = (k, o) => E(`document.dispatchEvent(new KeyboardEvent('keydown',Object.assign({key:${JSON.stringify(k)},bubbles:true},${JSON.stringify(o || {})})))`);
+ const map = { s: 'pan', g: 'gate', r: 'rectgate', q: 'quad', e: 'edit', c: 'spill', a: 'autocomp' }; let ok416 = true; const det = {};
+ for (const [k, m] of Object.entries(map)) { key(k); const gm = E('globalMode'); const active = E(`!!document.querySelector('#global-toolbar .tool-btn.active')`); det[k] = gm; if (gm !== m || !active) ok416 = false; }
+ R('4.16', 'shortcut keys set modes', ok416, det);
+ // 4.17 ignored cases
+ E(`setGlobalMode('pan')`); let ig = true; const igd = {};
+ for (const o of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true }]) { key('g', o); if (E('globalMode') !== 'pan') { ig = false; igd[JSON.stringify(o)] = E('globalMode'); } }
+ E(`window.__inp=document.createElement('input');document.body.appendChild(__inp);__inp.focus()`); E(`__inp.dispatchEvent(new KeyboardEvent('keydown',{key:'g',bubbles:true}))`); if (E('globalMode') !== 'pan') { ig = false; igd.input = 1; } E('__inp.remove()');
+ E(`window.__m=document.createElement('div');__m.className='modal-overlay';document.body.appendChild(__m)`); key('g'); if (E('globalMode') !== 'pan') { ig = false; igd.modal = 1; } E('__m.remove()');
+ E(`document.getElementById('global-toolbar').style.display='none'`); key('g'); if (E('globalMode') !== 'pan') { ig = false; igd.hidden = 1; } E(`document.getElementById('global-toolbar').style.display=''`);
+ R('4.17', 'shortcuts ignored with modifiers, input focus, dialog, hidden toolbar', ig, igd);
+ // 4.18 Delete
+ E(`plots.forEach(p=>document.getElementById('plot-card-'+p.id).classList.remove('selected'))`); key('Delete'); const dm = E('globalMode'); E(`setGlobalMode('pan')`);
+ const np = E('plots.length'); E(`document.getElementById('plot-card-'+plots[0].id).classList.add('selected')`); key('Delete'); await sleep(500);
+ R('4.18', 'Delete: no selection -> delete mode; with selection removes plot, mode unchanged', dm === 'delete' && E('plots.length') === np - 1 && E('globalMode') === 'pan', { dm, plots: [np, E('plots.length')], mode: E('globalMode') });
+ // 4.19 labels
+ const lab = E(`[...document.querySelectorAll('#global-toolbar .tool-btn')].slice(0,8).map(b=>({b:(b.querySelector('b')||{}).textContent,t:b.textContent.trim().replace(/\\s+/g,' '),title:b.title.slice(-40)}))`);
+ R('4.19', 'labels have bold key; tooltips end with Shortcut', lab.every(x => x.b && /Shortcut|Del/.test(x.title)), lab);
+ // 4.20 rect orthogonality
+ E(`setGlobalMode('rectgate'); fire(pl3,'mousedown',3000,3000); fire(pl3,'mousemove',7000,7000); fire(pl3,'mouseup',7000,7000)`); await sleep(1500);
+ const rg = E(`(()=>{const g=gates(f0).filter(x=>!x.gateInfo.quad).slice(-1)[0];return {id:g.id,pts:JSON.parse(JSON.stringify(g.gateInfo.rawPts))}})()`);
+ const corner = E(`(()=>{const g=populations.find(p=>p.id===${rg.id});const q0=g.gateInfo.rawPts[1];return cx(pl3,q0.rx,q0.ry)})()`);
+ E(`setGlobalMode('edit'); fireC(pl3,'mousedown',${corner.x},${corner.y}); fireC(pl3,'mousemove',${corner.x + 20},${corner.y + 30}); fireC(pl3,'mouseup',${corner.x + 20},${corner.y + 30})`); await sleep(1500);
+ const np2 = E(`JSON.parse(JSON.stringify(populations.find(p=>p.id===${rg.id}).gateInfo.rawPts))`);
+ const xs = new Set(np2.map(p => p.rx.toFixed(3))), ys = new Set(np2.map(p => p.ry.toFixed(3)));
+ const opp = np2[3]; R('4.20', 'rect stays axis-aligned after corner drag; opposite corner fixed', xs.size === 2 && ys.size === 2 && Math.abs(opp.rx - rg.pts[3].rx) < 1e-6 && Math.abs(opp.ry - rg.pts[3].ry) < 1e-6 && np2[1].rx !== rg.pts[1].rx, { xs: xs.size, ys: ys.size });
+ // boolean gates
+ const bools = E(`populations.filter(p=>p.boolInfo).map(p=>popCount(p))`); R('4.bool', 'boolean gates non-zero', bools.length > 0 && bools.every(c => c > 0), bools.slice(0, 8));
+ R('4.err', 'console errors', REPORT.errors.length === 0, REPORT.errors);
+} catch (e) { REPORT.errors.push('HARNESS ' + e + e.stack); }
+await finish('s4'); })();
+</script>

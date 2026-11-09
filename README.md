@@ -484,7 +484,7 @@ FlowNG is one file, `FlowNG.html` (main script plus two worker scripts). To work
 |---|---|
 | [`doc/SPEC.md`](doc/SPEC.md) | Interface and interaction decisions, and why each was made |
 | [`doc/SECURITY.md`](doc/SECURITY.md) | Security risks of a single-file HTML app and how to scan a copy |
-| [`doc/TESTING.md`](doc/TESTING.md) | A step-by-step test guide with expected results and performance baselines. Say "run doc/TESTING.md" to have Claude run it, or follow it by hand |
+| [`doc/TESTING.md`](doc/TESTING.md) | A step-by-step test guide with expected results and performance baselines. Most of it runs with `/usr/bin/python3 scripts/run_suite.py` (headless Chrome; the pages are in `scripts/suite/`); or say "run doc/TESTING.md" to have Claude run it, or follow it by hand |
 | `scripts/build_test_daughter.py` | Builds a locked shared file from the working tree for testing (`--lod N` forces the large-population path, `--unlocked` keeps import/export) |
 | `scripts/extract_js_for_graphify.py` | Pulls the scripts out of the HTML so graphify (the `graphifyy` Python package) can build a real call graph; the result is in `graphify-out/` (`GRAPH_REPORT.md`, `graph.html`) |
 | [`check/index.html`](check/index.html), `check/manifest.json`, `scripts/build_manifest.py`, `scripts/build_offline_check.py`, `scripts/check_shared.py`, `scripts/test_check.py` | **FlowNG Check**: a page where anyone drops a shared file to confirm it contains released FlowNG code and a data-only block (at `https://davidpng.github.io/FlowNg/check/`), the manifest of released code hashes (main releases only), an offline copy of the page, a publisher-side batch check, and the tests. Run the scripts with `/usr/bin/python3` on macOS. See `doc/SECURITY.md` section 5 |

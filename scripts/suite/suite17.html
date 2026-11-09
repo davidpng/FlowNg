@@ -1,0 +1,41 @@
+<!doctype html><meta charset="utf-8"><body><script>const REPORT={rows:[],errors:[],notes:[]};const R=(id,name,pass,detail)=>REPORT.rows.push({id,name,pass:!!pass,detail:typeof detail==='string'?detail:JSON.stringify(detail===undefined?'':detail)});
+const finish=async n=>fetch('/result_'+n,{method:'POST',body:JSON.stringify(REPORT)});</script>
+<iframe id="f" src="FlowNG.html" style="width:1400px;height:900px"></iframe><div id="o"></div>
+<script>
+const sleep=ms=>new Promise(r=>setTimeout(r,ms)); const res={};
+(async()=>{ try{
+ const f=document.getElementById('f'); await sleep(2000); const w=f.contentWindow; const E=s=>w.eval(s);
+ const fn='TEST SAMPLE 26125127597b 00028336 001.LMD';
+ w.__buf=await (await fetch(encodeURIComponent(fn))).arrayBuffer(); E(`loadFCS(__buf, ${JSON.stringify(fn)})`);
+ await sleep(8000); E('generateStarterWorkspace()'); await sleep(2500); w.showSaveFilePicker=undefined;
+ const sha=async t=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t))),b=>b.toString(16).padStart(2,'0')).join('');
+ for (const secure of [false,true]) {
+   const k=secure?'secure':'notice';
+   E('showShareDialog()'); const d=w.document; d.getElementById('share-maxev').value=1000; d.getElementById('share-secure').checked=secure;
+   let cap=null; w.HTMLAnchorElement.prototype.click=function(){cap=this.href;};
+   E('doExportShareable()');
+   for(let i=0;i<60&&!d.getElementById('share-done');i++) await sleep(500);
+   const txt=await (await fetch(cap)).text();
+   const m=txt.match(/<script id="flowng-bundle" type="application\/json">([^<]*)<\/script>/); const b=JSON.parse(m[1]);
+   res[k]={checkNotice:b.checkNotice, sterile:b.sterile, done:!!d.getElementById('share-done')};
+   const done=d.getElementById('share-done'); const shaShown=(done.querySelector('code')||{}).textContent;
+   res[k].shaMatches = shaShown===await sha(txt) ; res[k].ta=(done.querySelector('textarea')||{}).value||null; res[k].note=done.querySelectorAll('p')[2]&&done.querySelectorAll('p')[2].textContent.slice(0,60);
+   d.getElementById('share-done').remove();
+   // open the exported file for real
+   const ifr=document.createElement('iframe'); ifr.style.cssText='width:1200px;height:800px'; ifr.src=URL.createObjectURL(new Blob([txt],{type:'text/html'})); document.body.appendChild(ifr);
+   await sleep(9000);
+   const nd=ifr.contentWindow.document.getElementById('check-notice');
+   res[k].opened={notice:!!nd, text:nd&&nd.textContent.slice(0,80), link:nd&&nd.querySelector('a')&&nd.querySelector('a').href, plots:ifr.contentWindow.document.querySelectorAll('.plot-card').length};
+   if(nd){ nd.querySelector('button').click(); res[k].opened.dismissed=!ifr.contentWindow.document.getElementById('check-notice'); }
+   await fetch('/shared17_'+k+'.html',{method:'POST',body:txt}); ifr.remove();
+ }
+ }catch(e){res.error=String(e)+e.stack}
+  if(res.error)R('0','harness error',false,res.error);
+
+ const n=res.notice||{}, s=res.secure||{};
+ R('17.17','default export: checkNotice true; done dialog with SHA-256 and paste-in text; reminder shown, links to the Check page, dismissible',n.checkNotice===true&&n.done&&n.shaMatches&&/davidpng\.github\.io\/FlowNg\/check\//.test(n.ta||'')&&n.opened&&n.opened.notice&&n.opened.link==='https://davidpng.github.io/FlowNg/check/'&&n.opened.dismissed&&n.opened.plots>0,n);
+ R('17.18','secure channel ticked: checkNotice false; no paste-in text; no reminder on open',s.checkNotice===false&&s.done&&s.shaMatches&&s.ta===null&&s.opened&&!s.opened.notice&&s.opened.plots>0,s);
+
+ await finish('s17');
+})();
+</script>

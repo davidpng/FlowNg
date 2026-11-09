@@ -1,6 +1,6 @@
 # Testing FlowNG
 
-A checklist for Claude (or a person) to follow after any change to `FlowNG.html`, the Kaluza converter, or the export code. It drives the real app in the browser pane, so it needs no test framework. Say "run TESTING.md" and work through the sections in order; sections 1-2 are always required, the rest depend on what changed (see the table).
+A checklist for Claude (or a person) to follow after any change to `FlowNG.html`, the Kaluza converter, or the export code. **Most of it can be run by one command**, `/usr/bin/python3 scripts/run_suite.py` (see "Automated run" below). It drives the real app in the browser pane, so it needs no test framework. Say "run TESTING.md" and work through the sections in order; sections 1-2 are always required, the rest depend on what changed (see the table).
 
 The app keeps loaded files in a **Pool** and each loaded template in its own **workspace** (files, tabs, plots, undo, history). The globals `fcsFiles`, `plots`, `tabs`, `_undoStack`, `_history` always hold the *live* workspace, so older checks that read them still apply to whichever workspace is open.
 
@@ -17,6 +17,18 @@ The app keeps loaded files in a **Pool** and each loaded template in its own **w
 | Export FCS, SpikeNG | + 15 |
 | Share dialog options, hostile text from files | + 8, 16, 17 |
 | Check page, manifest, publisher check, offline copy, repository rules | + 17 (and `doc/SECURITY.md`) |
+
+## Automated run
+
+`scripts/run_suite.py` runs the browser tests of sections 3 to 13 and 15 to 18 in headless Chrome (Google Chrome or Chromium required) and prints a pass/fail list using this file's row numbers; the test pages are in `scripts/suite/` (one per section, sharing `lib.js`).
+
+```bash
+/usr/bin/python3 scripts/run_suite.py                 # everything, about 20 minutes, exit code 0 when all pass
+/usr/bin/python3 scripts/run_suite.py --only 4,5,17   # chosen sections
+/usr/bin/python3 scripts/run_suite.py --check         # also runs scripts/test_check.py (online and offline) for section 17
+```
+
+It works in a temporary folder (the repo is not changed) and builds the shared-file fixtures of section 9 from an export it makes in section 8. Section 2 (static checks) and the rows the pages do not cover (section 7.6 converter diff, 11 timings against your own baseline, the "Not tested" list in section 14) are still done by hand as written below. The test pages are the executable form of the tables: when a table row changes, change the page and the row together. Run times are only comparable on the same machine; run section 11 alone (`--only 11`) when timing matters, since other work on the machine slows it.
 
 ## 0. Rules and traps (learned the hard way)
 

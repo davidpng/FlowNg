@@ -1,0 +1,28 @@
+<!doctype html><meta charset="utf-8"><body><script src="lib.js"></script><script>
+(async () => { try {
+ // section 3
+ let L = await fresh({ fixtures: true });
+ R('3.0', 'pool after load', JSON.stringify(L.E('({events: poolFiles.map(f=>f.nEvents), tubes: poolFiles.map(_fileTubeName), fcs: fcsFiles.length, plots: plots.length})')), L.E('({events: poolFiles.map(f=>f.nEvents), tubes: poolFiles.map(_fileTubeName), fcs: fcsFiles.length, plots: plots.length})'));
+ R('3.0b', 'events [33635,37596,31015]', JSON.stringify(L.E('poolFiles.map(f=>f.nEvents)')) === '[33635,37596,31015]');
+ R('3.0c', 'tubes', JSON.stringify(L.E('poolFiles.map(_fileTubeName)')) === JSON.stringify(['LL panel B cell tube', 'LL panel T cell tube', 'LL panel myeloid tube']), L.E('poolFiles.map(_fileTubeName)'));
+ R('3.0d', 'placeholder text', /3 files in the Pool, no workspace open/.test(L.w.document.body.innerText), '');
+ L.E('openPoolInWorkspace()'); await sleep(3000);
+ const o = L.E(`({ plots: plots.length, canvases: document.querySelectorAll('canvas[id^=canvas-]').length, tree: document.querySelectorAll('.pop-tree-node').length, roots: document.querySelectorAll('.pop-file-root').length, poolNode: !!document.querySelector('.pool-row'), ws: document.querySelectorAll('#ws-strip .ws-item, .ws-item').length, wsName: (document.querySelector('.ws-item .ws-main')||{}).textContent })`);
+ R('3.1', 'one default plot per file; canvases = plots', o.plots === 3 && o.canvases === 3, o);
+ R('3.2', 'tree lists three file roots', o.roots === 3 || o.tree === 3, o);
+ R('3.3', 'no Pool node left', !o.poolNode, o);
+ // toolbar
+ const tb = L.E(`(()=>{const d=document; const left=[...d.querySelectorAll('#global-toolbar .tool-btn')].map(b=>b.textContent.trim().replace(/\\s+/g,' ')); const rightRows=[...d.querySelectorAll('.tb-right .tb-row')].map(r=>[...r.querySelectorAll('button')].filter(b=>b.offsetParent!==null).map(b=>b.textContent.trim().replace(/\\s+/g,' '))); const L1=d.getElementById('global-toolbar').getBoundingClientRect(), R1=d.querySelector('.tb-right').getBoundingClientRect(); return {left, rightRows, sideBySide: L1.right<=R1.left+1 && Math.abs(L1.top-R1.top)<4}})()`);
+ R('3.4', 'toolbar buttons', true, tb);
+ R('3.5', 'groups side by side at 1400 px', tb.sideBySide, '');
+ // narrow
+ L.f.style.width = '800px'; await sleep(600);
+ const narrow = L.E(`(()=>{const L1=document.getElementById('global-toolbar').getBoundingClientRect(), R1=document.querySelector('.tb-right').getBoundingClientRect(); return {sideBySide: L1.right<=R1.left+1 && Math.abs(L1.top-R1.top)<4, overflowX: document.documentElement.scrollWidth>document.documentElement.clientWidth, hdr: document.querySelector('header').offsetHeight, hdrVar: document.documentElement.style.getPropertyValue('--header-h')}})()`);
+ R('3.6', 'narrow (800 px): groups stay side by side, no horizontal overflow, --header-h follows', narrow.sideBySide && !narrow.overflowX && narrow.hdrVar === narrow.hdr + 'px', narrow);
+ L.f.style.width = '1400px';
+ const bg = L.E(`getComputedStyle(document.querySelector('.plot-card canvas')||document.body).backgroundColor`);
+ R('3.7', 'plots white (canvas bg)', true, bg);
+ R('3.8', 'console errors', REPORT.errors.length === 0, REPORT.errors);
+} catch (e) { REPORT.errors.push('HARNESS ' + e + e.stack); }
+await finish('s3'); })();
+</script>

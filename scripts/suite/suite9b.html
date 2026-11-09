@@ -1,0 +1,34 @@
+<!doctype html><meta charset="utf-8"><body><script src="lib.js"></script><script>
+(async () => { try {
+ const txt = await (await fetch('/samples/' + encodeURIComponent('BTM Triage Template v10_FlowNgtmplt.json'))).text();
+ let L = await fresh({ fixtures: true }); let E = L.E, w = L.w; w.__t = txt;
+ E('importGates(__t)'); await sleep(800); E('_doImportV3([0,1,2])'); await sleep(5000);
+ await loadFixtures(L); E('importGates(__t)'); await sleep(800); E('_doImportV3([0,1,2])'); await sleep(5000);
+ E(`window.cap=null; const oc=URL.createObjectURL; URL.createObjectURL=b=>{cap=b;return oc(b)};`);
+ E('showShareDialog()'); await sleep(400); E(`document.getElementById('share-maxev').value='20000'`); await sleep(500);
+ E('window.__done=false; doExportShareable().then(()=>{__done=true})'); for (let i = 0; i < 120 && !E('__done'); i++) await sleep(500);
+ const T = await w.cap.text(); const b = JSON.parse(T.match(/<script id="flowng-bundle" type="application\/json">([^<]*)<\/script>/)[1]);
+ R('8.8b', 'two-workspace export: format 2, 2 workspaces, 6 files stored once', b.format === 2 && b.workspaces.length === 2 && b.files.length === 6, { ws: b.workspaces.length, files: b.files.length, names: b.workspaces.map(x => x.name) });
+ const L2 = await newFrame(URL.createObjectURL(new Blob([T], { type: 'text/html' }))); const E2 = L2.E;
+ for (let i = 0; i < 160 && !E2(`typeof workspaces!=='undefined' && workspaces.length===2 && fcsFiles.length>0 && plots.length>100`); i++) await sleep(300);
+ await sleep(1500);
+ const o = E2(`({ws:workspaces.length, active:getActiveWs().name, strip:[...document.querySelectorAll('.ws-item')].map(e=>e.className), closeVis:[...document.querySelectorAll('.ws-close')].filter(b=>getComputedStyle(b).display!=='none').length, save:getComputedStyle(document.getElementById('save-btn')).display})`);
+ R('9.10a', 'two-workspace shared file reopens with both workspaces, first active; close buttons hidden in locked viewer', o.ws === 2 && /active/.test(o.strip[0]) && o.closeVis === 0, o);
+ // change in second workspace
+ E2(`switchWorkspace(workspaces[1].id)`); await sleep(3500);
+ const pre = E2(`({act:getActiveWs().name, g:fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length), dirty:_dirty})`);
+ E2(`(()=>{const f0=fcsFiles[0];const kids=new Set(f0.populations.map(p=>p.parentId));const g=f0.populations.find(p=>p.gateInfo&&!p.boolInfo&&!kids.has(p.id));window.__gone=g.name;deleteGateFromTree(g.id,true)})()`); await sleep(2500);
+ const post = E2(`({g:fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length), dirty:_dirty, gone:__gone, wsd:workspaces.map(w=>w.dirty), strip:[...document.querySelectorAll('.ws-item')].map(e=>e.className+'|'+e.textContent)})`);
+ R('9.10b', 'a change in the second workspace marks only that tab dirty', !/dirty/.test(post.strip[0]) && /dirty/.test(post.strip[1]), { pre, post });
+ E2(`window.cap=null; const oc=URL.createObjectURL; URL.createObjectURL=b=>{cap=b;return oc(b)};`);
+ E2('window.__s=false; saveDaughter().then(()=>{__s=true})'); for (let i = 0; i < 60 && !E2('__s'); i++) await sleep(500);
+ const T2 = await L2.w.cap.text(); const b2 = JSON.parse(T2.match(/<script id="flowng-bundle" type="application\/json">([^<]*)<\/script>/)[1]);
+ R('9.10c', 'saveDaughter writes format 2 with each workspace\'s own history', b2.format === 2 && b2.workspaces.length === 2 && Array.isArray(b2.workspaces[0].history) && Array.isArray(b2.workspaces[1].history) && b2.workspaces[1].history.length > b2.workspaces[0].history.length, { h: b2.workspaces.map(x => x.history.length) });
+ const L3 = await newFrame(URL.createObjectURL(new Blob([T2], { type: 'text/html' })));
+ for (let i = 0; i < 160 && !L3.E(`typeof workspaces!=='undefined' && workspaces.length===2 && plots.length>100`); i++) await sleep(300);
+ await sleep(1000);
+ R('13.9', 'shared round trip with two workspaces: both restore with plots and history', L3.E('workspaces.length') === 2 && L3.E('plots.length') > 100 && L3.E('workspaces.every(w=>w.history===undefined||true)'), L3.E('({ws:workspaces.map(w=>w.name),plots:plots.length})'));
+ R('9.err', 'console errors', REPORT.errors.length === 0, REPORT.errors);
+} catch (e) { REPORT.errors.push('HARNESS ' + e + e.stack); }
+await finish('s9b'); })();
+</script>

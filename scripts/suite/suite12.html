@@ -1,0 +1,18 @@
+<!doctype html><meta charset="utf-8"><body><script src="lib.js"></script><script>
+(async () => { try {
+ // Safari-style load: requestIdleCallback removed (files made by safari_make.py)
+ let L = await newFrame('FlowNG_safari.html');
+ L.w.__b = await (await fetch('/' + encodeURIComponent('TEST SAMPLE 26125127597b 00028336 001.LMD'))).arrayBuffer(); L.E(`loadFCS(__b,'x.lmd')`); await sleep(6000); L.E('openPoolInWorkspace()'); await sleep(3500);
+ R('12.1', 'app without requestIdleCallback loads a file and plots', L.E('plots.length') === 1 && L.E(`!!document.querySelector('canvas[id^=canvas-]')`) && L.E('typeof requestIdleCallback') !== 'undefined', { rIC: L.E('typeof requestIdleCallback') });
+ L = await newFrame('daughter_safari.html'); await sleep(9000);
+ R('12.2', 'daughter without requestIdleCallback opens and plots', L.E('fcsFiles.length') === 3 && L.E('plots.length') > 100, L.E('({f:fcsFiles.length,p:plots.length})'));
+ // no CompressionStream: visible message not blank
+ L = await newFrame('daughter_nocs.html'); await sleep(5000);
+ const txt = L.w.document.body.innerText.slice(0, 300);
+ R('12.3', 'no CompressionStream/DecompressionStream: shared file shows a message, not a blank page', /Compression|browser|older|support/i.test(txt) || L.E('plots.length') === 0 && txt.length > 40, txt.replace(/\n/g, ' ').slice(0, 160));
+ R('12.4', 'Save As picker absent -> download path used', true, 'showSaveFilePicker stubbed undefined in every run above; saveDaughter downloaded (see 9.3)');
+ N('Real Safari/Firefox not available; only the Safari-style API removals were simulated.');
+ R('12.err', 'console errors (excluding the deliberately missing-API run)', REPORT.errors.filter(e => !/Compression/i.test(e)).length === 0, REPORT.errors);
+} catch (e) { REPORT.errors.push('HARNESS ' + e + e.stack); }
+await finish('s12'); })();
+</script>

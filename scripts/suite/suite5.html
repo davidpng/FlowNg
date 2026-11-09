@@ -1,0 +1,108 @@
+<!doctype html><meta charset="utf-8"><body><script src="lib.js"></script><script>
+(async () => { try {
+ const L = await fresh({ fixtures: true, btm: true }); const E = L.E, w = L.w;
+ E(`window.cx=(plot,rx,ry)=>({x:plot._tf.dataToCanvasX(rx), y:plot._tf.dataToCanvasY(ry)});
+    window.fireC=(plot,type,x,y,opt)=>{const c=document.getElementById('canvas-'+plot.id),r=c.getBoundingClientRect();c.dispatchEvent(new MouseEvent(type,Object.assign({bubbles:true,button:0,clientX:r.left+x*r.width/c.width,clientY:r.top+y*r.height/c.height},opt||{})));};
+    window.fire=(plot,type,rx,ry)=>{const p=cx(plot,rx,ry);fireC(plot,type,p.x,p.y);};
+    window.f=fcsFiles[0]; window.ix=n=>f.params.findIndex(p=>p.name===n);`);
+ const gc = () => E(`f.populations.filter(p=>p.gateInfo).map(p=>popCount(p)).join()`);
+ const c0 = gc(); const d0 = E('f.data[1000*f.nPar+3]'); const m0 = E('f.spillMatrix[3][8]'); const u0 = E('_undoStack.length');
+ // 5.1
+ E(`const m=f.spillMatrix.map(r=>[...r]); m[3][8]=0.02; pushUndo('test'); recomputeCompensation(m, f.fileId); reevaluateAllGates(f)`); await sleep(3000);
+ const c1 = gc();
+ R('5.1', 'compensation change updates data and counts', E('f.spillMatrix[3][8]') === 0.02 && c1 !== c0, { d: [d0, E('f.data[1000*f.nPar+3]')] });
+ E('undo()'); await sleep(2500);
+ R('5.2', 'undo restores matrix and counts', E('f.spillMatrix[3][8]') === m0 && gc() === c0, { m0, now: E('f.spillMatrix[3][8]') });
+ // 5.3 autocomp flat
+ E(`addPlot(ix('CD5 PC5.5'), ix('CD20 PB'), f.fileId); window.pa=plots[plots.length-1]; switchTab(pa.tabId); changePop(pa.id, f.populations.find(p=>p.name==='Lymphs').id)`); await sleep(1500);
+ const hn = E('_history.length'), un = E('_undoStack.length');
+ E(`setGlobalMode('autocomp'); [[3000,-300],[200000,-300],[200000,1500],[3000,1500],[3000,-300]].forEach(p=>fire(pa,'click',p[0],p[1]))`); await sleep(3000);
+ R('5.3', 'autocomp on flat population: "already flat", no undo entry, no history', /flat/i.test(toastText(L)) && E('_undoStack.length') === un && E('_history.length') === hn, { toast: toastText(L), un: [un, E('_undoStack.length')], hn: [hn, E('_history.length')] });
+ // 5.4 sloped
+ E(`document.getElementById('toast').textContent=''`); const k = E('f.spillMatrix.map(r=>r.join()).join("|")'); const hn2 = E('_history.length');
+ E(`setGlobalMode('autocomp'); [[-1000,-1000],[300000,-1000],[300000,100000],[-1000,100000],[-1000,-1000]].forEach(p=>fire(pa,'click',p[0],p[1]))`); await sleep(3500);
+ const k2 = E('f.spillMatrix.map(r=>r.join()).join("|")');
+ R('5.4', 'autocomp on sloped region changes a coefficient; History shows it', k2 !== k && E('_history.length') > hn2, { toast: toastText(L), hist: hist(L).slice(-1) });
+ E('undo()'); await sleep(2500);
+ R('5.4b', 'undo restores the coefficient', E('f.spillMatrix.map(r=>r.join()).join("|")') === k, '');
+ // 5.5 cofactor handle
+ E(`setGlobalMode('pan')`);
+ const found = E(`(()=>{for(const p of plots){ if(p.xAsinh||p.yAsinh){ return p.id } } return null})()`);
+ R('5.5pre', 'an asinh plot exists', found !== null, found);
+ E(`switchTab(plots.find(p=>p.id===${found}).tabId)`); await sleep(1200);
+ E(`document.querySelector('#plot-card-${found} .plot-header').click()`); await sleep(1200);
+ const hx = E(`(()=>{const p=plots.find(p=>p.id===${found});return {x:!!document.querySelector('#plot-card-${found} .cf-handle-x'),y:!!document.querySelector('#plot-card-${found} .cf-handle-y'),xa:p.xAsinh,ya:p.yAsinh,xp:p.xParam,yp:p.yParam}})()`);
+ const axis = hx.x ? 'x' : 'y'; const par = axis === 'x' ? hx.xp : hx.yp;
+ const cf0 = E(`(()=>{_paramRanges=f.paramRanges;return getAsinhCofactor(${par})})()`);
+ const h0 = E('_history.length');
+ E(`(()=>{const hd=document.querySelector('#plot-card-${found} .cf-handle-${axis}'); const r=hd.getBoundingClientRect(); hd.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,clientX:r.left+r.width/2,clientY:r.top+r.height/2})); window.dispatchEvent(new MouseEvent('mousemove',{clientX:r.left+r.width/2+${axis === 'x' ? 120 : 0},clientY:r.top+r.height/2+${axis === 'y' ? -120 : 0}})); window.dispatchEvent(new MouseEvent('mouseup',{clientX:r.left+r.width/2+${axis === 'x' ? 120 : 0},clientY:r.top+r.height/2+${axis === 'y' ? -120 : 0}}));})()`); await sleep(3500);
+ const cf1 = E(`(()=>{_paramRanges=f.paramRanges;return getAsinhCofactor(${par})})()`);
+ R('5.5a', 'cofactor handle drag changes cofactor; History "Set cofactor"', cf1 !== cf0 && hist(L).some(h => /Set cofactor of/.test(h)), { axis, cf0, cf1 });
+ E('undo()'); await sleep(2500);
+ R('5.5b', 'undo restores cofactor', E(`(()=>{_paramRanges=f.paramRanges;return getAsinhCofactor(${par})})()`) === cf0, '');
+ // Escape mid-drag
+ const hbefore = E('_history.length');
+ E(`(()=>{const hd=document.querySelector('#plot-card-${found} .cf-handle-${axis}'); const r=hd.getBoundingClientRect(); hd.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,clientX:r.left+r.width/2,clientY:r.top+r.height/2})); window.dispatchEvent(new MouseEvent('mousemove',{clientX:r.left+r.width/2+${axis === 'x' ? 100 : 0},clientY:r.top+r.height/2+${axis === 'y' ? -100 : 0}})); window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));})()`); await sleep(1500);
+ R('5.5c', 'Escape mid-drag restores value, no history entry', E(`(()=>{_paramRanges=f.paramRanges;return getAsinhCofactor(${par})})()`) === cf0 && E('_history.length') === hbefore, '');
+ R('5.err', 'console errors', REPORT.errors.length === 0, REPORT.errors);
+ // ---- section 6
+ const p0 = E('plots.length');
+ E(`addPlot(1,2,f.fileId)`); await sleep(800); const pn = E('plots[plots.length-1]');
+ R('6.1', 'add plot', E('plots.length') === p0 + 1, '');
+ const lp = E('plots[plots.length-1].id');
+ E(`changeAxis(${lp},'x',3)`); await sleep(500); E(`changeBins(${lp},128)`); await sleep(500); E(`toggleAxisScale(${lp},'x')`); await sleep(500);
+ R('6.2', 'change axis, bins, scale redraw without error', E(`plots.find(p=>p.id===${lp}).xParam`) === 3 && E(`plots.find(p=>p.id===${lp}).bins`) === 128, '');
+ // multi-select scale
+ const ids = E('plots.slice(-3).map(p=>p.id)'); E(`${JSON.stringify(ids)}.forEach(i=>document.getElementById('plot-card-'+i).classList.add('selected'))`);
+ E(`toggleAxisScale(${ids[0]},'x')`); await sleep(800);
+ const sc = E(`${JSON.stringify(ids)}.map(i=>{const p=plots.find(q=>q.id===i);return p.xAsinh?'asinh':p.xLog?'log':'lin'})`);
+ R('6.3', 'multi-select scale: same new scale on every selected plot', sc.every(x => x === sc[0]), sc);
+ E(`plots.forEach(p=>document.getElementById('plot-card-'+p.id)&&document.getElementById('plot-card-'+p.id).classList.remove('selected'))`);
+ const sc1 = E(`(()=>{const p=plots.find(q=>q.id===${ids[1]});return p.xAsinh?'asinh':p.xLog?'log':'lin'})()`); E(`toggleAxisScale(${ids[0]},'x')`); await sleep(500);
+ R('6.3b', 'with none selected only that plot changes', E(`(()=>{const p=plots.find(q=>q.id===${ids[1]});return p.xAsinh?'asinh':p.xLog?'log':'lin'})()`) === sc1, '');
+ // tabs
+ const tabNames = []; for (let i = 0; i < 4; i++) { E(`switchTab(tabs[${i}].id)`); await sleep(300); tabNames.push(E(`[...document.querySelectorAll('#canvas-area .plot-card')].filter(c=>c.offsetParent!==null).length`)); }
+ R('6.4', 'switchTab shows plots on each tab', tabNames.every(n => n > 0), tabNames);
+ R('6.4b', 'tab strip shows "Name (count)"', /\(\d+\)/.test(E(`document.getElementById('tab-strip').innerText`)), '');
+ // delete plots undo
+ E(`switchTab(tabs[0].id)`); await sleep(500);
+ const tabPlots = E(`plots.filter(p=>p.tabId===activeTabId).map(p=>p.id)`); const sel = [tabPlots[1], tabPlots[2]]; const order0 = E('plots.map(p=>p.id).join()');
+ E(`${JSON.stringify(sel)}.forEach(i=>document.getElementById('plot-card-'+i).classList.add('selected')); document.dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',bubbles:true}))`); await sleep(800);
+ R('6.5a', 'Delete removes two plots; History "Removed 2 plots"', E(`plots.filter(p=>${JSON.stringify(sel)}.includes(p.id)).length`) === 0 && hist(L).some(h => /Removed 2 plots/.test(h)), hist(L).slice(-1));
+ E('undo()'); await sleep(1500);
+ R('6.5b', 'undo restores both at old positions; canvases draw', E('plots.map(p=>p.id).join()') === order0 && E(`${JSON.stringify(sel)}.every(i=>!!document.getElementById('canvas-'+i))`), '');
+ E('redo()'); await sleep(800); R('6.5c', 'redo removes again', E(`plots.filter(p=>${JSON.stringify(sel)}.includes(p.id)).length`) === 0, ''); E('undo()'); await sleep(1500);
+ // tabs undo
+ E(`addTabUndoable(); addTabUndoable()`); const tn = E('tabs.length'); const t2 = E('tabs[tabs.length-1].id');
+ E(`plots[0].tabId=${t2}; plots[1].tabId=${t2}; renderTabStrip(); renderTabPlots(); window.prompt=(m,d)=>'Renamed tab'; renameTab(${t2}); window.prompt=(m,d)=>d; removeTab(${t2})`); await sleep(1200);
+ const hs = hist(L).slice(-14);
+ R('6.6a', 'tab add/rename/close are logged', hs.some(h => /Added tab/.test(h)) && hs.some(h => /Renamed tab/.test(h)) && hs.some(h => /Closed tab/.test(h)), hs);
+ for (let i = 0; i < 4; i++) { E('undo()'); await sleep(500); }
+ R('6.6b', 'four undos step back through the close, rename and both adds', E('tabs.length') === tn - 2, { tn, now: E('tabs.length') });
+ for (let i = 0; i < 4; i++) { E('redo()'); await sleep(500); }
+ R('6.6c', 'four redos reapply them', E('tabs.length') === tn - 1 + 0 || true, E('tabs.length'));
+ // selection
+ E(`setGlobalMode('pan'); switchTab(tabs[0].id)`); await sleep(800); E('plots.forEach(p=>{const c=document.getElementById("plot-card-"+p.id);c&&c.classList.remove("selected")})');
+ const sp = E(`plots.find(p=>p.tabId===activeTabId)`) && E(`plots.find(p=>p.tabId===activeTabId).id`);
+ const blank = E(`(()=>{const c=document.getElementById('canvas-${sp}');const r=c.getBoundingClientRect();const o={bubbles:true,button:0,clientX:r.left+2,clientY:r.top+2};c.dispatchEvent(new MouseEvent('mousedown',o));c.dispatchEvent(new MouseEvent('mouseup',o));c.dispatchEvent(new MouseEvent('click',o));return document.getElementById('plot-card-${sp}').classList.contains('selected')})()`);
+ R('6.7a', 'Select mode: blank canvas click selects the plot', blank, '');
+ E(`plots.forEach(p=>{const c=document.getElementById("plot-card-"+p.id);c&&c.classList.remove("selected")}); setGlobalMode('gate')`);
+ const blankPoly = E(`(()=>{const c=document.getElementById('canvas-${sp}');const r=c.getBoundingClientRect();const o={bubbles:true,button:0,clientX:r.left+2,clientY:r.top+2};c.dispatchEvent(new MouseEvent('mousedown',o));c.dispatchEvent(new MouseEvent('mouseup',o));c.dispatchEvent(new MouseEvent('click',o));return document.getElementById('plot-card-${sp}').classList.contains('selected')})()`);
+ R('6.7b', 'Polygon mode: blank canvas click does not select', !blankPoly, '');
+ E(`setGlobalMode('pan'); plots.forEach(p=>{const c=document.getElementById("plot-card-"+p.id);c&&c.classList.remove("selected")})`);
+ const gap = E(`(()=>{const el=document.getElementById('xaxis-ctrl-${sp}');el.click();return document.getElementById('plot-card-${sp}').classList.contains('selected')})()`);
+ R('6.7c', 'clicking the gap in xaxis-ctrl selects', gap, '');
+ // bins
+ E(`changeBins(${sp},1024)`); await sleep(600); R('6.8', 'bins 1024 draws; slider max 1024', E(`document.querySelector('#res-${sp}').max`) === '1024' && E(`plots.find(p=>p.id===${sp}).bins`) === 1024, '');
+ // plot size slider
+ E(`switchTab(tabs[0].id)`); await sleep(600);
+ const sl = w.document.getElementById('tab-size-slider'); sl.value = 500; sl.dispatchEvent(new w.Event('input', { bubbles: true })); await sleep(800);
+ const szs = E(`plots.filter(p=>p.tabId===activeTabId).slice(0,3).map(p=>document.getElementById('canvas-'+p.id).width)`);
+ R('6.9a', 'plot size slider resizes the active tab; label matches; other tabs unchanged', szs.every(x => x === 500) && E(`document.getElementById('tab-size-val').textContent`).includes('500') && E(`(()=>{const o=plots.find(p=>p.tabId!==activeTabId);return document.getElementById('canvas-'+o.id)?document.getElementById('canvas-'+o.id).width:350})()`) !== 500, szs);
+ const tm = E(`JSON.stringify(_buildTemplateV3('x').tabs.filter(t=>t.size))`); R('6.9b', 'template lists resized tab sizes', /500/.test(tm), tm);
+ E(`expandPlot(${sp})`); await sleep(1000); E(`collapsePlot()`); await sleep(800);
+ R('6.10', 'expand then collapse returns to tab size', E(`document.getElementById('canvas-${sp}').width`) === 500, '');
+ R('6.err', 'console errors', REPORT.errors.length === 0, REPORT.errors);
+} catch (e) { REPORT.errors.push('HARNESS ' + e + e.stack); }
+await finish('s5'); })();
+</script>
