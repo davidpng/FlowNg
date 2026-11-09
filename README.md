@@ -32,7 +32,7 @@ The demo runs in your browser from GitHub Pages; the page is static and nothing 
 - **Tabs**: named tabs with plot counts, right-click to rename, drag a plot onto a tab to move it
 
 ### ⚙️ Advanced Analysis Capabilities
-- **Automatic arcsinh cofactor optimization**: Uses OTflow algorithm (Folcarelli et al., 2022) to automatically calculate optimal transformation cofactors for fluorescent parameters
+- **Arcsinh cofactors**: every fluorescent channel starts at cofactor 300 (FCS and LMD alike). Change one by dragging its marker or typing a value, apply a template (which takes over from manual changes), or ask for OTflow suggestions (Folcarelli et al., 2022) in Global Settings
 - **Spectral compensation**: Apply compensation matrices from FCS `$SPILLOVER` keywords with interactive live adjustment
 - **Multiple axis scales**: LOG, LINEAR, and ASINH transformations with per-plot or global configuration
 - **Level-of-detail (LOD) rendering**: Subsampled preview rendering with automatic high-resolution upgrade during idle time for smooth interaction with large datasets
@@ -291,8 +291,8 @@ Click the **LIN / LOG / ASINH** button next to an axis's parameter drop-down to 
 
 ### Advanced Features
 
-#### Automatic Cofactor Optimization
-FlowNG uses the **OTflow algorithm** (Folcarelli et al., 2022) to automatically calculate optimal transformation cofactors for arcsinh scaling. The algorithm:
+#### Cofactor Optimization (OTflow, on request)
+Files open at cofactor **300** and are never changed automatically. Only a manual correction, a template you apply (the template wins over earlier manual corrections), or **⚙ Settings → Suggest cofactors with OT-flow** puts a different value on a channel. That button runs the **OTflow algorithm** (Folcarelli et al., 2022) on every fluorescent channel of the open FCS files (LMD files are skipped because it is unreliable on them), replaces manual cofactors, and is one undo step. The algorithm:
 - Analyzes the distribution of fluorescent parameters using kernel density estimation (KDE)
 - Evaluates normality using Jarque-Bera and Bartlett statistics
 - Selects cofactors that minimize deviation from normality
@@ -556,7 +556,7 @@ A: Every plot is a binned density. Each bin takes the colour of the populations 
 A: Yes. **Export Shareable HTML** writes one HTML with the event data, compensation, gates and plots. Tick "Locked viewer" to remove the loading, importing and exporting code from the file so recipients can only gate and view.
 
 **Q: How do I change an axis's cofactor?**  
-A: FlowNG computes a starting cofactor for every fluorescent channel when a file loads (the OTflow algorithm). To change one, select the plot and drag the blue marker on its arcsinh axis, or right-click the plot and type a value.
+A: Every fluorescent channel starts at 300 when a file loads. To change one, select the plot and drag the blue marker on its arcsinh axis, or right-click the plot and type a value.
 
 **Q: Can I load several templates at once?**  
 A: Yes. Each imported template becomes a workspace with its own files, tabs and plots; switch with the workspace strip. Load all your files first (they wait in the Pool), then import the templates one by one.

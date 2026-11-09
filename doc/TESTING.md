@@ -330,3 +330,15 @@ Run: `/usr/bin/python3 scripts/test_check.py shared_full.html shared_locked.html
 | 17.18 | Same with the box ticked | `checkNotice: false`; the dialog says recipients will not be reminded and points to `scripts/check_shared.py`; opening the file shows no notice; the file still passes the Check page |
 | 17.19 | Export Shareable HTML, **Anonymise** (ticked by default) with a History entry present | No `created`, no `exported` in the template or workspaces, History empty (bundle and each workspace), and no ISO date-time anywhere in the file; unticked, they are kept |
 | 17.16 | After a PR is merged | Rebuilding on `main` (without `--tip`) lists the merge commit with the same hash the PR's manifest had as `pending` |
+
+## 18. Cofactors
+
+| # | Check | Expected |
+|---|---|---|
+| 18.1 | Load an LMD file and an FCS file | Every channel's cofactor is 300; `paramRanges` is empty; no OT-flow worker message is sent while loading (`otflowCofactors` is null) |
+| 18.2 | Make a template with channel A at 700; then set A to 900 and channel B to 500 by hand; re-apply the template | A is 700 (template wins), B is back to 300 (not in the template) |
+| 18.3 | After applying a template, change a cofactor by hand | The manual value is kept |
+| 18.4 | Global Settings, **Suggest cofactors with OT-flow** with an FCS file and an LMD file open | One OT-flow job per fluorescent channel of the FCS file only; the toast says how many were set; the LMD file is unchanged; plots and gates update |
+| 18.5 | Undo after 18.4 | The FCS file's cofactors return to 300 |
+| 18.6 | Shared locked file | Global Settings has no OT-flow button |
+

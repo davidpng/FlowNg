@@ -806,7 +806,7 @@
       <kbd>Slider</kbd> — density bins per axis (32–1024; high values suit the expanded view)<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">ARCSINH COFACTOR</div>
       1. Click the plot's <b>top bar</b> (the row with the population menu and bins slider), or any empty space on the plot; the plot gets a blue outline<br>
-      2. With <kbd>Select</kbd> active, a blue marker appears on each <b>ASINH</b> axis: drag it along the axis to set that channel's cofactor live<br>
+      2. With <kbd>Select</kbd> active, a blue marker appears on each <b>ASINH</b> axis: drag it along the axis to set that channel's cofactor live (files open at 300)<br>
       <kbd>Esc</kbd> while dragging cancels; the change is undoable and appears in History<br>
       <kbd>Right-click</kbd> the plot to type an exact value<br>
       No marker? The plot is not selected, another tool is active, or that axis is not ASINH<br>
@@ -2076,10 +2076,9 @@ function getAsinhCofactor(paramIdx) {
   const pr = _paramRanges.get(paramIdx);
   return (pr && pr.asinhCofactor != null) ? pr.asinhCofactor : DEFAULT_ASINH_COFACTOR;
 }
-// The cofactor a channel starts with: the OTflow optimum for this file, else the global default.
+// The cofactor a channel starts with: the global default (300 unless changed in Global Settings).
 function defaultCofactor(fcsFile, paramIdx) {
-  const o = fcsFile.otflowCofactors;
-  return (o && !isNaN(o[paramIdx])) ? o[paramIdx] : DEFAULT_ASINH_COFACTOR;
+  return DEFAULT_ASINH_COFACTOR;
 }
 // Returns the active file's data for the current render context
 function getContextFile() {
@@ -2270,6 +2269,7 @@ function loadFCS(buffer, filename) {
   }
 }
 
+const OTFLOW_ON_LOAD = false;   // cofactors start at 300; OT-flow is a Global Settings action
 // Spawns a pool of OTflow workers (one per CPU core, max 8) to compute cofactors
 // for all fluorescent parameters in parallel from the main thread.
 function startOTflowPool(parsedMsg) {
@@ -2285,13 +2285,11 @@ function startOTflowPool(parsedMsg) {
   const fluorParams = [];
   for (let p = 0; p < nPar; p++) { if (isAsinh[p]) fluorParams.push(p); }
 
-  // LMD files: skip OTflow entirely and use a fixed cofactor of 300 for all
-  // fluorescent channels. OTflow produces unreliable results on Beckman Coulter
-  // LMD data and the extra computation is wasted.
-  if (version.startsWith('LMD')) {
-    const cofactors = new Float32Array(nPar).fill(NaN);
-    for (const p of fluorParams) cofactors[p] = 300;
-    finalizeFCSLoad(data, colMins, colMaxs, cofactors,
+  // Files always start at the global default cofactor (300). OT-flow runs only when asked for in Global Settings
+  // (startOTflowSuggest); on LMD data it is unreliable and is never run. The rest of this function is the
+  // old on-load optimisation, kept for reference and switched off by OTFLOW_ON_LOAD.
+  if (!OTFLOW_ON_LOAD || version.startsWith('LMD')) {
+    finalizeFCSLoad(data, colMins, colMaxs, null,
                     params, nEvents, nPar, meta, version, compensated, filename,
                     rawData, spillMatrix, spillParamIdx);
     return;
@@ -2432,15 +2430,61 @@ async function loadFCSFallback(buffer, filename) {
     showToast('Error parsing file: ' + e.message);
   }
 }
+
+// OT-flow cofactor suggestions, run only when asked for in Global Settings. Applies to every fluorescent channel of the open
+// FCS files (LMD files are skipped: OT-flow is unreliable on them), replacing any manual cofactor, as one undo step.
+function startOTflowSuggest() {
+  const files = fcsFiles.filter(f => f.data && !String(f.version || '').startsWith('LMD'));
+  if (!files.length) { showToast(fcsFiles.length ? 'OT-flow is not used for LMD files (cofactor stays 300)' : 'Load a file first', 4000); return; }
+  const isFluor = p => !/\bFS[CH]\b|\bSS[CH]\b|FSC|SSC|\bTIME\b/.test((p.name + ' ' + (p.longName || '')).toUpperCase());
+  const jobs = [];
+  files.forEach(f => f.params.forEach((p, i) => { if (isFluor(p)) jobs.push({ f, p: i }); }));
+  if (!jobs.length) { showToast('No fluorescent channels found'); return; }
+  const workerSrc = document.getElementById('parse-worker-src').textContent;
+  const results = new Map();     // file -> Float32Array of suggestions
+  files.forEach(f => results.set(f, new Float32Array(f.nPar).fill(NaN)));
+  let next = 0, done = 0;
+  const finish = () => {
+    hideProgress();
+    pushUndo('Suggested cofactors with OT-flow');
+    let n = 0;
+    files.forEach(f => {
+      const sug = results.get(f);
+      f.otflowCofactors = sug;
+      for (let p = 0; p < f.nPar; p++) {
+        if (!isNaN(sug[p]) && sug[p] > 0) { f.paramRanges.set(p, { ...(f.paramRanges.get(p) || {}), asinhCofactor: sug[p] }); n++; }
+      }
+    });
+    invalidateSpatialCache(true);
+    files.forEach(f => reevaluateAllGates(f));
+    markAllDirty(); renderAllPlots();
+    showToast(`OT-flow set ${n} cofactor(s)`, 4000);
+  };
+  const run = () => {
+    if (next >= jobs.length) return;
+    const { f, p } = jobs[next++];
+    const col = new Float32Array(f.nEvents);
+    for (let e = 0; e < f.nEvents; e++) col[e] = f.data[e * f.nPar + p];
+    const url = URL.createObjectURL(new Blob([workerSrc], { type: 'application/javascript' }));
+    const w = new Worker(url);
+    const end = cf => {
+      URL.revokeObjectURL(url); w.terminate();
+      if (cf != null) results.get(f)[p] = cf;
+      done++;
+      showProgress(Math.round(100 * done / jobs.length), `OT-flow: optimizing cofactors (${done}/${jobs.length} channels)…`);
+      if (done === jobs.length) finish(); else run();
+    };
+    w.onmessage = ev => { if (ev.data.type === 'otflow_result') end(ev.data.cofactor); };
+    w.onerror = () => end(null);
+    w.postMessage({ mode: 'otflow', col: col.buffer, p, nEvents: f.nEvents, mcIter: 7 }, [col.buffer]);
+  };
+  showProgress(1, 'OT-flow: optimizing cofactors…');
+  for (let i = 0; i < Math.min(navigator.hardwareConcurrency || 4, 8, jobs.length); i++) run();
+}
 /*@lite:end*/
 function addFileToSession(fileObj) {
-  // Seed per-file param ranges from OTflow cofactors
-  if (fileObj.otflowCofactors) {
-    for (let p = 0; p < fileObj.nPar; p++) {
-      const cf = fileObj.otflowCofactors[p];
-      if (!isNaN(cf) && cf > 0) fileObj.paramRanges.set(p, { asinhCofactor: cf });
-    }
-  }
+  // Cofactors are not seeded here: every channel starts at the global default (300). Only a manual correction, an OT-flow
+  // run requested in Global Settings, or an applied template puts a per-channel value in paramRanges.
 
   // Create root population with globally unique ID (never resets popIdCounter)
   const rootPop = {
@@ -6652,6 +6696,12 @@ function showGlobalSettingsDialog() {
         <button onclick="applyGlobalAsinhCofactor()" style="width:100%;padding:4px;font-size:10px">Apply Cofactor to All Plots</button>
       </div>
 
+      ${typeof startOTflowSuggest === 'function' ? `<div style="border-bottom:1px solid var(--border2);padding-bottom:8px">
+        <label style="display:block;font-size:10px;color:var(--text2);margin-bottom:4px">OT-flow cofactor suggestions</label>
+        <div style="font-size:9px;color:var(--text2);margin-bottom:4px">Files open at cofactor 300 and are never changed automatically. This computes a suggested cofactor for every fluorescent channel of the open FCS files (not LMD files) and applies it, replacing any manual cofactor. Can be slow on large files. Undoable.</div>
+        <button onclick="document.getElementById('global-settings-modal').remove();startOTflowSuggest()" style="width:100%;padding:4px;font-size:10px">Suggest cofactors with OT-flow</button>
+      </div>` : ''}
+
       <div style="border-bottom:1px solid var(--border2);padding-bottom:8px">
         <label style="display:block;font-size:10px;color:var(--text2);margin-bottom:4px">Min Percentile (%)</label>
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
@@ -7755,6 +7805,8 @@ function _applyTemplateV3(tmpl, fileMap) {
     const rootPop = fileObj.populations.find(p => p._isAll);
     const rootPopId = rootPop ? rootPop.id : 0;
 
+    // A template dominates manual corrections: cofactors start again from the default, then the template's own are set.
+    fileObj.paramRanges.forEach(pr => { delete pr.asinhCofactor; });
     // Restore param ranges FIRST: gate membership depends on cofactors / axis ranges
     if (tf.paramRanges) {
       Object.entries(tf.paramRanges).forEach(([pName, pr]) => {
