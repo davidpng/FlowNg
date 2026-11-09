@@ -142,3 +142,34 @@ Open each in a throwaway browser profile. An alert box, a console error mentioni
 3. For sensitive data, work offline (or with the network blocked, 3.3) and close the tab when done.
 4. Rename tubes and leave "include metadata" off when sharing; run the identifier scan (3.4) on what you send.
 5. Report problems at https://github.com/davidpng/FlowNg/issues, without attaching patient data.
+
+## 5. Roadmap: making shared HTML files safe to open
+
+Goal: students and proficiency-testing sites can open a single shared HTML file from many different authors without having to trust the author, and without per-author keys.
+
+**Principle.** Every genuine shared file is released FlowNG code plus one data block. A central check can accept a file if (a) the code outside the data block is exactly a released build, and (b) the data block is only data. Authors can then stay anonymous. A file cannot vouch for itself (any check inside it can be edited out), so the check lives at a trusted address that the repo owner controls.
+
+**Decisions made**
+- Single-file sharing stays. Files come from teachers and proficiency sites; the central page and the sites' own publishing step are the channel.
+- A network connection for the check is acceptable. The check runs in the browser; nothing is uploaded.
+- Old shared files must keep working. Versions whose files cannot be reproduced from git history are unsupported (they show red).
+- Author attribution is optional and off by default; anonymity matters for proficiency testing.
+
+**Phases**
+1. **Normaliser and manifest.** A canonical form of a shared file (data block and title removed, HTML parsed to a stable token stream), hashed with SHA-256. A manifest lists the hash of every reproducible past version in each variant (full, locked), with a data-rules level: `strict` for builds before the escaping fix (`eb00718`, names in the data block must not contain `< > " ' &`), `standard` after. The manifest is append-only; a revocation list is separate.
+2. **Command-line checker** (`scripts/check_shared.py`) and tamper tests: injected script, event-handler attribute, extra tag, modified code, hostile data block, unknown version.
+3. **Check page** (one HTML file, hosted from the repo's GitHub Pages): drop a file, get a large pass or fail, the reason, and an **Update this file** button that re-wraps the validated data in the current code. Fetches the manifest fresh each time.
+4. **Content Security Policy and Trusted Types** in the app (new version, new manifest entry): no network access and no unsafe DOM sinks, so a passing file cannot send data out even if a parser bug is triggered.
+5. **Share dialog:** anonymise on by default (no timestamps, History text, workspace names that could identify an author or site), ready-to-paste text with the Check page address, and optional signing (Ed25519; the file carries only the public key, a signature over the data block and an optional display name; the Check page shows it if present and never requires it).
+6. **Protect the source of trust:** hardware-key two-factor, branch protection and `CODEOWNERS` for the manifest and Check page, signed tags, release attestations, and a revocation list for versions that cannot be made safe.
+
+**Limits (tell users plainly)**
+- The check protects people who use it or get files from the central place. A bad file sent with "skip the check" is still a risk.
+- A lookalike Check page is possible, so state the one official address everywhere.
+- The manifest is the crown jewel: if it is altered, bad code can be approved.
+- Parser bugs in the data path remain possible; the CSP limits their effect.
+- A "verified" badge inside a file proves nothing, because a tampered file would not show it.
+
+**Tests required** (see `doc/TESTING.md`, section 17): tamper tests in the command-line checker and the Check page; hostile names in the data block; an older release's file passes or fails according to the manifest and revocation list; every feature still works under the CSP.
+
+**Status:** phase 1 in progress.
