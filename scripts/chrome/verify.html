@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8"><body>
+<iframe id="f" src="/check/index.html" style="width:800px;height:600px"></iframe>
+<script>
+(async () => {
+  const out = { results: [], error: null };
+  try {
+    const f = document.getElementById('f');
+    while (!(f.contentWindow && f.contentWindow.FlowCheck)) await new Promise(r => setTimeout(r, 50));
+    const FC = f.contentWindow.FlowCheck;
+    const manifest = await (await fetch('/check/manifest.json', { cache: 'no-store' })).json();
+    const jobs = await (await fetch('/_job/jobs.json')).json();
+    for (const j of jobs) {
+      const text = new TextDecoder('utf-8').decode(await (await fetch('/_job/files/' + j.n)).arrayBuffer());
+      const v = await FC.check(text, manifest);
+      out.results.push({ n: j.n, status: v.status, reasons: v.reasons, build: v.entry ? v.entry.commit + ' ' + v.entry.date + ' ' + v.variant : '', info: v.info });
+    }
+  } catch (e) { out.error = String(e) + (e.stack || ''); }
+  await fetch('/result', { method: 'POST', body: JSON.stringify(out) });
+})();
+</script>

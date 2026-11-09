@@ -1,0 +1,59 @@
+<!doctype html><meta charset="utf-8"><body><script src="lib.js"></script><script>
+(async () => { try {
+ const ready = async (L, n = 3, pl = 100) => { const t0 = Date.now(); for (let i = 0; i < 400; i++) { if (L.E(`typeof fcsFiles!=='undefined' && fcsFiles.length===${n} && plots.length>${pl}`)) return Date.now() - t0; await sleep(250); } return -1; };
+ const T0 = Date.now(); let L = await newFrame('daughter.html'); let E = L.E, w = L.w;
+ E(`window.cap=null; const oc=URL.createObjectURL; URL.createObjectURL=b=>{cap=b;return oc(b)};`);
+ const rdy = await ready(L); const rt = Date.now() - T0;
+ const st = E(`({files:fcsFiles.length,g:fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length),plots:plots.length,save:!!document.getElementById('save-btn')&&getComputedStyle(document.getElementById('save-btn')).display!=='none',hist:!!document.getElementById('history-btn')&&getComputedStyle(document.getElementById('history-btn')).display!=='none',open:!!document.getElementById('open-btn')&&getComputedStyle(document.getElementById('open-btn')).display!=='none',imp:!!document.getElementById('import-btn')&&getComputedStyle(document.getElementById('import-btn')).display!=='none',exp:!!document.getElementById('export-btn')&&getComputedStyle(document.getElementById('export-btn')).display!=='none',share:!!document.getElementById('share-btn')&&getComputedStyle(document.getElementById('share-btn')).display!=='none',loadFCS:typeof loadFCS,importGates:typeof importGates})`);
+ R('9.1', 'daughter opens: 3 files, gates [31,41,30], 255 plots, Save+History visible, no Open/Import/Export, loadFCS undefined', rdy >= 0 && JSON.stringify(st.g) === '[31,41,30]' && st.plots === 255 && st.save && st.hist && !st.open && !st.imp && !st.exp && !st.share && st.loadFCS === 'undefined', { readyMs: rdy, sinceStartMs: rt, st });
+ R('9.1b', 'check-notice reminder shown (default export), dismissible', E(`!!document.getElementById('check-notice')`), '');
+ E(`document.getElementById('check-notice')&&document.getElementById('check-notice').querySelector('button').click()`);
+ // 9.2 changes
+ E(`window.cx=(plot,rx,ry)=>({x:plot._tf.dataToCanvasX(rx), y:plot._tf.dataToCanvasY(ry)}); window.f0=fcsFiles[0]; window.ix=n=>f0.params.findIndex(p=>p.name===n);
+    addPlot(ix('Kappa FITC'), ix('Lambda PE'), f0.fileId); window.pl=plots[plots.length-1]; switchTab(pl.tabId); changePop(pl.id, f0.populations.find(p=>p.name==='Viable').id);`); await sleep(1500);
+ E(`createQuadrant(pl, 1000, 1000)`); await sleep(2500);
+ const leaf = E(`(()=>{const kids=new Set(f0.populations.map(p=>p.parentId));const g=f0.populations.find(p=>p.gateInfo&&!p.gateInfo.quad&&!kids.has(p.id)&&!p.boolInfo);return g&&{id:g.id,name:g.name}})()`);
+ E(`window.__keep=${leaf.id}; copyGate(${leaf.id}, false); pasteGate(f0._rootPopId)`); await sleep(1200);
+ E(`deleteGateFromTree(${leaf.id}, true)`); await sleep(1200);
+ E(`const m=f0.spillMatrix.map(r=>[...r]); m[3][8]=0.0123; pushUndo('Adjusted spillover test'); recomputeCompensation(m, f0.fileId); reevaluateAllGates(f0)`); await sleep(3000);
+ const sb = E(`document.getElementById('save-btn').textContent`); const hh = hist(L);
+ R('9.2', 'Save shows "Save changes •"; History lists each change', /Save changes/.test(sb) && /•/.test(sb) && hh.length >= 4, { sb, hist: hh.slice(-6) });
+ // 9.3 save
+ const t3 = Date.now(); E('window.__s=false; saveDaughter().then(()=>{__s=true})'); for (let i = 0; i < 60 && !E('__s'); i++) await sleep(500); const saveMs = Date.now() - t3;
+ const savedSize = w.cap ? w.cap.size : 0; const sbtn = E(`document.getElementById('save-btn').textContent`);
+ R('9.3', 'saveDaughter: blob about original size; button back to "Save"; toast names file', savedSize > 3.5e6 && !/•/.test(sbtn) && toastText(L).length > 0, { MB: (savedSize / 1048576).toFixed(2), sbtn, toast: toastText(L), saveMs });
+ const savedText = await w.cap.text();
+ // 9.4 reopen saved
+ const L2 = await newFrame(URL.createObjectURL(new Blob([savedText], { type: 'text/html' }))); const E2 = L2.E;
+ const rdy2 = await ready(L2); await sleep(1500);
+ const s4 = E2(`({coef:fcsFiles[0].spillMatrix[3][8], prior:_history.some(h=>h.prior===true), dirty:_dirty, hist:_history.length, copy:fcsFiles[0].populations.some(p=>/ copy/.test(p.name)), quad:fcsFiles[0].populations.filter(p=>p.gateInfo&&p.gateInfo.quad).length, pasted:fcsFiles[0].populations.filter(p=>/ copy/.test(p.name)).length, orig:fcsFiles[0].populations.filter(p=>p.name===${JSON.stringify(leaf.name)}).length})`);
+ R('9.4', 'saved copy: changes present, coefficient preserved, history prior, not dirty', rdy2 >= 0 && s4.coef === 0.0123 && s4.prior && s4.dirty === false && s4.copy && s4.quad >= 4, { rdy2, s4 });
+ // 9.5 reset to author
+ const gBefore = E2(`fcsFiles[0].populations.filter(p=>p.gateInfo).length`);
+ E2('resetToAuthorGates()'); await sleep(4500);
+ const s5 = E2(`({coef:fcsFiles[0].spillMatrix[3][8], quad:fcsFiles[0].populations.filter(p=>p.gateInfo&&p.gateInfo.quad).length, g:fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length)})`);
+ R('9.5a', 'reset: author compensation returns, quadrant gone, gates back to [31,41,30]', s5.coef !== 0.0123 && s5.quad === 0 + 0 || JSON.stringify(s5.g) === '[31,41,30]', s5);
+ E2('undo()'); await sleep(4500);
+ R('9.5b', 'undo of reset brings working state back', E2(`fcsFiles[0].spillMatrix[3][8]`) === 0.0123, E2(`fcsFiles[0].spillMatrix[3][8]`));
+ // 9.6 second save & reopen
+ E2(`window.cap=null; const oc=URL.createObjectURL; URL.createObjectURL=b=>{cap=b;return oc(b)};`);
+ const tmpl1 = E2('JSON.stringify(_bundleObj.template)'); E2(`pushUndo('another'); fcsFiles[0].populations.find(p=>p.gateInfo&&!p.gateInfo.quad).name+=' x'`);
+ E2('window.__s=false; saveDaughter().then(()=>{__s=true})'); for (let i = 0; i < 60 && !E2('__s'); i++) await sleep(500);
+ const text2 = await L2.w.cap.text(); const L3 = await newFrame(URL.createObjectURL(new Blob([text2], { type: 'text/html' }))); await ready(L3);
+ R('9.6', 'second save reopens; author template unchanged across generations', L3.E('JSON.stringify(_bundleObj.template)') === tmpl1, '');
+ // 9.7 history modal
+ L3.E('showHistory()'); await sleep(500); const hm = L3.E(`({open:!!document.querySelector('.modal-overlay'), items:document.querySelectorAll('.modal-overlay .hist-row, .modal-overlay [class*=hist]').length})`);
+ L3.E(`document.getElementById('history-modal').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`); await sleep(300);
+ R('9.7', 'showHistory opens; Escape closes', hm.open && !L3.E(`!!document.querySelector('.modal-overlay')`), hm);
+ // 9.8 locked guard
+ const dropped = L3.E(`(()=>{const dt=new DataTransfer();dt.items.add(new File(['x'],'a.fcs'));const before=poolFiles.length+fcsFiles.length;document.body.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));return {same:poolFiles.length+fcsFiles.length===before,loadFCS:typeof loadFCS,importGates:typeof importGates}})()`);
+ R('9.8', 'locked: drop does nothing; loadFCS/importGates undefined', dropped.same && dropped.loadFCS === 'undefined' && dropped.importGates === 'undefined', dropped);
+ // 9.9 unlocked
+ const L4 = await newFrame('daughter_unlocked.html'); await ready(L4);
+ const u = L4.E(`({open:getComputedStyle(document.getElementById('open-btn')).display!=='none',imp:getComputedStyle(document.getElementById('import-btn')).display!=='none',exp:getComputedStyle(document.getElementById('export-btn')).display!=='none',share:getComputedStyle(document.getElementById('share-btn')).display!=='none',loadFCS:typeof loadFCS,spike:!!document.getElementById('spike-btn')})`);
+ R('9.9', 'unlocked daughter: Open/Import/Export/Share (and SpikeNG) present, loadFCS defined', u.open && u.imp && u.exp && u.share && u.loadFCS === 'function' && u.spike, u);
+ R('9.err', 'console errors', REPORT.errors.length === 0, REPORT.errors);
+ N('daughter open-to-ready ms (3 x ~33k events): ' + rdy + '; save ms ' + saveMs + '; reopen ms ' + rdy2);
+} catch (e) { REPORT.errors.push('HARNESS ' + e + e.stack); }
+await finish('s9'); })();
+</script>

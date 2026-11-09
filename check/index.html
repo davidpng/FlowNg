@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlowNG Check</title>
+<!-- Nothing here talks to a server except to read manifest.json (and, for "Update", ../FlowNG.html) from this same site.
+     The file you drop is read in your browser and never uploaded. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'">
+<style>
+  :root { --bg:#f6f7fb; --card:#fff; --text:#1c2030; --muted:#5b6275; --line:#d9dcea; --accent:#3b5bdb;
+          --ok:#1b7f4b; --okbg:#e6f5ec; --bad:#b3261e; --badbg:#fdeceb; --warn:#8a5a00; --warnbg:#fff4de; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#14161f; --card:#1d2030; --text:#e8eaf3; --muted:#9aa1b8; --line:#33384f; --accent:#8da2ff;
+          --ok:#6fd6a0; --okbg:#173325; --bad:#ff8d86; --badbg:#3a1a19; --warn:#ffcb70; --warnbg:#3a2d12; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 22px; }
+  #drop { border: 2px dashed var(--line); border-radius: 14px; background: var(--card); padding: 44px 20px; text-align: center;
+          cursor: pointer; transition: border-color .15s, background .15s; }
+  #drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+  #drop strong { display:block; font-size: 19px; margin-bottom: 6px; }
+  #drop span { color: var(--muted); }
+  #drop:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  input[type=file] { display: none; }
+  #result { margin-top: 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .verdict { border-radius: 14px; padding: 20px; display:flex; gap:16px; align-items:flex-start; border: 2px solid; }
+  .verdict .icon { font-size: 40px; line-height: 1; }
+  .verdict h2 { margin: 0 0 4px; font-size: 22px; }
+  .verdict p { margin: 4px 0; }
+  .v-ok { background: var(--okbg); border-color: var(--ok); color: var(--text); } .v-ok h2 { color: var(--ok); }
+  .v-bad { background: var(--badbg); border-color: var(--bad); color: var(--text); } .v-bad h2 { color: var(--bad); }
+  .v-warn { background: var(--warnbg); border-color: var(--warn); color: var(--text); } .v-warn h2 { color: var(--warn); }
+  .v-wait { background: var(--card); border-color: var(--line); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 14px 0 0; font-size: 14px; }
+  dt { color: var(--muted); } dd { margin: 0; word-break: break-all; }
+  code { font: 12.5px ui-monospace,Menlo,monospace; }
+  ul.reasons { margin: 8px 0 0 18px; padding: 0; }
+  button { font: inherit; padding: 9px 16px; border-radius: 9px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  details { margin-top: 22px; color: var(--muted); font-size: 14px; }
+  details summary { cursor: pointer; color: var(--text); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; margin-top: 14px; }
+  footer { margin-top: 28px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>FlowNG Check</h1>
+  <p class="sub">Drop a shared FlowNG analysis file here to check that it is safe to open. The file stays on your computer.</p>
+
+  <div id="drop" tabindex="0" role="button" aria-label="Choose or drop a FlowNG shared analysis file">
+    <strong>Drop the .html file here</strong>
+    <span>or click to choose it</span>
+    <input id="pick" type="file" accept=".html,.htm,text/html">
+  </div>
+
+  <p id="offline-note" class="sub" hidden></p>
+  <div id="result" aria-live="polite"></div>
+
+  <details>
+    <summary>What does this check?</summary>
+    <p>A shared FlowNG file is the FlowNG program plus one block of data. This page compares the program part of your file, letter for letter in a normalised form, with every released version of FlowNG listed in <a href="manifest.json">manifest.json</a> (only versions released on the main branch). It also checks that the data block is plain data and nothing else. Who made the file does not matter: any file built from a released version passes.</p>
+    <p><strong>A green result means</strong> the file's program code is a released FlowNG build and its data block contains data only. <strong>It does not mean</strong> the analysis itself is correct, or that a file contains no patient information.</p>
+    <p><strong>A red result means do not open the file.</strong> Ask the sender for a fresh copy from the source you trust, or download FlowNG from the official site.</p>
+    <p>Only trust this page at its official address, <code>https://davidpng.github.io/FlowNg/check/</code>. This page cannot protect you from a fake copy of itself.</p>
+  </details>
+  <footer>FlowNG is research software, not for clinical diagnostic use.</footer>
+</main>
+
+<script>
+'use strict';
+// ───────────────────────── FlowCheck: canonical form, data-block validation, verdict, update ─────────────────────────
+// The browser's own HTML parser (DOMParser) reads the file, so the check sees the page the way a browser will.
+// DOMParser creates an inert document: nothing in the dropped file runs.
+const FlowCheck = (() => {
+  // The data block as the app writes it. Its body has no "<" (the app writes it as \u003c), so it cannot hold a tag,
+  // a comment opener or a script-escape sequence, and every parser agrees where it ends.
+  const BUNDLE_RE = /<script id="flowng-bundle" type="application\/json">([^<]*)<\/script>/g;
+  const LOADER_AFTER = '\n<script id="flowng-bundle-loader"';
+  const HEADER_H = /^\s*--header-h:\s*[0-9.]+px;?\s*$/;
+
+  function splitBundle(html) {
+    const ms = [...html.matchAll(BUNDLE_RE)];
+    if (!ms.length) return { code: html, body: null, problem: null };
+    if (ms.length > 1) return { code: html, body: null, problem: 'The file has more than one data block.' };
+    const m = ms[0];
+    if (!html.startsWith(LOADER_AFTER, m.index + m[0].length))
+      return { code: html, body: null, problem: 'The data block is not where FlowNG puts it.' };
+    return { code: html.slice(0, m.index) + html.slice(m.index + m[0].length), body: m[1], problem: null };
+  }
+
+  function canonLines(code) {
+    const doc = new DOMParser().parseFromString(code, 'text/html');
+    const out = [];
+    out.push('D:' + (doc.doctype ? doc.doctype.name : ''));
+    const walk = (parent) => {
+      for (const n of parent.childNodes) {
+        if (n.nodeType === 1) {
+          const tag = n.localName, ns = n.namespaceURI;
+          let attrs = Array.from(n.attributes, a => [a.name, a.value]);
+          if (tag === 'html') attrs = attrs.filter(([k, v]) => !(k === 'style' && HEADER_H.test(v)));   // layout only, set by the app at run time
+          attrs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+          out.push('E:' + (ns === 'http://www.w3.org/1999/xhtml' ? '' : ns + ' ') + tag + ' ' + JSON.stringify(attrs));
+          if (tag === 'title' && ns === 'http://www.w3.org/1999/xhtml') { out.push('/'); continue; }   // the author's file name
+          walk(tag === 'template' ? n.content : n);
+          out.push('/');
+        } else if (n.nodeType === 3) {
+          const p = parent.localName;
+          if (p === 'script' || p === 'style') out.push('R:' + n.data);          // program text: exact
+          else { const t = n.data.replace(/\s+/g, ' ').trim(); if (t) out.push('T:' + t); }
+        } else if (n.nodeType === 8) out.push('C:' + n.data);
+      }
+    };
+    walk(doc);
+    return out;
+  }
+
+  async function sha256Hex(bytes) {
+    const d = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(d), b => b.toString(16).padStart(2, '0')).join('');
+  }
+  async function canonHash(html) {
+    const { code, body, problem } = splitBundle(html);
+    const lines = canonLines(code);
+    const hash = await sha256Hex(new TextEncoder().encode(lines.join('\n')));
+    return { hash, hasBundle: body !== null, body, problem };
+  }
+
+  // What "Locked viewer" removes from the app (same rules as the share export). Marker strings are split so this
+  // source never contains a literal marker.
+  function liteStrip(src) {
+    const js = new RegExp('/\\*@li' + 'te:begin\\*/[\\s\\S]*?/\\*@li' + 'te:end\\*/\\n?', 'g');
+    const ht = new RegExp('<!--@li' + 'te:begin-->[\\s\\S]*?<!--@li' + 'te:end-->\\n?', 'g');
+    const open = '<button class="primary" onclick="document.getElementById(\'file-input\').click()">Open FCS File</button>';
+    return src.replace(js, '').replace(ht, '').split(open).join('');
+  }
+
+  // ── data block ──
+  const MAX_FILES = 200;
+  function validateBundle(body) {
+    const problems = [];
+    let b;
+    try { b = JSON.parse(body); } catch (e) { return { ok: false, problems: ['The data block is not valid JSON.'], info: {} }; }
+    if (!b || typeof b !== 'object' || Array.isArray(b)) return { ok: false, problems: ['The data block is not a data object.'], info: {} };
+    if (typeof b.format !== 'number' || b.format < 1 || b.format > 2) problems.push('Unknown data format.');
+    if (!Array.isArray(b.files) || !b.files.length) problems.push('The data block has no files.');
+    else if (b.files.length > MAX_FILES) problems.push('The data block has an unreasonable number of files.');
+    else b.files.forEach((f, i) => {
+      if (!f || typeof f !== 'object') { problems.push(`File ${i + 1} is not a data object.`); return; }
+      if (typeof f.filename !== 'string') problems.push(`File ${i + 1} has no name.`);
+      if (!Number.isInteger(f.nEvents) || f.nEvents < 0 || !Number.isInteger(f.nPar) || f.nPar < 1 || f.nPar > 512) problems.push(`File ${i + 1} has invalid sizes.`);
+      if (!Array.isArray(f.params) || f.params.length !== f.nPar) problems.push(`File ${i + 1} parameter list does not match its size.`);
+      for (const k of ['rawData', 'data']) if (f[k] != null && (typeof f[k] !== 'string' || !/^[A-Za-z0-9+/=]*$/.test(f[k]))) problems.push(`File ${i + 1} event data is not plain encoded data.`);
+    });
+    if (b.template != null && typeof b.template !== 'object') problems.push('The template is not a data object.');
+    if (b.workspaces != null && !Array.isArray(b.workspaces)) problems.push('The workspace list is not a list.');
+    const info = {
+      name: typeof b.name === 'string' ? b.name : '',
+      files: Array.isArray(b.files) ? b.files.length : 0,
+      events: Array.isArray(b.files) ? b.files.reduce((n, f) => n + (f && Number.isInteger(f.nEvents) ? f.nEvents : 0), 0) : 0,
+      locked: !!b.sterile,
+      created: typeof b.created === 'string' ? b.created : '',
+    };
+    return { ok: problems.length === 0, problems, info };
+  }
+
+  // ── verdict ──
+  function indexManifest(m) {
+    const by = new Map();
+    for (const e of m.entries) by.set(e.hash, e);
+    const revoked = new Map((m.revoked || []).map(r => [r.hash, r.reason || 'This FlowNG version has been withdrawn.']));
+    return { by, revoked };
+  }
+  async function check(html, manifest) {
+    const { by, revoked } = indexManifest(manifest);
+    const r = await canonHash(html);
+    const v = { status: 'bad', reasons: [], entry: null, info: null, fileHash: null };
+    if (r.problem) { v.reasons.push(r.problem); return v; }
+    if (!r.hasBundle) { v.reasons.push('This is not a FlowNG shared analysis file (it has no data block). If it is the FlowNG program itself, it is not a shared file.'); return v; }
+    const rev = revoked.get(r.hash);
+    if (rev) { v.reasons.push(rev); return v; }
+    const e = by.get(r.hash);
+    if (!e) { v.reasons.push('The program code in this file is not any released version of FlowNG. It may have been changed after it was made.'); return v; }
+    v.entry = e;
+    const val = validateBundle(r.body);
+    v.info = val.info;
+    if (!val.ok) { v.reasons.push(...val.problems); return v; }
+    v.status = 'ok'; v.body = r.body; v.variant = e.variant;
+    return v;
+  }
+
+  // ── update: put the validated data block into the newest released FlowNG ──
+  async function buildUpdate(candidateBody, variant, appSource, manifest) {
+    const { by } = indexManifest(manifest);
+    const cur = await canonHash(variant === 'locked' ? liteStrip(appSource) : appSource);
+    const e = by.get(cur.hash);
+    const newest = manifest.entries.filter(x => x.variant === variant).reduce((a, b) => (!a || b.seq > a.seq ? b : a), null);   // seq = position in git history
+    if (!e || !newest || e.hash !== newest.hash) throw new Error('The current FlowNG on this site is not the newest listed release.');
+    const OPEN = '<scr' + 'ipt', CLOSE = '</scr' + 'ipt>';
+    let src = variant === 'locked' ? liteStrip(appSource) : appSource;
+    const at = src.lastIndexOf(OPEN + ' id="flowng-bundle-loader"');
+    if (at < 0) throw new Error('The current FlowNG has no loader.');
+    let name = 'Shared analysis';
+    try { const n = JSON.parse(candidateBody).name; if (typeof n === 'string' && n.trim()) name = n.replace(/[<>&"']/g, '').slice(0, 120); } catch (_) {}
+    src = src.slice(0, at) + OPEN + ' id="flowng-bundle" type="application/json">' + candidateBody + CLOSE + '\n' + src.slice(at);
+    src = src.replace(/<title>[\s\S]*?<\/title>/, () => `<title>${name} — FlowNG</title>`);
+    const again = await check(src, manifest);          // the result must itself pass, with the same data
+    if (again.status !== 'ok' || again.body !== candidateBody) throw new Error('The updated file did not pass its own check.');
+    return { text: src, name };
+  }
+
+  return { splitBundle, canonLines, canonHash, liteStrip, validateBundle, check, buildUpdate, sha256Hex };
+})();
+window.FlowCheck = FlowCheck;
+
+// ───────────────────────── page ─────────────────────────
+(() => {
+  const $ = id => document.getElementById(id);
+  const drop = $('drop'), pick = $('pick'), result = $('result');
+  let manifest = null, manifestError = null;
+  // An offline copy of this page (scripts/build_offline_check.py) carries the manifest and the current FlowNG inside it
+  // and never uses the network. The online page reads manifest.json from this site.
+  let embedded = null;
+  const emb = document.getElementById('flowcheck-embedded');
+  if (emb) { try { embedded = JSON.parse(emb.textContent); } catch (e) { manifestError = e; } }
+  const manifestReady = embedded
+    ? Promise.resolve().then(() => { manifest = embedded.manifest; })
+    : fetch('manifest.json', { cache: 'no-store' })
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(m => { if (!m || !Array.isArray(m.entries)) throw new Error('bad manifest'); manifest = m; })
+        .catch(e => { manifestError = e; });
+  manifestReady.then(() => {
+    if (embedded && manifest) {
+      const n = $('offline-note');
+      n.hidden = false;
+      n.textContent = `Offline copy. It knows the FlowNG releases up to ${manifest.generated || 'its build date'} and uses no network. A file made by a newer release shows red here until you get a newer copy of this page.`;
+    }
+  });
+
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const fmt = n => Number(n).toLocaleString();
+
+  function show(cls, icon, title, bodyHtml, extra) {
+    result.innerHTML = `<div class="verdict ${cls}"><div class="icon" aria-hidden="true">${icon}</div><div><h2>${esc(title)}</h2>${bodyHtml}</div></div>${extra || ''}`;
+  }
+
+  async function handle(file) {
+    if (!file) return;
+    show('v-wait', '⏳', 'Checking…', `<p>Reading “${esc(file.name)}” on your computer.</p>`);
+    await manifestReady;
+    if (!manifest) { show('v-bad', '⚠️', 'Cannot check right now', '<p>The list of genuine FlowNG versions could not be loaded. Check your internet connection and reload this page. Do not open the file until it has been checked.</p>'); return; }
+    let text, fileHash;
+    try {
+      const buf = await file.arrayBuffer();
+      fileHash = await FlowCheck.sha256Hex(buf);
+      text = new TextDecoder('utf-8', { fatal: false }).decode(buf);
+    } catch (e) { show('v-bad', '⚠️', 'Could not read the file', `<p>${esc(e.message)}</p>`); return; }
+    let v;
+    try { v = await FlowCheck.check(text, manifest); }
+    catch (e) { show('v-bad', '⚠️', 'Could not check the file', `<p>${esc(e.message)}</p>`); return; }
+
+    if (v.status !== 'ok') {
+      const items = v.reasons.map(r => `<li>${esc(r)}</li>`).join('');
+      show('v-bad', '⛔', 'Do not open this file', `<p>This file did not pass the check.</p><ul class="reasons">${items}</ul>`,
+        `<div class="card" style="margin-top:12px"><dl><dt>File</dt><dd>${esc(file.name)}</dd><dt>SHA-256</dt><dd><code>${fileHash}</code></dd></dl></div>`);
+      return;
+    }
+    const e = v.entry, i = v.info;
+    const rows = [
+      ['File', esc(file.name)],
+      ['Analysis name', esc(i.name || '—')],
+      ['Contents', `${fmt(i.files)} file(s), ${fmt(i.events)} events`],
+      ['Type', v.variant === 'locked' ? 'Locked viewer (cannot load, import or export files)' : 'Full FlowNG'],
+      ['FlowNG build', `released ${esc(e.date)} (${esc(e.commit)})`],
+      ['SHA-256', `<code>${fileHash}</code>`],
+    ].map(([k, val]) => `<dt>${k}</dt><dd>${val}</dd>`).join('');
+    const note = '';
+    show('v-ok', '✅', 'Genuine FlowNG file', `<p>The program code is an unmodified FlowNG release and the data block contains data only. It is safe to open.</p>${note}`,
+      `<div class="card" style="margin-top:12px"><dl>${rows}</dl><div class="row" id="actions"></div></div>`);
+    addUpdate(v);
+  }
+
+  async function addUpdate(v) {
+    const box = $('actions');
+    const btn = document.createElement('button'); btn.className = 'secondary'; btn.textContent = 'Update to the newest FlowNG…';
+    btn.title = 'Puts this analysis into a fresh copy of the newest FlowNG and checks the result';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = 'Updating…';
+      try {
+        let app;
+        if (embedded) app = embedded.app;
+        else {
+          const r = await fetch('../FlowNG.html', { cache: 'no-store' });
+          if (!r.ok) throw new Error('Could not load the current FlowNG (HTTP ' + r.status + ').');
+          app = await r.text();
+        }
+        const out = await FlowCheck.buildUpdate(v.body, v.variant, app, manifest);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([out.text], { type: 'text/html' }));
+        a.download = (out.name.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_') || 'Shared_analysis') + '_updated.html';
+        a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+        btn.textContent = 'Downloaded. Drop it here to check it.';
+      } catch (e) { btn.disabled = false; btn.textContent = 'Update to the newest FlowNG…'; box.insertAdjacentHTML('beforeend', `<p style="width:100%;color:var(--bad)">${esc(e.message)}</p>`); }
+    });
+    box.appendChild(btn);
+  }
+
+  drop.addEventListener('click', () => pick.click());
+  drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick.click(); } });
+  pick.addEventListener('change', () => { handle(pick.files[0]); pick.value = ''; });
+  ['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => handle(e.dataTransfer.files[0]));
+  // A file dropped outside the box must not open in the tab (that would run it).
+  ['dragover', 'drop'].forEach(t => window.addEventListener(t, e => e.preventDefault()));
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+{
+ "format": 3,
+ "generated": "2026-11-09",
+ "rev": "HEAD",
+ "canon": "check/index.html FlowCheck.canonHash",
+ "entries": [
+  {
+   "hash": "adbe0edbd480ef8da05bb31976f2fb4144c56289dfd4433f9198b59621b501bd",
+   "variant": "full",
+   "seq": 2,
+   "commit": "96077d3c85",
+   "date": "2026-11-09",
+   "subject": "pending release: the tip of this pull request",
+   "pending": true
+  },
+  {
+   "hash": "003be48d3c72725bc64481e96b1199c4ea37ba2be12a0c070062ade4aef0cfd9",
+   "variant": "locked",
+   "seq": 2,
+   "commit": "96077d3c85",
+   "date": "2026-11-09",
+   "subject": "pending release: the tip of this pull request",
+   "pending": true
+  }
+ ],
+ "since": "2026-11-07",
+ "revoked": [
+  {
+   "hash": "7aaee9b6026a8ade4a6e6b5d6bb4a1bb957d1607bf2b9d57acd7e504e1637933",
+   "variant": "full",
+   "commit": "da781b029c",
+   "date": "2026-11-07",
+   "reason": "This FlowNG version has a known problem (it does not escape names, so a crafted file could run code). Ask the sender to re-export the analysis with the current FlowNG.",
+   "auto": true
+  },
+  {
+   "hash": "43f780ea92a05a45df239a43777a901e43fc0360c2d3c267e26b2d7b7086fa5d",
+   "variant": "locked",
+   "commit": "da781b029c",
+   "date": "2026-11-07",
+   "reason": "This FlowNG version has a known problem (it does not escape names, so a crafted file could run code). Ask the sender to re-export the analysis with the current FlowNG.",
+   "auto": true
+  }
+ ]
+}

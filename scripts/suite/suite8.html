@@ -1,0 +1,42 @@
+<!doctype html><meta charset="utf-8"><body><script src="lib.js"></script><script>
+(async () => { try {
+ const L = await fresh({ fixtures: true, btm: true }); const E = L.E, w = L.w;
+ E(`window.cap=null; const oc=URL.createObjectURL; URL.createObjectURL=b=>{cap=b;return oc(b)};`);
+ const doExport = async (maxev, sterile) => {
+   E('showShareDialog()'); await sleep(300);
+   E(`[...document.querySelectorAll('.share-fname')].forEach((e,i)=>e.value='Tube '+(i+1))`);
+   E(`document.getElementById('share-maxev').value=${JSON.stringify(String(maxev))}; document.getElementById('share-sterile').checked=${sterile}`);
+   await sleep(900); E('_updateShareEstimate()');
+   const est = E('_estimateShareBytes()'); const t0 = Date.now();
+   E('window.__done=false; doExportShareable().then(()=>{__done=true})'); for (let i = 0; i < 120 && !E('__done'); i++) await sleep(500);
+   const ms = Date.now() - t0;
+   E(`document.getElementById('share-done')&&document.getElementById('share-done').remove()`);
+   const text = await w.cap.text(); return { est, size: w.cap.size, text, ms };
+ };
+ const a = await doExport(20000, true);
+ R('8.1', 'estimate vs actual within ~20% and not >10% below', a.est / a.size > 0.9 && a.est / a.size < 1.2, { estMB: (a.est / 1048576).toFixed(2), actualMB: (a.size / 1048576).toFixed(2), exportMs: a.ms });
+ const T = a.text;
+ const phi = ['TEST SAMPLE', '26125127597b', '00028336', '00028337', '00028338', '$DATE', '$BTIM', '$ETIM', '@SAMPLEID', '@BARCODE'].map(s => [s, (T.split(s).length - 1)]);
+ R('8.2', 'PHI scan: zero hits', phi.every(x => x[1] === 0), phi.filter(x => x[1]));
+ R('8.2b', 'tube names used (Tube 1..3) and workspace names not file names', /Tube 1/.test(T), '');
+ R('8.3', 'title', /<title>Shared analysis — FlowNG<\/title>/.test(T), (T.match(/<title>[^<]*<\/title>/) || [''])[0]);
+ const forbidden = ['function loadFCS', 'function parseLMD', 'function showShareDialog', 'function doExportTemplate', 'function importGates', 'function buildFCSBytes', 'function showSpikeDialog', 'function exportPopulationFCS', 'function spikeMerge', 'function startOTflowSuggest', 'const OTFLOW_ON_LOAD', 'id="spike-btn"', '@lite:begin', '@lite:end', 'id="open-btn"', 'id="export-btn"', 'id="import-btn"', 'id="share-btn"', 'id="file-input"', 'id="import-input"'];
+ const hits = forbidden.map(s => [s, T.split(s).length - 1]).filter(x => x[1] > 0);
+ R('8.4', 'locked output has none of the stripped code/buttons/markers', hits.length === 0, hits);
+ const b = JSON.parse(T.match(/<script id="flowng-bundle" type="application\/json">([^<]*)<\/script>/)[1]);
+ R('8.5', 'events stored once: rawData + rawDataFmt i32cs, data null (LMD)', b.files.every(f => f.rawData && f.rawDataFmt === 'i32cs' && f.data === null), b.files.map(f => [f.rawDataFmt, f.data]));
+ R('8.7', 'size sanity ~2 MB for 3 tubes x 20,000', a.size > 1.5e6 && a.size < 3.5e6, (a.size / 1048576).toFixed(2) + ' MB');
+ R('8.8', 'format 2, one workspace entry with fileIdx/template/history; files once', b.format === 2 && b.workspaces.length === 1 && b.workspaces[0].fileIdx.length === 3 && b.workspaces[0].template && Array.isArray(b.workspaces[0].history) && b.files.length === 3, { format: b.format, ws: b.workspaces.length, files: b.files.length, wsName: b.workspaces[0].name });
+ R('8.9', 'new defaults: checkNotice true, anonymised (no created/exported, empty history), sterile', b.checkNotice === true && b.created === undefined && b.template.exported === undefined && b.history.length === 0 && b.sterile === true, { checkNotice: b.checkNotice, created: b.created, hist: b.history.length });
+ await fetch('/s8_capped.html', { method: 'POST', body: T });
+ // 8.6 large file warning
+ E(`window.__n=fcsFiles[0].nEvents; fcsFiles[0].nEvents=600000`); E('showShareDialog()'); await sleep(400);
+ R('8.6', 'file over 500,000 events defaults the cap to 500,000', E(`document.getElementById('share-maxev').value`) === '500000', E(`document.getElementById('share-maxev').value`));
+ E(`document.getElementById('share-modal').remove(); fcsFiles[0].nEvents=__n`);
+ // uncapped export for the daughter fixtures
+ const full = await doExport('', true); await fetch('/s8_full.html', { method: 'POST', body: full.text });
+ R('8.10', 'uncapped export written', full.size > 2e6, { MB: (full.size / 1048576).toFixed(2), ms: full.ms });
+ R('8.err', 'console errors', REPORT.errors.length === 0, REPORT.errors);
+} catch (e) { REPORT.errors.push('HARNESS ' + e + e.stack); }
+await finish('s8'); })();
+</script>

@@ -1,0 +1,72 @@
+<!doctype html><meta charset="utf-8"><body><script src="lib.js"></script><script>
+(async () => { try {
+ const raw = await (await fetch('/samples/' + encodeURIComponent('BTM Triage Template v10_FlowNgtmplt.json'))).text();
+ // 7.1 import by tube name (rename source files so names do not match)
+ let L = await fresh({ fixtures: true }); let E = L.E;
+ const tubes = ['LL panel B cell tube', 'LL panel T cell tube', 'LL panel myeloid tube'];
+ const lastCells = () => E(`[...document.querySelectorAll('#import-v3-modal tbody tr')].map(r=>r.querySelector('td:last-child').innerText.trim())`);
+ // (a) original names -> by file name
+ L.w.__t = raw; E('importGates(__t)'); await sleep(900); const byFile = lastCells(); E(`document.getElementById('import-v3-modal').remove()`);
+ R('7.1a1', 'original file names: "by file name"', byFile.length === 3 && byFile.every(r => /file name/.test(r)), byFile);
+ // (b) renamed, no tube field -> by antibody panel
+ const tj = JSON.parse(raw); tj.files.forEach((f, i) => f.sourceFile = 'renamed_tube_' + i + '.lmd');
+ L.w.__t = JSON.stringify(tj); E('importGates(__t)'); await sleep(900); const byPanel = lastCells(); E(`document.getElementById('import-v3-modal').remove()`);
+ R('7.1a2', 'renamed, no tube field: "by antibody panel"', byPanel.length === 3 && byPanel.every(r => /antibody panel/.test(r)), byPanel);
+ // (c) renamed with tube names -> by tube name
+ tj.files.forEach((f, i) => f.tube = tubes[i]);
+ L.w.__t = JSON.stringify(tj); E('importGates(__t)'); await sleep(900); const rows = lastCells();
+ R('7.1a', 'renamed with tube names: each row "by tube name"', rows.length === 3 && rows.every(r => /tube name/.test(r)), rows);
+ E('_doImportV3([0,1,2])'); await sleep(5000);
+ R('7.1b', 'workspace named after template; pool empty; counts [31,41,30]; 255 plots; 15 tabs; no skipped gates', E('workspaces.length') === 1 && /BTM Triage Template v10/.test(E('getActiveWs().name')) && E('poolFiles.length') === 0 && JSON.stringify(E('fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length)')) === '[31,41,30]' && E('plots.length') === 255 && E('tabs.length') === 15, E('({ws:getActiveWs().name,g:fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length),plots:plots.length,tabs:tabs.length,toast:document.getElementById("toast").textContent})'));
+ // empty pool toast
+ E('importGates(__t)'); await sleep(500); R('7.1c', 'with an empty Pool importGates only toasts', E('!document.getElementById("import-v3-modal")') && toastText(L).length > 0, toastText(L));
+ // 7.2 matcher unit checks
+ await sleep(300);
+ const mu = E(`(()=>{
+   const t=_buildTemplateV3('t'); const fs=fcsFiles;
+   t.files.forEach((f,i)=>f.sourceFile='x'+i+'.lmd');
+   const a=_matchTemplateFiles(t.files, fs).map(m=>m.how);
+   const t2=JSON.parse(JSON.stringify(t)); t2.files.forEach(f=>{delete f.tube});
+   const b=_matchTemplateFiles(t2.files, fs).map(m=>m.how);
+   return {a,b}})()`);
+ R('7.2a', 'matcher: tube name for every file', mu.a.every(x => x === 'tube name'), mu.a);
+ R('7.2b', 'matcher: remove tube -> antibody panel', mu.b.every(x => x === 'antibody panel'), mu.b);
+ const shared = E(`(()=>{const t=_buildTemplateV3('t');t.files.forEach((f,i)=>{f.sourceFile='y'+i;delete f.tube;f.channels=undefined});
+   // channels shared by all three tubes: only scatter/time -> force a template using only them
+   const fs=fcsFiles; const common=fs[0].params.map(p=>p.name).filter(n=>fs.every(f=>f.params.some(p=>p.name===n)));
+   t.files.forEach(f=>{f.panel=null});
+   return {common}})()`);
+ R('7.2c', 'common channel set exists (matcher unit setup)', true, shared);
+ // 7.3 unmatched sections show skip
+ L = await fresh({ fixtures: 1 }); E = L.E;
+ const t3 = JSON.parse(raw); t3.files.forEach((f, i) => f.sourceFile = 'renamed_' + i + '.lmd'); L.w.__t = JSON.stringify(t3); E('importGates(__t)'); await sleep(900);
+ const sel = E(`[...document.querySelectorAll('#import-v3-modal select')].map(s=>[...s.options].map(o=>o.textContent.slice(0,30)+(o.selected?'*':'')))`);
+ const rows3 = E(`[...document.querySelectorAll('#import-v3-modal tbody tr')].map(r=>r.innerText.replace(/\\s+/g,' ').trim().slice(-45))`);
+ R('7.3', 'unmatched sections preselect "(skip this section)"', rows3.some(r => /no match/.test(r)) && sel.some(s => s.some(o => /skip this section\)\*/.test(o))), { rows3 });
+ E(`document.getElementById('import-v3-modal') && document.getElementById('import-v3-modal').remove()`);
+ // 7.4 refusals
+ E(`importGates('{"version":2,"gates":[]}')`); await sleep(300); const t41 = toastText(L);
+ E(`importGates('{"foo":1}')`); await sleep(300); const t42 = toastText(L);
+ R('7.4', 'version 2 and junk files refused', /version 2/i.test(t41) && /Not a FlowNG template/i.test(t42), { t41, t42 });
+ // 7.5 round trip
+ L = await fresh({ fixtures: true, btm: true }); E = L.E;
+ const before = E(`({g:fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length), plots:plots.length})`);
+ E(`window.__rt=_buildTemplateV3('rt')`);
+ E(`fcsFiles.forEach(f=>{f.populations=f.populations.filter(p=>p._isAll)}); rebuildPopulationsView()`);
+ E(`_applyTemplateV3(__rt, fcsFiles)`); await sleep(5000);
+ const afterRt = E(`({g:fcsFiles.map(f=>f.populations.filter(p=>p.gateInfo).length), plots:plots.length})`);
+ R('7.5', 'round trip: gate counts and plot count equal', JSON.stringify(before) === JSON.stringify(afterRt), { before, afterRt });
+ // axis range dialog & drag reorder (section 6 leftovers)
+ E(`window.pl=plots.find(p=>p.tabId===activeTabId)`); const hb = E('_history.length');
+ E(`showAxisRangeModal(pl,100,100)`); await sleep(500);
+ const dlg = E(`({open: !!document.querySelector('.modal-overlay'), displayMode: /Display Mode/i.test(document.body.innerText)})`);
+ E(`applyAxisRangeModal(pl.id)`); await sleep(1500); E(`showAxisRangeModal(pl,100,100)`); await sleep(400); E(`resetAxisRangeModal(pl.id)`); await sleep(1500);
+ R('6.11', 'Axis Range dialog opens, no Display Mode block, apply/reset log History', dlg.open && !dlg.displayMode && E('_history.length') > hb, { dlg, hist: hist(L).slice(-2) });
+ const order0 = E(`plots.filter(p=>p.tabId===activeTabId).slice(0,2).map(p=>p.id)`);
+ E(`(()=>{const a=document.getElementById('plot-card-${order0[0]}'),b=document.getElementById('plot-card-${order0[1]}');const dt=new DataTransfer();const g=a.querySelector('.plot-drag-handle');g.dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:dt}));b.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:dt}));b.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));g.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:dt}));})()`); await sleep(800);
+ const order1 = E(`plots.filter(p=>p.tabId===activeTabId).slice(0,2).map(p=>p.id)`);
+ R('6.12', 'drag-reorder of plots reorders them', JSON.stringify(order1) !== JSON.stringify(order0), { order0, order1 });
+ R('7.err', 'console errors', REPORT.errors.length === 0, REPORT.errors);
+} catch (e) { REPORT.errors.push('HARNESS ' + e + e.stack); }
+await finish('s7'); })();
+</script>

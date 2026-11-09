@@ -1,0 +1,49 @@
+<!doctype html><meta charset="utf-8"><body><script>const REPORT={rows:[],errors:[],notes:[]};const R=(id,name,pass,detail)=>REPORT.rows.push({id,name,pass:!!pass,detail:typeof detail==='string'?detail:JSON.stringify(detail===undefined?'':detail)});
+const finish=async n=>fetch('/result_'+n,{method:'POST',body:JSON.stringify(REPORT)});</script>
+<iframe id="f" src="FlowNG.html" style="width:1400px;height:900px"></iframe>
+<script>
+const sleep=ms=>new Promise(r=>setTimeout(r,ms)); const res={};
+(async()=>{ try{ const f=document.getElementById('f'); await sleep(2000); const w=f.contentWindow; const E=s=>w.eval(s);
+ E(`window.__otf=0; const _pm=Worker.prototype.postMessage; Worker.prototype.postMessage=function(m,t){ if(m&&m.mode==='otflow')window.__otf++; return _pm.call(this,m,t); };`);
+ w.__buf=await (await fetch(encodeURIComponent('TEST SAMPLE 26125127597b 00028336 001.LMD'))).arrayBuffer(); E(`loadFCS(__buf,'x.lmd')`);
+ await sleep(8000); E('generateStarterWorkspace()'); await sleep(2500);
+ res.lmd=E(`({ver:fcsFiles[0].version,otf:fcsFiles[0].otflowCofactors,ranges:fcsFiles[0].paramRanges.size,cf:fcsFiles[0].params.map((p,i)=>{_paramRanges=fcsFiles[0].paramRanges;return getAsinhCofactor(i)}).join(','), otfMsgs:__otf})`);
+ // template dominance (LMD file only in workspace)
+ res.tmpl=E(`(()=>{const f0=fcsFiles[0];_paramRanges=f0.paramRanges;
+   f0.paramRanges.set(3,{asinhCofactor:700}); const t=_buildTemplateV3('t');
+   f0.paramRanges.set(3,{asinhCofactor:900}); f0.paramRanges.set(4,{asinhCofactor:500});   // manual corrections after the template was made
+   _applyTemplateV3(t,[f0]);
+   const g=i=>{_paramRanges=f0.paramRanges;return getAsinhCofactor(i)};
+   return {p3_templateWins:g(3), p4_notInTemplate:g(4), tmplHas3:JSON.stringify(t.files[0].paramRanges)&&Object.keys(t.files[0].paramRanges).length}})()`);
+ await sleep(1500);
+ // manual still works afterwards
+ res.manual=E(`(()=>{const f0=fcsFiles[0];f0.paramRanges.set(5,{...(f0.paramRanges.get(5)||{}),asinhCofactor:123});_paramRanges=f0.paramRanges;return getAsinhCofactor(5)})()`);
+ E(`fcsFiles[0].paramRanges.delete(5)`);
+ // an FCS file made from the LMD data (version FCS3.1)
+ const bytes=E(`(()=>{const f=fcsFiles[0];return buildFCSBytes(f.params,f.rawData,f.nEvents,{spill:{idx:f.spillParamIdx,matrix:f.spillMatrix}})})()`);
+ w.__fcs=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength); const before=E('__otf'); E(`loadFCS(__fcs,'sim.fcs')`); await sleep(8000);
+ res.fcs=E(`(()=>{const f=poolFiles[poolFiles.length-1];return {name:f&&f.filename,ver:f&&f.version,otf:f&&f.otflowCofactors,ranges:f&&f.paramRanges.size,otfMsgsDuringLoad:__otf-${before}}})()`);
+ E(`addPoolFileToWorkspace(poolFiles[poolFiles.length-1].fileId)`); await sleep(2500);
+ res.inWs=E('fcsFiles.length');
+ // OT-flow on request (settings button present?)
+ E('showGlobalSettingsDialog()'); res.settingsBtn=!!w.document.querySelector('#global-settings-modal button[onclick*="startOTflowSuggest"]'); E(`document.getElementById('global-settings-modal').remove()`);
+ const m0=E('__otf'); res.otfBefore=m0; E('startOTflowSuggest()');
+ for(let i=0;i<120&&!/OT-flow set/.test(w.document.getElementById('toast').textContent);i++) await sleep(1000);
+ res.otfMsgsOnRequest=E('__otf')-m0; res.toast=w.document.getElementById('toast').textContent;
+ res.suggest=E(`(()=>{const fs=fcsFiles.filter(f=>f.filename==='sim.fcs')[0];const l=fcsFiles.find(f=>f.version&&f.version.startsWith('LMD'));
+   const cfs=[...fs.paramRanges.entries()].map(([i,r])=>r.asinhCofactor);
+   return {n:cfs.length, differFrom300:cfs.filter(c=>Math.abs(c-300)>1).length, sample:cfs.slice(0,5).map(c=>Math.round(c)), lmdRangesAfter:[...l.paramRanges.values()].filter(r=>r.asinhCofactor!=null&&r.asinhCofactor!==300).length}})()`);
+ E('undo()'); await sleep(800);
+ res.afterUndo=E(`fcsFiles.filter(f=>f.filename==='sim.fcs')[0].paramRanges.size`);
+ }catch(e){res.error=String(e)+e.stack}
+  if(res.error)R('0','harness error',false,res.error);
+
+ const l=res.lmd||{}, f=res.fcs||{}, tm=res.tmpl||{}, sg=res.suggest||{};
+ R('18.1','LMD and FCS load at 300 with no ranges, no suggestions, no OT-flow jobs',/^(300,)+300$/.test(l.cf||'')&&l.ranges===0&&l.otf===null&&l.otfMsgs===0&&f.ver==='FCS3.1'&&f.otf===null&&f.ranges===0&&f.otfMsgsDuringLoad===0,{l,f});
+ R('18.2','template wins over a manual cofactor; a channel not in the template returns to 300',tm.p3_templateWins===700&&tm.p4_notInTemplate===300,tm);
+ R('18.3','a manual cofactor after the template is kept',res.manual===123,res.manual);
+ R('18.4','Settings has the OT-flow button; on request one job per fluorescent channel of the FCS file',res.settingsBtn===true&&res.otfMsgsOnRequest>0&&sg.n>0&&sg.differFrom300>0&&/OT-flow set/.test(res.toast||''),res);
+ R('18.5','undo restores the FCS file to 300',res.afterUndo===0,res.afterUndo);
+
+ await finish('s18'); })();
+</script>

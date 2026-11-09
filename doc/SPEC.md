@@ -16,6 +16,8 @@ This file records the interface and interaction decisions for `FlowNG.html`, and
 
 The left toolbar group holds the modes: **Select, Polygon, Rect, Quadrant, Edit, Comp, Delete, Autocomp**, then Undo, Redo, History and Add Plot. The mode is global (`globalMode`); exactly one button is active.
 
+**Narrow windows:** the two toolbar groups (tools on the left, files and settings on the right) always stay side by side. When there is not enough width each group wraps its own buttons onto extra lines, and the header grows taller (`--header-h` follows it), rather than the right group dropping underneath the left one.
+
 ### 2.1 Changing mode (`setGlobalMode`)
 
 - Choosing a mode **deselects all selected plots** and applies the mode to **every plot** in the workspace.
@@ -117,6 +119,14 @@ Generated per tube from the Pool (**Starter**). One tab per tube, four plots, no
 | Scale button affects all selected plots | Adopted (reversing "per plot") | Bulk comparison |
 | Reparent check by tree, not event overlap | Adopted | Siblings sharing events were wrongly refused |
 | Starter plot orientation | CD45 vs Time, FSC-H vs FSC-A, FSC-A vs SSC, CD45 vs SSC | Author's preferred layout |
+| Plot selected from any empty area, not only the top bar | Adopted (section 3) | Users did not find the top bar |
+| Plot and tab removal, tab add/rename/close undoable | Adopted (sections 10, 13) | Deleting a plot could not be undone |
+| Rect gates stay rectangular when a corner is dragged | Adopted (4a) | Dragging a corner skewed the rectangle |
+| Bins slider to 1024; plot size slider per tab | Adopted (sections 9, 13) | Larger expanded view; bigger plots without expanding |
+| Toolbar groups stay side by side when narrow | Adopted (section 2) | Stacked groups wasted the plot area |
+| FCS export and SpikeNG, full version only | Adopted (section 14) | Proficiency testing and teaching spike-ins |
+| Cofactors start at 300; OT-flow on request; template overrides manual | Adopted (section 15) | Predictable, reproducible starting point |
+| Export Shareable HTML: Anonymise on, Secure-channel box, result dialog | Adopted (section 16) | Anonymity for proficiency testing; trusted distribution |
 
 ## 8. Open points
 
@@ -124,12 +134,12 @@ Generated per tube from the Pool (**Starter**). One tab per tube, four plots, no
 
 ## 9. Anatomy of a plot: card, header, canvas
 
-A plot is a **card** (`.plot-card`, `plot-card-<id>`, 352 px wide) with three parts. The parts have different jobs, and the split is deliberate: the canvas is for gating, the header is for managing the plot.
+A plot is a **card** (`.plot-card`, `plot-card-<id>`, 352 px wide at the default size; the plot size slider changes it per tab, see section 13) with three parts. The parts have different jobs, and the split is deliberate: the canvas is for gating, the header is for managing the plot.
 
 | Part | Contains | Click does |
 |---|---|---|
 | **Header** (`.plot-header`, the top bar) | Drag grip `⠿`, file colour dot (only with 2+ files), population menu, bins slider (32-1024) and value, event count | Selects the plot (see section 10) |
-| **Canvas** (`<canvas id="canvas-<id>">`, 350 x 350) | The density plot, gates, quadrant crosshair, in-progress gate points | Acts according to the global mode (draw, move, edit, delete, ...) |
+| **Canvas** (`<canvas id="canvas-<id>">`, 350 x 350 at the default size) | The density plot, gates, quadrant crosshair, in-progress gate points | Acts according to the global mode (draw, move, edit, delete, ...) |
 | **Overlay controls** (on the canvas wrap) | X axis menu and scale button (bottom), Y axis menu and scale button (left, rotated), `⇄` swap axes (bottom-left), `⤢` expand (corner) | Their own action; never selects the plot and never draws |
 
 Definitions used throughout this spec:
@@ -141,7 +151,7 @@ Definitions used throughout this spec:
 
 ## 10. Selection model
 
-- **Where:** click a plot's header. Not the canvas, not the overlay controls.
+- **Where:** click a plot's header, or any empty part of the card as listed in section 3 (blank canvas with Select, Edit or Delete; the margins; the gaps beside the axis menus). Not a gate, the overlay controls, or a drawing tool's canvas.
 - **Single click** selects only that plot and deselects the rest. `Ctrl`/`Cmd`+click toggles one plot in or out. `Shift`+click selects the range between the last clicked plot and this one, in plot order.
 - **Visual:** a selected card gets an accent border, a glow and a tinted header.
 - **Deselect:** click empty canvas area, or press `Esc`. Choosing a tool also deselects (section 2.1).
@@ -175,6 +185,42 @@ Definitions used throughout this spec:
 - **Adding (`+ Tab`), renaming and closing a tab are undoable and logged** ("Added tab ...", "Renamed tab ... to ...", "Closed tab ... (its N plots moved to ...)"). Closing a tab never deletes plots: they move to the first remaining tab, and Undo reopens the tab at its old position and sends exactly those plots back; Redo repeats it. The last tab cannot be closed. Tabs made by the program (starter template, template import) are not individual undo steps.
 - A workspace (one loaded template and its files) has its own tabs, plots, undo and history; the workspace strip sits above the tab strip.
 
-## 14. Provenance of this spec
+## 14. FCS export and SpikeNG (full version only)
 
-Sections 1 to 8 record decisions made while changing the app. Sections 9 to 13 describe the current behaviour as implemented in `FlowNG.html` (rendering in `renderPlotCard`, selection in the header click handler, reordering in the grip and card drag handlers, `togglePlotExpand`, `renderTabStrip`) and in `README.md`. The author's earlier design discussions are not visible to this document's writer, so reasons are given only where the code or README states them; anything missing should be added when remembered.
+These tools write event data, so they exist only in the full app. They sit inside the `@lite` markers and are physically removed from locked shared files (see 8.4 in TESTING.md).
+
+- **Export events as FCS:** right-click a population (or a file in the file list, for all events) and choose *Export events as FCS…*. It writes a minimal FCS 3.1 file: float32 list-mode data, parameter names (`$PnN`), labels (`$PnS`), ranges and `$TIMESTEP`. Everything else is dropped: patient and sample IDs, dates, instrument and cytometer settings, `$SPILLOVER`. The file is named after the population, never the source file, because source file names often hold patient identifiers.
+  - **Compensation is not baked in.** When the file has a spillover matrix, the export writes the *uncompensated* values plus the file's current `$SPILLOVER` (including manual edits), so the file opens compensated exactly as in the app and SpikeNG can still reach the raw values. A file with no matrix exports its values as is. The matrix is instrument calibration, not an identifier.
+  - Parameter names and labels are kept because SpikeNG needs them to match files.
+- **SpikeNG** (toolbar button, always available): merges a donor file into a recipient file. The donor is the *schlemiel* (the population being spiked in, usually an exported population) and the recipient is the *schlimazel* (the sample receiving the spike). Both may be FCS or LMD.
+  - **Column check first.** `$PnN` names must match (case and spacing ignored). If the same set is present in a different order the donor columns are reordered to match and the dialog says so. If `$PnS` labels are both given and differ, or any name is missing or duplicated, the merge is refused and the differences are listed.
+  - **Spike amount** is a percentage of the *schlimazel* event count, with a linked box showing the equivalent number of events (editing either updates the other). The summary shows the result's total and the spike's share of it. If the schlemiel has fewer events than requested, all of them are used and a warning is shown. Events are never duplicated, since duplicates would be detectable.
+  - Spike events are a random subset of the schlemiel chosen with a seed (same seed, same events), kept in their original order.
+  - **Educational mode (time based):** the schlimazel events come first, then the spike events, with the Time channel of the spike shifted so there is a gap equal to 3% of the longer acquisition (the larger Time span of the two files). With no Time parameter the spike is simply appended and a warning is given.
+  - **Proficiency mode (interleaved):** each spike event is inserted at a random position among the schlimazel events. A spike event takes the Time value of the schlimazel event just before it, so the Time channel stays continuous and gives nothing away.
+  - Output `$PnR` is the larger of the two files' ranges. An optional **answer key** (CSV of 1-based output rows that are spiked) can be ticked in the dialog; it is off by default, and when ticked it downloads one second after the FCS file (a browser keeps only one of two simultaneous downloads, which is how the key once replaced the FCS file).
+  - **Compensation:** files are merged in uncompensated (raw) space and the output carries the *schlimazel's* `$SPILLOVER`, so every event, spiked or not, is compensated by the same matrix when opened (as if the donor cells had been acquired on the recipient's run). The dialog states the case: same matrix; different matrices (the schlimazel's wins); only the schlimazel has one; neither has one; or only the schlemiel has one, in which case the result is uncompensated and the schlemiel's matrix is dropped (warned). Reason: merging a compensated donor into a raw recipient would put the spike in the wrong place on every fluorescence plot.
+
+## 15. Arcsinh cofactors
+
+- Every fluorescent channel of a newly loaded file, FCS or LMD, starts at the global default cofactor **300**. Nothing is computed on load (OTflow used to run on FCS files at load time and seeded every channel with its own value).
+- A channel's cofactor changes only by: **a manual correction** (drag the blue marker, type a value in the axis range dialog, or Global Settings "Apply Cofactor to All Plots", which resets all channels to one value); **a template** that is applied; or **OT-flow suggestions**, which the user asks for in Global Settings.
+- **A template dominates manual corrections.** Applying a template first clears every channel's cofactor back to the default, then sets the ones the template lists. So a channel the user adjusted by hand ends at the template's value, or at 300 if the template does not list it. Manual corrections made after the template are kept.
+- **OT-flow suggestions** (Global Settings, full version only, since the worker lives in the loading code): runs on every fluorescent channel of the open FCS files, replaces manual cofactors, re-evaluates gates and is one undo step. LMD files are skipped (unreliable on that data). Files from shared (locked) HTML do not show the button.
+- Reason: a fixed, predictable starting point (300) makes gates and templates reproducible between files and between users; a per-file computed value made the same template land differently on different files.
+
+## 16. Export Shareable HTML options
+
+The dialog (full version only) writes one HTML with the event data, gates and plots; the options and their reasons:
+
+- **Max events per file** (blank = all; defaults to 500,000 when a file is larger) keeps files small. A size estimate is shown and measured on a sample of the real data.
+- **Tube / file names** shown in the shared file are editable; file names often hold patient names or accession numbers, so they are replaced rather than copied.
+- **Include full FCS header metadata** is off: sample IDs, dates and times are dropped unless ticked.
+- **Anonymise** is on by default: the file carries no creation time, no template export time and none of the author's History, so nothing in it says who made it or when. Untick it to keep the History for teaching. (A recipient's own Save adds its own time and History.) Reason: anonymity matters for proficiency testing.
+- **Secure distribution channel** is off by default. Off: the shared file shows a small dismissible reminder on open (bottom of the window) to check it at the Check page, and the result dialog gives a paste-in message with the file's SHA-256. On: no reminder, and the dialog points to `scripts/check_shared.py` (checks the file and writes `SHA256SUMS`). The reminder is only a prompt and not a safeguard: a tampered file would not show it (see `SECURITY.md`).
+- **Locked viewer** is on by default: the code for loading, importing and exporting files is physically removed from the output.
+- **Result dialog** after export: where the file went, its SHA-256, and what to tell recipients.
+
+## 17. Provenance of this spec
+
+Sections 1 to 8 record decisions made while changing the app. Sections 9 to 16 describe the current behaviour as implemented in `FlowNG.html` (rendering in `renderPlotCard`, selection in the header click handler, reordering in the grip and card drag handlers, `togglePlotExpand`, `renderTabStrip`) and in `README.md`. The author's earlier design discussions are not visible to this document's writer, so reasons are given only where the code or README states them; anything missing should be added when remembered.

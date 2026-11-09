@@ -1,0 +1,50 @@
+<!doctype html><meta charset="utf-8"><body><script src="lib.js"></script><script>
+(async () => { try {
+ const out = {};
+ let L = await newFrame('FlowNG.html'); let E = L.E, w = L.w;
+ const fn = 'TEST SAMPLE 26125127597b 00028336 001.LMD'; w.__b = await (await fetch('/' + encodeURIComponent(fn))).arrayBuffer();
+ // load one LMD: poll for pool
+ const t0 = performance.now(); E(`loadFCS(__b, ${JSON.stringify(fn)})`); while (!E('poolFiles.length')) await sleep(10); out.loadOneLMD_ms = Math.round(performance.now() - t0);
+ await sleep(2000);
+ L = await fresh({ fixtures: true }); E = L.E; w = L.w;
+ w.__t = await (await fetch('/samples/' + encodeURIComponent('BTM Triage Template v10_FlowNgtmplt.json'))).text();
+ E('importGates(__t)'); await sleep(800);
+ out.importBTM_sync_ms = Math.round(E(`(()=>{const t=performance.now(); _doImportV3([0,1,2]); return performance.now()-t})()`)); await sleep(5000);
+
+ E(`switchTab(tabs[0].id)`); await sleep(1500);
+ out.activeTabPlots = E(`plots.filter(p=>p.tabId===activeTabId).length`);
+ out.renderAllPlots_ms = E(`(()=>{const t=performance.now(); markAllDirty(); renderAllPlots(); return Math.round(performance.now()-t)})()`);
+ out.switchAllTabs_ms = E(`(()=>{const t=performance.now(); tabs.forEach(tb=>switchTab(tb.id)); return Math.round(performance.now()-t)})()`); await sleep(500);
+ E(`window.f0=fcsFiles[0]; window.g0=f0.populations.find(p=>p.gateInfo&&!p.boolInfo)`);
+ out.evalGate_ms = E(`(()=>{const t=performance.now(); evalGate(g0); return Math.round(performance.now()-t)})()`);
+ out.reevaluateAllGates_ms = E(`(()=>{const t=performance.now(); reevaluateAllGates(f0); return Math.round(performance.now()-t)})()`); await sleep(3000);
+ E(`window.ix=n=>f0.params.findIndex(p=>p.name===n); addPlot(ix('Kappa FITC'), ix('Lambda PE'), f0.fileId); window.pl=plots[plots.length-1]; switchTab(pl.tabId); changePop(pl.id, f0.populations.find(p=>p.name==='Viable').id)`); await sleep(1500);
+ out.createQuadrant_ms = E(`(()=>{const t=performance.now(); createQuadrant(pl,1000,1000); return Math.round(performance.now()-t)})()`); await sleep(3000);
+ out.undo_ms = E(`(()=>{const t=performance.now(); undo(); return Math.round(performance.now()-t)})()`); await sleep(2500);
+ out.redo_ms = E(`(()=>{const t=performance.now(); redo(); return Math.round(performance.now()-t)})()`); await sleep(2500);
+ out.recompensate_ms = E(`(()=>{const m=f0.spillMatrix.map(r=>[...r]); m[3][8]=0.01; pushUndo('perf'); const t=performance.now(); recomputeCompensation(m,f0.fileId); return Math.round(performance.now()-t)})()`);
+ out.regate_after_comp_ms = E(`(()=>{const t=performance.now(); reevaluateAllGates(f0); return Math.round(performance.now()-t)})()`); await sleep(3000);
+ // export
+ E(`window.cap=null; const oc=URL.createObjectURL; URL.createObjectURL=b=>{cap=b;return oc(b)};`);
+ E('showShareDialog()'); await sleep(500); E(`document.getElementById('share-maxev').value=''`);
+ const te = performance.now(); E('window.__done=false; doExportShareable().then(()=>{__done=true})'); while (!E('__done')) await sleep(10); out.exportShareable_ms = Math.round(performance.now() - te); out.exportShareable_MB = +(w.cap.size / 1048576).toFixed(2);
+ // daughter
+ const td = performance.now(); L = await newFrame('daughter.html'); const t1 = performance.now();
+ while (!L.E(`typeof fcsFiles!=='undefined' && fcsFiles.length===3 && plots.length>100`)) await sleep(20); out.daughterOpen_ms = Math.round(performance.now() - t1 + 1200);   // newFrame adds ~1.2 s of fixed wait
+ await sleep(2500); E = L.E; w = L.w;
+ E(`window.cap=null; const oc=URL.createObjectURL; URL.createObjectURL=b=>{cap=b;return oc(b)}; window.f0=fcsFiles[0]; window.g0=f0.populations.find(p=>p.gateInfo&&!p.boolInfo); window.ix=n=>f0.params.findIndex(p=>p.name===n)`);
+ out.d_renderAllPlots_ms = E(`(()=>{const t=performance.now(); markAllDirty(); renderAllPlots(); return Math.round(performance.now()-t)})()`);
+ out.d_evalGate_ms = E(`(()=>{const t=performance.now(); evalGate(g0); return Math.round(performance.now()-t)})()`);
+ out.d_reevaluateAllGates_ms = E(`(()=>{const t=performance.now(); reevaluateAllGates(f0); return Math.round(performance.now()-t)})()`); await sleep(3000);
+ E(`addPlot(ix('Kappa FITC'), ix('Lambda PE'), f0.fileId); window.pl=plots[plots.length-1]; switchTab(pl.tabId); changePop(pl.id, f0.populations.find(p=>p.name==='Viable').id)`); await sleep(1500);
+ out.d_createQuadrant_ms = E(`(()=>{const t=performance.now(); createQuadrant(pl,1000,1000); return Math.round(performance.now()-t)})()`); await sleep(3000);
+ E(`pushUndo('x'); f0.populations.find(p=>p.gateInfo&&!p.quad).name+=' y'`);
+ const ts = performance.now(); E('window.__s=false; saveDaughter().then(()=>{__s=true})'); while (!E('__s')) await sleep(10); out.d_save_ms = Math.round(performance.now() - ts); out.d_save_MB = +(w.cap.size / 1048576).toFixed(2);
+ const savedT = await w.cap.text(); const t2 = performance.now(); const L2 = await newFrame(URL.createObjectURL(new Blob([savedT], { type: 'text/html' })));
+ const t3 = performance.now(); while (!L2.E(`typeof fcsFiles!=='undefined' && fcsFiles.length===3 && plots.length>100`)) await sleep(20); out.d_reopen_ms = Math.round(performance.now() - t3 + 1200);
+ const lines = Object.entries(out).map(([k, v]) => k + '=' + v).join(' | ');
+ R('11.1', 'performance numbers collected (headless Chrome, 33k-event fixtures; baselines are 3 x 100k for the daughter rows)', true, out);
+ R('11.err', 'console errors', REPORT.errors.length === 0, REPORT.errors);
+} catch (e) { REPORT.errors.push('HARNESS ' + e + e.stack); }
+await finish('s11'); })();
+</script>

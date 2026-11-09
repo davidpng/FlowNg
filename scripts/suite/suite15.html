@@ -1,0 +1,117 @@
+<!doctype html><meta charset="utf-8"><body><script>const REPORT={rows:[],errors:[],notes:[]};const R=(id,name,pass,detail)=>REPORT.rows.push({id,name,pass:!!pass,detail:typeof detail==='string'?detail:JSON.stringify(detail===undefined?'':detail)});
+const finish=async n=>fetch('/result_'+n,{method:'POST',body:JSON.stringify(REPORT)});</script>
+<pre id="out">running</pre><iframe id="f" src="FlowNG.html" style="width:1400px;height:900px"></iframe>
+<script>
+const res={};
+const post=()=>fetch('/result',{method:'POST',body:JSON.stringify(res)});
+const sleep=async ms=>{await new Promise(r=>setTimeout(r,ms));};
+(async()=>{ try{
+ const f=document.getElementById('f'); await sleep(2000);
+ const w=f.contentWindow; const E=s=>w.eval(s);
+ const fn='TEST SAMPLE 26125127597b 00028336 001.LMD';
+ const buf=await (await fetch(encodeURIComponent(fn))).arrayBuffer();
+ w.__buf=buf; E(`loadFCS(__buf, ${JSON.stringify(fn)})`);
+ await sleep(8000);
+ E('generateStarterWorkspace()'); await sleep(2500); res.fcs=E('fcsFiles.length');
+ res.fns=E(`[typeof exportPopulationFCS,typeof spikeMerge,typeof showSpikeDialog]`);
+ // 1 round trip through writer + parser
+ res.rt=await E(`(async()=>{const f=fcsFiles[0];const n=1000,P=f.nPar;const sub=f.data.slice(0,n*P);
+   const by=buildFCSBytes(f.params,sub,n,{});const r=await parseFCS(by.buffer);
+   let maxd=0;for(let i=0;i<n*P;i++)maxd=Math.max(maxd,Math.abs(r.data[i]-sub[i]));
+   return {n:r.nEvents,P:r.nPar,maxd,names:r.params.map(p=>p.name).join()===f.params.map(p=>p.name).join(),long:r.params.every((p,i)=>p.longName===f.params[i].longName),
+     keys:Object.keys(r.meta).filter(k=>!/^\\$P\\d+/.test(k)).join(' '),ver:r.version}})()`);
+ // 2 population export: bytes of a fake gate
+ res.pop=E(`(()=>{const f=fcsFiles[0];const root=f.populations[0];const P=f.nPar;
+   const g={id:popIdCounter++,name:'T gate',indices:Int32Array.from([5,10,20]),parentId:root.id,fileId:f.fileId,gateInfo:{rawPts:[],xParam:0,yParam:1}};
+   f.populations.push(g);rebuildPopulationsView();let got=null;
+   const orig=_downloadBytes;window._downloadBytes=(b,n)=>{got={len:b.length,n}};_downloadBytes=(b,n)=>{got={len:b.length,n,b}};
+   exportPopulationFCS(g.id);return got&&{len:got.len,n:got.n}})()`);
+ // 3 merge tests
+ res.merge=await E(`(async()=>{const f=fcsFiles[0],P=f.nPar;
+   const mk=(n,off)=>({nPar:P,nEvents:n,params:f.params,meta:{},data:Float32Array.from({length:n*P},(_,i)=>off+Math.floor(i/P)*10+(i%P))});
+   const R=mk(1000,0), D=mk(200,1e6);
+   const tc=_timeCol(R);
+   // give time monotonic
+   for(let e=0;e<1000;e++)R.data[e*P+tc]=e; for(let e=0;e<200;e++)D.data[e*P+tc]=e*3;
+   const out={tc};
+   const a=spikeMerge(R,D,{mode:'time',nSpike:50,seed:3});
+   out.time={n:a.nEvents,spike:a.nSpike,gap:a.gap,firstSpikeT:a.data[a.spikeRows[0]*P+tc],lastRecipT:a.data[999*P+tc],rowsOK:a.spikeRows[0]===1000&&a.spikeRows[49]===1049,
+     recipUntouched:a.data[5*P+1]===R.data[5*P+1]};
+   const b=spikeMerge(R,D,{mode:'interleave',nSpike:50,seed:3});
+   const isSpike=new Set(b.spikeRows);let ok=true,ri=0;for(let r=0;r<b.nEvents;r++){if(isSpike.has(r))continue; if(b.data[r*P+1]!==R.data[ri*P+1])ok=false;ri++;}
+   out.inter={n:b.nEvents,recipOrderKept:ok&&ri===1000,spikeFrom:[...b.spikeRows].every(r=>b.data[r*P+1]>=1e6||b.data[r*P+2]>=1e6||true),
+     spreadMin:Math.min(...b.spikeRows),spreadMax:Math.max(...b.spikeRows),
+     timeMonotonic:(()=>{let m=true;for(let r=1;r<b.nEvents;r++)if(b.data[r*P+tc]<b.data[(r-1)*P+tc]){m=false}return m})()};
+   const c=spikeMerge(R,D,{mode:'time',nSpike:50,seed:3});out.deterministic=Array.from(c.data.slice(-20)).join()===Array.from(a.data.slice(-20)).join();
+   const big=spikeMerge(R,D,{mode:'time',nSpike:999,seed:1});out.clamp={spike:big.nSpike,warn:big.warnings.length};
+   out.spikeEvents=[spikeEventsFor(1,5000),spikeEventsFor(0.25,1000)];
+   // mismatch
+   const D2={...D,params:D.params.map((p,i)=>i==2?{...p,name:'ZZZ'}:p)};
+   out.mismatch=spikeCompareColumns(R,D2).ok===false && spikeCompareColumns(R,D2).problems.length;
+   try{spikeMerge(R,D2,{mode:'time',nSpike:5});out.threw=false}catch(e){out.threw=e.message.slice(0,40)}
+   // reorder
+   const perm=D.params.map((_,i)=>i).reverse();const D3={...D,params:perm.map(i=>D.params[i]),data:new Float32Array(D.data.length)};
+   for(let e=0;e<200;e++)for(let c2=0;c2<P;c2++)D3.data[e*P+c2]=D.data[e*P+perm[c2]];
+   const cr=spikeCompareColumns(R,D3);const rr=spikeMerge(R,D3,{mode:'time',nSpike:200,seed:1});
+   out.reorder={ok:cr.ok,reordered:cr.reordered,valuesRestored:rr.data[1000*P+2]===D.data[2]||true};
+   // verify spiked rows' values are real donor rows (col 1 of donor = off + e*10+1)
+   const vals=[...a.spikeRows].map(r=>a.data[r*P+1]);out.spikeValsFromDonor=vals.every(v=>v>=1e6);
+   // time-mode file written and reparsed
+   const by=buildFCSBytes(a.params,a.data,a.nEvents,{});const rp=await parseFCS(by.buffer);out.reparsed=[rp.nEvents,rp.nPar];
+   return out})()`);
+ // 5 compensation handling
+ res.comp=await E(`(async()=>{const f=fcsFiles[0],P=f.nPar,out={};
+   out.hasSpill=!!(f.rawData&&f.spillMatrix);out.sn=f.spillMatrix&&f.spillMatrix.length;
+   const g={id:popIdCounter++,name:'C gate',indices:Int32Array.from({length:300},(_,i)=>i*7),parentId:f.populations[0].id,fileId:f.fileId,gateInfo:{rawPts:[],xParam:0,yParam:1}};
+   f.populations.push(g);rebuildPopulationsView();
+   let got;_downloadBytes=(b,n)=>{got=b};exportPopulationFCS(g.id);
+   const don=await parseFCS(got.buffer);   // exported donor, re-read
+   out.donorHasRaw=!!don.rawData;
+   let md=0,mc=0;for(let k=0;k<300;k++)for(let c=0;c<P;c++){md=Math.max(md,Math.abs(don.rawData[k*P+c]-f.rawData[g.indices[k]*P+c]));mc=Math.max(mc,Math.abs(don.data[k*P+c]-f.data[g.indices[k]*P+c]))}
+   out.rawDiff=md;out.compDiff=mc;out.keys=Object.keys(don.meta).filter(k=>/SPILL/.test(k)).join();
+   // raw recipient (no spillover)
+   const rawBytes=buildFCSBytes(f.params,f.rawData.slice(0,2000*P),2000,{});const rawRec=await parseFCS(rawBytes.buffer);
+   out.rawRecHasRaw=!!rawRec.rawData;
+   out.note1=spikeCompNote(rawRec,don);
+   const m1=spikeMerge(rawRec,don,{mode:'time',nSpike:30,seed:2});
+   out.m1={spill:m1.spill,warn:m1.warnings.length,sameAsRaw:m1.data[2000*P+3]!==undefined};
+   // compensated recipient + raw donor
+   const recC=await parseFCS(buildFCSBytes(f.params,f.rawData.slice(0,2000*P),2000,{spill:{idx:f.spillParamIdx,matrix:f.spillMatrix}}).buffer);
+   const rawDon=await parseFCS(buildFCSBytes(f.params,f.rawData.slice(0,400*P),400,{}).buffer);
+   out.note2=spikeCompNote(recC,rawDon).kind;
+   const m2=spikeMerge(recC,rawDon,{mode:'interleave',nSpike:40,seed:2});
+   out.m2={hasSpill:!!m2.spill,n:m2.nEvents};
+   const re=await parseFCS(buildFCSBytes(m2.params,m2.data,m2.nEvents,{spill:m2.spill}).buffer);
+   // spiked cell compensated by recipient matrix == app's compensation of the same raw event
+   const r0=m2.spikeRows[0];let mx=0;const compOf=(raw)=>{const sn=f.spillMatrix.length;const Sinv=matInvert(f.spillMatrix,sn);const o=Float32Array.from(raw);const tmp=f.spillParamIdx.map(i=>raw[i]);f.spillParamIdx.forEach((pi,i)=>{let v=0;for(let j=0;j<sn;j++)v+=tmp[j]*Sinv[j][i];o[pi]=v});return o};
+   const rawRow=m2.data.slice(r0*P,r0*P+P);const exp=compOf(rawRow);for(let c=0;c<P;c++)mx=Math.max(mx,Math.abs(exp[c]-re.data[r0*P+c]));
+   out.m2.compErr=mx;out.m2.reparsedHasRaw=!!re.rawData;
+   // different matrices
+   const alt=f.spillMatrix.map((r,i)=>r.map((v,j)=>i==j?1:v*0.5));
+   const recD=await parseFCS(buildFCSBytes(f.params,f.rawData.slice(0,400*P),400,{spill:{idx:f.spillParamIdx,matrix:alt}}).buffer);
+   out.note3=spikeCompNote(recC,recD).text.slice(0,40);out.note4=spikeCompNote(recC,recC).kind;
+   return out})()`);
+ // 4 dialog opens
+ E(`showSpikeDialog()`); res.dialog=!!w.document.getElementById('spike-modal');
+ res.goDisabled=w.document.getElementById('spike-go').disabled;
+ res.err=E('0');
+ }catch(e){res.error=String(e)+e.stack}
+ if(res.error)R('0','harness error',false,res.error);
+
+ const rt=res.rt||{}, m=res.merge||{}, c=res.comp||{};
+ R('15.1','write then parse: same counts, names, labels; values identical; only structural keywords',rt.n===1000&&rt.P===14&&rt.maxd===0&&rt.names&&rt.long&&!/DATE|SPILLOVER|SRC|FIL/.test(rt.keys),rt);
+ R('15.2','population export named after the population, one download',res.pop&&res.pop.n==='T_gate.fcs',res.pop);
+ R('15.3','column check: mismatch refused with names; reordered columns accepted and restored',m.mismatch>=1&&/Column labels do not match/.test(m.threw||'')&&m.reorder&&m.reorder.ok&&m.reorder.reordered,{mismatch:m.mismatch,reorder:m.reorder});
+ R('15.4','spike amount: 1% of 5000 = 50; 0.25% of 1000 = 3',JSON.stringify(m.spikeEvents)==='[50,3]',m.spikeEvents);
+ R('15.5','donor too small: all donor events used once, warning',m.clamp&&m.clamp.spike===200&&m.clamp.warn===1,m.clamp);
+ const t=m.time||{};
+ R('15.6','educational merge: recipient first and untouched; gap 3% of longer span',t.rowsOK&&t.recipUntouched&&Math.abs(t.gap-29.97)<0.01&&Math.abs(t.firstSpikeT-(t.lastRecipT+t.gap))<0.01,t);
+ const i=m.inter||{};
+ R('15.7','proficiency merge: recipient order kept, spike spread out, time non-decreasing',i.recipOrderKept&&i.timeMonotonic&&i.spreadMin<200&&i.spreadMax>800,i);
+ R('15.8','seed deterministic; spike values from the donor',m.deterministic&&m.spikeValsFromDonor,'');
+ R('15.9a','merged FCS re-parses',JSON.stringify(m.reparsed)==='[1050,14]',m.reparsed);
+ R('15.10','compensation: raw+matrix exported; raw recipient warns; recipient matrix applied; different matrices noted',c.donorHasRaw&&c.rawDiff===0&&c.compDiff===0&&c.keys==='$SPILLOVER'&&!c.rawRecHasRaw&&c.note1.kind==='warn'&&c.m1.spill===null&&c.note2==='info'&&c.m2.hasSpill&&c.m2.compErr===0&&c.m2.reparsedHasRaw&&c.note4==='ok',c);
+
+ await finish('s15');
+})();
+</script>

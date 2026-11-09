@@ -1,0 +1,32 @@
+<!doctype html><meta charset="utf-8"><body><script>const REPORT={rows:[],errors:[],notes:[]};const R=(id,name,pass,detail)=>REPORT.rows.push({id,name,pass:!!pass,detail:typeof detail==='string'?detail:JSON.stringify(detail===undefined?'':detail)});
+const finish=async n=>fetch('/result_'+n,{method:'POST',body:JSON.stringify(REPORT)});</script>
+<iframe id="f" src="FlowNG.html" style="width:1400px;height:900px"></iframe>
+<script>
+const sleep=ms=>new Promise(r=>setTimeout(r,ms)); const res={};
+(async()=>{ try{
+ const f=document.getElementById('f'); await sleep(2000); const w=f.contentWindow; const E=s=>w.eval(s);
+ const fn='TEST SAMPLE 26125127597b 00028336 001.LMD';
+ w.__buf=await (await fetch(encodeURIComponent(fn))).arrayBuffer(); E(`loadFCS(__buf, ${JSON.stringify(fn)})`);
+ await sleep(8000); E('generateStarterWorkspace()'); await sleep(2500); w.showSaveFilePicker=undefined;
+ E(`logChange('Drew gate "Blasts"')`);
+ res.hist=E('_history.length');
+ for (const anon of [true,false]) {
+   E('showShareDialog()'); const d=w.document; d.getElementById('share-maxev').value=1000; d.getElementById('share-anon').checked=anon;
+   res.defaultAnon = res.defaultAnon===undefined ? null : res.defaultAnon;
+   let cap=null; w.HTMLAnchorElement.prototype.click=function(){cap=this.href;};
+   E('doExportShareable()');
+   for(let i=0;i<60&&!d.getElementById('share-done');i++) await sleep(500);
+   const txt=await (await fetch(cap)).text();
+   const b=JSON.parse(txt.match(/<script id="flowng-bundle" type="application\/json">([^<]*)<\/script>/)[1]);
+   res[anon?'anon':'keep']={created:b.created||null, hist:b.history.length, wsHist:b.workspaces.map(x=>x.history.length), exported:b.template.exported||null, wsExported:b.workspaces.map(x=>x.template.exported||null), years:(txt.match(/20\d\d-\d\d-\d\dT/g)||[]).length};
+   d.getElementById('share-done').remove();
+ }
+ E('showShareDialog()'); res.defaultAnon=w.document.getElementById('share-anon').checked;
+ }catch(e){res.error=String(e)+e.stack}
+  if(res.error)R('0','harness error',false,res.error);
+
+ R('17.19','Anonymise ticked by default; leaves out created/exported and History; unticked keeps them',res.defaultAnon===true&&res.anon&&res.anon.created===null&&res.anon.hist===0&&res.anon.exported===null&&res.anon.years===0&&res.keep&&res.keep.created&&res.keep.hist>0&&res.keep.exported,res);
+
+ await finish('s17b');
+})();
+</script>

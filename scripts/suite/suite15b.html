@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8"><body><script>const REPORT={rows:[],errors:[],notes:[]};const R=(id,name,pass,detail)=>REPORT.rows.push({id,name,pass:!!pass,detail:typeof detail==='string'?detail:JSON.stringify(detail===undefined?'':detail)});
+const finish=async n=>fetch('/result_'+n,{method:'POST',body:JSON.stringify(REPORT)});</script>
+<iframe id="f" src="FlowNG.html" style="width:1200px;height:800px"></iframe>
+<script>
+const sleep=ms=>new Promise(r=>setTimeout(r,ms)); const res={};
+(async()=>{ try{ const f=document.getElementById('f'); await sleep(2500); const w=f.contentWindow; const E=s=>w.eval(s);
+ E('showSpikeDialog()'); res.keyDefault=w.document.getElementById('spike-key').checked;
+ E(`(()=>{const P=3,mk=(n,o)=>({nPar:P,nEvents:n,params:[{name:'A',longName:'A',range:1000},{name:'B',longName:'B',range:1000},{name:'TIME',longName:'TIME',range:1000}],meta:{},data:Float32Array.from({length:n*P},(_,i)=>o+i%P+Math.floor(i/P)*3)});
+   _spike={recip:mk(500,0),donor:mk(100,1e5)}; _spikeUpdate(); window.__dl=[]; _downloadBytes=(b,n)=>{__dl.push({name:n,len:b.length||b.byteLength,t:Date.now()})};})()`);
+ const d=w.document; d.getElementById('spike-pct').value=2; w.eval("_spikeUpdate('pct')");
+ await w.eval('runSpike()'); res.unchecked=w.eval('__dl.map(x=>x.name)');
+ w.eval('__dl.length=0'); d.getElementById('spike-key').checked=true; await w.eval('runSpike()'); const dl=w.eval('__dl.map(x=>({n:x.name,t:x.t}))');
+ res.checked=dl.map(x=>x.n); res.gapMs=dl.length>1?dl[1].t-dl[0].t:null; res.goEnabledAfter=!d.getElementById('spike-go').disabled; res.status=d.getElementById('spike-status').textContent.slice(0,80);
+ }catch(e){res.error=String(e)+e.stack}
+  if(res.error)R('0','harness error',false,res.error);
+
+ R('15.9b','answer key off by default; FCS only when unticked; FCS then key (1 s apart) when ticked',res.keyDefault===false&&JSON.stringify(res.unchecked)==='["SpikeNG.fcs"]'&&JSON.stringify(res.checked)==='["SpikeNG.fcs","SpikeNG_key.csv"]'&&res.gapMs>=900,res);
+
+ await finish('s15b'); })();
+</script>

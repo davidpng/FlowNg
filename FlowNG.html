@@ -84,14 +84,16 @@
   .header-right {
     display: flex;
     align-items: flex-start;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;          /* the two groups stay side by side; each group wraps its own buttons when narrow */
+    min-width: 0;
     gap: 6px 24px;
     padding: 6px 12px;
     overflow: hidden;
   }
   /* Two stacked rows per group, as in FlowNg2: tools / undo+history, files / settings+save */
-  .tb-group { display: flex; flex-direction: column; gap: 6px; }
+  .tb-group { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 0 1 auto; }
   .tb-right { margin-left: auto; align-items: flex-end; }
+  .tb-right .tb-row { justify-content: flex-end; }
   .tb-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .logo {
     font-size: 16px;
@@ -739,6 +741,7 @@
         <button class="tool-btn" onclick="document.getElementById('file-input').click()" id="open-btn" title="Open one or more FCS / LMD files (or drop them on the page)">📂 Open FCS File</button>
         <button class="tool-btn" onclick="exportGates()" id="export-btn" style="display:none" title="Save gates, plots and axis settings as a JSON template (no event data)">↓ Export Template</button>
         <button class="tool-btn" onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Apply a saved JSON template to the loaded file(s)">↑ Import Template</button>
+        <button class="tool-btn" onclick="showSpikeDialog()" id="spike-btn" title="SpikeNG: spike a donor population (schlemiel) into a recipient file (schlimazel) after checking their column labels match">💉 SpikeNG</button>
         <button class="tool-btn" onclick="showShareDialog()" id="share-btn" style="display:none" title="Export one self-contained HTML containing the event data, compensation, gates and plots (not the original FCS/LMD file)">🔗 Export Shareable HTML</button>
         <input type="file" id="import-input" accept=".json" style="display:none">
 <!--@lite:end-->
@@ -803,7 +806,7 @@
       <kbd>Slider</kbd> — density bins per axis (32–1024; high values suit the expanded view)<br>
       <div style="color:var(--text2);font-size:9px;font-weight:600;margin:6px 0 4px;letter-spacing:0.5px">ARCSINH COFACTOR</div>
       1. Click the plot's <b>top bar</b> (the row with the population menu and bins slider), or any empty space on the plot; the plot gets a blue outline<br>
-      2. With <kbd>Select</kbd> active, a blue marker appears on each <b>ASINH</b> axis: drag it along the axis to set that channel's cofactor live<br>
+      2. With <kbd>Select</kbd> active, a blue marker appears on each <b>ASINH</b> axis: drag it along the axis to set that channel's cofactor live (files open at 300)<br>
       <kbd>Esc</kbd> while dragging cancels; the change is undoable and appears in History<br>
       <kbd>Right-click</kbd> the plot to type an exact value<br>
       No marker? The plot is not selected, another tool is active, or that axis is not ASINH<br>
@@ -840,7 +843,7 @@
       <div class="tab-add" onclick="addTabUndoable()" title="Add a new tab (a separate page of plots)">+ Tab</div>
       <div class="tab-size-ctl" id="tab-size-ctl" title="Plot size: the width and height of every plot on this tab. Saved with templates and shared files.">
         <span>Plot size</span>
-        <input type="range" id="tab-size-slider" min="280" max="800" step="10" value="350" oninput="setTabPlotSize(this.value)">
+        <input type="range" id="tab-size-slider" min="280" max="800" step="10" value="350" oninput="setTabPlotSize(this.value)" title="Plot size: the width and height of every plot on this tab (280 to 800 px)">
         <span class="tab-size-val" id="tab-size-val">350</span>
       </div>
     </div>
@@ -1160,6 +1163,31 @@ function popIndicesArray(pop) {
   return Int32Array.from({ length: f.nEvents }, (_, i) => i);
 }
 
+// Where people can check that a shared file is genuine FlowNG (see doc/SECURITY.md).
+const CHECK_URL = 'https://davidpng.github.io/FlowNg/check/';
+// A small dismissible reminder shown when a shared file is opened, unless its author said the file travels over a secure channel.
+// It is only a reminder: a tampered file would not show it, so the check itself must be done on the Check page.
+function showCheckNotice() {
+  if (document.getElementById('check-notice')) return;
+  const box = document.createElement('div');
+  box.id = 'check-notice';
+  box.style.cssText = 'position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:9998;max-width:560px;width:calc(100% - 28px);' +
+    'background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:10px 14px;font-size:12px;line-height:1.5;' +
+    'box-shadow:0 4px 16px rgba(0,0,0,0.4);display:flex;gap:12px;align-items:flex-start';
+  const msg = document.createElement('div'); msg.style.flex = '1';
+  msg.append('Shared analysis file. If it reached you by email, chat or a link you did not expect, check it first: drop this file on ');
+  const a = document.createElement('a'); a.href = CHECK_URL; a.target = '_blank'; a.rel = 'noopener'; a.textContent = CHECK_URL; a.style.color = 'var(--accent)';
+  msg.append(a, '.');
+  const x = document.createElement('button'); x.textContent = 'Dismiss'; x.style.flexShrink = '0';
+  x.addEventListener('click', () => box.remove());
+  box.append(msg, x);
+  document.body.appendChild(box);
+}
+
+// Escape text taken from files (file, parameter, population and tab names, template fields) before it goes into HTML.
+function _h(v) {
+  return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 function showToast(msg, dur=2500) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -1719,6 +1747,320 @@ async function parseFCS(buffer) {
            rawData: fcsRawData, spillMatrix: fcsSpillMatrix, spillParamIdx: fcsSpillParamIdx };
 }
 /*@lite:end*/
+/*@lite:begin*/
+// ─── FCS EXPORT + SpikeNG (full version only; stripped from locked shared files) ──────────────
+// Write a minimal FCS 3.1 file: only what a reader needs (float32 list-mode data, parameter
+// names/labels/ranges). Patient/sample IDs, dates, instrument settings and $SPILLOVER are not written.
+// params: [{name, longName, range}], data: Float32Array(nEvents*nPar); opts.timestep copies $TIMESTEP;
+// opts.spill writes $SPILLOVER (data should then be the uncompensated values).
+function buildFCSBytes(params, data, nEvents, opts = {}) {
+  const nPar = params.length;
+  const D = '|';
+  const clean = s => String(s == null ? '' : s).split(D).join('_');
+  const kv = [['$BYTEORD', '1,2,3,4'], ['$DATATYPE', 'F'], ['$MODE', 'L'], ['$NEXTDATA', '0'],
+              ['$PAR', String(nPar)], ['$TOT', String(nEvents)]];
+  if (opts.timestep) kv.push(['$TIMESTEP', clean(opts.timestep)]);
+  // opts.spill = { idx: [column indices], matrix: [[...]] }: written as names so any reader can apply it
+  if (opts.spill && opts.spill.idx.length) {
+    const sn = opts.spill.idx.length;
+    kv.push(['$SPILLOVER', [sn, ...opts.spill.idx.map(i => clean(params[i].name)), ...opts.spill.matrix.flat()].join(',')]);
+  }
+  params.forEach((p, i) => {
+    const n = i + 1;
+    kv.push([`$P${n}B`, '32'], [`$P${n}E`, '0,0'], [`$P${n}N`, clean(p.name)]);
+    kv.push([`$P${n}R`, String(Math.max(1, Math.ceil(p.range || 262144)))]);
+    if (p.longName && p.longName !== p.name) kv.push([`$P${n}S`, clean(p.longName)]);
+  });
+  const dataBytes = nEvents * nPar * 4;
+  const mk = (ds, de) => D + [...kv, ['$BEGINANALYSIS', '0'], ['$ENDANALYSIS', '0'], ['$BEGINSTEXT', '0'], ['$ENDSTEXT', '0'],
+    ['$BEGINDATA', String(ds)], ['$ENDDATA', String(de)]].map(([k, v]) => k + D + v).join(D) + D;
+  let dataStart = 58, text = '';
+  for (let i = 0; i < 6; i++) {                       // offsets depend on their own digit count: iterate to a fixed point
+    text = mk(dataStart, dataStart + dataBytes - 1);
+    const next = 58 + new TextEncoder().encode(text).length;
+    if (next === dataStart) break;
+    dataStart = next;
+  }
+  const textBytes = new TextEncoder().encode(text);
+  const dataEnd = dataStart + dataBytes - 1;
+  const f8 = n => (n > 99999999 ? '0' : String(n)).padStart(8, ' ');
+  const header = 'FCS3.1    ' + f8(58) + f8(57 + textBytes.length) + f8(dataStart) + f8(dataEnd) + f8(0) + f8(0);
+  const out = new Uint8Array(dataStart + dataBytes);
+  for (let i = 0; i < 58; i++) out[i] = header.charCodeAt(i);
+  out.set(textBytes, 58);
+  const dv = new DataView(out.buffer);
+  let o = dataStart;
+  const total = nEvents * nPar;
+  for (let i = 0; i < total; i++, o += 4) dv.setFloat32(o, data[i], true);
+  return out;
+}
+
+function _downloadBytes(bytes, name, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([bytes], { type: type || 'application/octet-stream' }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+const _safeFileName = s => String(s || 'events').replace(/[^a-z0-9_\-\s.+]/gi, '_').replace(/\s+/g, '_').slice(0, 80);
+
+// Export the events of one population (gate or whole file) as a minimal FCS file.
+// File name comes from the population name, never the source file name (which may hold patient IDs).
+function exportPopulationFCS(popId) {
+  const pop = populations.find(p => p.id === popId); if (!pop) return;
+  const f = getFileById(pop.fileId); if (!f) return;
+  const P = f.nPar;
+  let data, n;
+  // Uncompensated values + the current spillover matrix when the file has one, so compensation is not baked in
+  const src = f.rawData && f.spillMatrix && f.spillParamIdx ? f.rawData : f.data;
+  const spill = src === f.rawData ? { idx: f.spillParamIdx, matrix: f.spillMatrix } : null;
+  if (pop._isAll) { data = src; n = f.nEvents; }
+  else {
+    const idx = pop.indices; n = idx.length;
+    if (!n) { showToast(`"${pop.name}" has no events to export`, 3500); return; }
+    data = new Float32Array(n * P);
+    for (let i = 0; i < n; i++) data.set(src.subarray(idx[i] * P, idx[i] * P + P), i * P);
+  }
+  const bytes = buildFCSBytes(f.params, data, n, { timestep: f.meta && f.meta['$TIMESTEP'], spill });
+  const name = _safeFileName(pop._isAll ? 'All_events' : pop.name) + '.fcs';
+  _downloadBytes(bytes, name);
+  showToast(`Exported ${n.toLocaleString()} events of "${pop.name}" to ${name} (identifying metadata removed${spill ? '; uncompensated, with its spillover matrix' : ''})`, 6000);
+}
+
+// ─── SpikeNG ───
+// schlimazel = recipient file; schlemiel = donor population that is spiked in.
+const _SPIKE_GAP_FRACTION = 0.03;
+let _spike = { recip: null, donor: null };
+
+function _normLabel(s) { return String(s || '').trim().replace(/\s+/g, ' ').toUpperCase(); }
+
+// Compare column labels. Returns { ok, map, reordered, problems }; map[i] = donor column that matches recipient column i.
+function spikeCompareColumns(recip, donor) {
+  const problems = [];
+  if (recip.nPar !== donor.nPar) problems.push(`Different number of parameters: schlimazel has ${recip.nPar}, schlemiel has ${donor.nPar}`);
+  const rN = recip.params.map(p => _normLabel(p.name)), dN = donor.params.map(p => _normLabel(p.name));
+  const dup = a => a.find((x, i) => a.indexOf(x) !== i);
+  if (dup(rN) !== undefined || dup(dN) !== undefined) problems.push(`Duplicate parameter name "${dup(rN) ?? dup(dN)}" — cannot match columns unambiguously`);
+  if (problems.length) return { ok: false, problems };
+  const map = [];
+  rN.forEach((n, i) => {
+    const j = dN.indexOf(n);
+    if (j < 0) problems.push(`"${recip.params[i].name}" is in the schlimazel but not the schlemiel`);
+    map.push(j);
+  });
+  dN.forEach((n, j) => { if (!rN.includes(n)) problems.push(`"${donor.params[j].name}" is in the schlemiel but not the schlimazel`); });
+  if (problems.length) return { ok: false, problems };
+  recip.params.forEach((rp, i) => {
+    const dp = donor.params[map[i]];
+    const rs = _normLabel(rp.longName), ds = _normLabel(dp.longName), nm = _normLabel(rp.name);
+    if (rs && ds && rs !== nm && ds !== _normLabel(dp.name) && rs !== ds)
+      problems.push(`Label differs for ${rp.name}: "${rp.longName}" vs "${dp.longName}"`);
+  });
+  if (problems.length) return { ok: false, problems };
+  return { ok: true, map, reordered: map.some((j, i) => j !== i), problems };
+}
+
+function _spikeRng(seed) {                                  // mulberry32
+  let a = (seed >>> 0) || 1;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function _timeCol(file) { return file.params.findIndex(p => /^time$/i.test(String(p.name).trim()) || /^time$/i.test(String(p.longName || '').trim())); }
+function _colRange(data, n, P, c) {
+  let lo = Infinity, hi = -Infinity;
+  for (let e = 0; e < n; e++) { const v = data[e * P + c]; if (v < lo) lo = v; if (v > hi) hi = v; }
+  return n ? [lo, hi] : [0, 0];
+}
+
+// Number of spike events for a requested percentage of the schlimazel (recipient) events.
+function spikeEventsFor(pct, nRecip) { return Math.max(0, Math.round(nRecip * pct / 100)); }
+
+// Core merge. mode: 'time' (educational) or 'interleave' (proficiency testing).
+// Returns { params, data, nEvents, spikeRows (0-based output rows), nSpike, gap, warnings }.
+// Compensation note for a pair: merging happens on uncompensated values; the output carries the schlimazel's matrix.
+function spikeCompNote(recip, donor) {
+  const has = f => !!(f.rawData && f.spillMatrix && f.spillParamIdx);
+  const sig = f => has(f) ? f.spillParamIdx.map(i => _normLabel(f.params[i].name)).join(',') + '|' + f.spillMatrix.flat().map(v => (+v).toPrecision(6)).join(',') : '';
+  if (has(recip) && has(donor)) return sig(recip) === sig(donor) ? { kind: 'ok', text: 'Both files carry the same spillover matrix; merged uncompensated, matrix kept' }
+    : { kind: 'info', text: 'The files have different spillover matrices: both are merged uncompensated and the schlimazel\'s matrix is applied to all events' };
+  if (has(recip)) return { kind: 'info', text: 'Schlimazel has a spillover matrix, schlemiel is raw: merged as raw, schlimazel\'s matrix is applied to all events' };
+  if (has(donor)) return { kind: 'warn', text: 'The schlemiel has a spillover matrix but the schlimazel does not: the result is uncompensated (the schlemiel\'s matrix is dropped and its events are used raw)' };
+  return { kind: 'ok', text: 'Neither file has a spillover matrix: merged as is' };
+}
+
+function spikeMerge(recip, donor, { mode, nSpike, seed = 1 }) {
+  const cmp = spikeCompareColumns(recip, donor);
+  if (!cmp.ok) throw new Error('Column labels do not match:\n' + cmp.problems.join('\n'));
+  const P = recip.nPar, nR = recip.nEvents, nD = donor.nEvents, warnings = [];
+  const rng = _spikeRng(seed);
+  if (nSpike > nD) { warnings.push(`Only ${nD.toLocaleString()} schlemiel events available; spiking ${nD.toLocaleString()} instead of ${nSpike.toLocaleString()}`); nSpike = nD; }
+  // Donor columns in recipient order
+  const dmap = cmp.map;
+  // Random subset of donor events (partial Fisher–Yates), kept in original order
+  const pick = new Int32Array(nD); for (let i = 0; i < nD; i++) pick[i] = i;
+  for (let i = 0; i < nSpike; i++) { const j = i + Math.floor(rng() * (nD - i)); const t = pick[i]; pick[i] = pick[j]; pick[j] = t; }
+  const chosen = pick.slice(0, nSpike).sort();
+  const spike = new Float32Array(nSpike * P);
+  const dRaw = donor.rawData || donor.data, rRaw = recip.rawData || recip.data;   // merge uncompensated values
+  for (let k = 0; k < nSpike; k++) for (let c = 0; c < P; c++) spike[k * P + c] = dRaw[chosen[k] * P + dmap[c]];
+
+  const total = nR + nSpike;
+  const out = new Float32Array(total * P);
+  const spikeRows = new Int32Array(nSpike);
+  const tR = _timeCol(recip);
+  let gap = 0;
+  if (mode === 'time') {
+    out.set(rRaw.subarray(0, nR * P), 0);
+    out.set(spike, nR * P);
+    for (let k = 0; k < nSpike; k++) spikeRows[k] = nR + k;
+    if (tR >= 0 && nSpike) {
+      const [r0, r1] = _colRange(rRaw, nR, P, tR);
+      const dT = _timeCol(donor);
+      const [d0, d1] = dT >= 0 ? _colRange(dRaw, nD, donor.nPar, dT) : [0, 0];
+      gap = _SPIKE_GAP_FRACTION * Math.max(r1 - r0, d1 - d0);          // 3% of the longer acquisition
+      const [s0] = _colRange(spike, nSpike, P, tR);
+      const shift = (r1 + gap) - s0;
+      for (let k = 0; k < nSpike; k++) out[(nR + k) * P + tR] += shift;
+    } else if (nSpike) warnings.push('No Time parameter found: the schlemiel events are appended after the schlimazel with no time gap');
+  } else {
+    // Interleave: each spike event goes into a random slot among the recipient events
+    const slot = new Int32Array(nSpike);
+    for (let k = 0; k < nSpike; k++) slot[k] = Math.floor(rng() * (nR + 1));
+    slot.sort();
+    let ri = 0, o = 0;
+    for (let k = 0; k <= nSpike; k++) {
+      const upto = k < nSpike ? slot[k] : nR;
+      if (upto > ri) { out.set(rRaw.subarray(ri * P, upto * P), o * P); o += upto - ri; ri = upto; }
+      if (k < nSpike) {
+        out.set(spike.subarray(k * P, k * P + P), o * P);
+        if (tR >= 0 && nR) out[o * P + tR] = rRaw[Math.max(0, ri - 1) * P + tR];   // inherit local time so it blends in
+        spikeRows[k] = o; o++;
+      }
+    }
+  }
+  const params = recip.params.map((p, i) => ({ name: p.name, longName: p.longName, range: Math.max(p.range || 0, donor.params[dmap[i]].range || 0) }));
+  const hasR = !!(recip.rawData && recip.spillMatrix && recip.spillParamIdx);
+  const note = spikeCompNote(recip, donor); if (note.kind === 'warn') warnings.push(note.text);
+  return { params, spill: hasR ? { idx: recip.spillParamIdx, matrix: recip.spillMatrix } : null, compNote: note.text, data: out, nEvents: total, spikeRows, nSpike, gap, warnings, timestep: recip.meta && recip.meta['$TIMESTEP'] };
+}
+
+async function _spikeParseFile(file) {
+  const buf = await file.arrayBuffer();
+  const u8 = new Uint8Array(buf);
+  const r = isLMD(u8) ? await parseLMD(buf) : await parseFCS(buf);
+  hideProgress();
+  return r;
+}
+
+function showSpikeDialog() {
+  document.getElementById('spike-modal')?.remove();
+  _spike = { recip: null, donor: null };
+  const o = document.createElement('div');
+  o.id = 'spike-modal'; o.className = 'modal-overlay';
+  o.innerHTML = `
+    <div class="modal-box" style="max-width:460px">
+      <h2>💉 SpikeNG</h2>
+      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Spike a donor population (schlemiel) into a recipient file (schlimazel).
+        Both must have identical column labels. Use <i>Export events as FCS</i> on a population to make the schlemiel.</p>
+      <label style="font-size:11px;display:block;margin-bottom:6px">Schlimazel (recipient) FCS / LMD
+        <input id="spike-recip" type="file" accept=".fcs,.lmd,.LMD" style="width:100%" onchange="_spikeLoad('recip',this.files[0])"></label>
+      <div id="spike-recip-info" style="font-size:10px;color:var(--text2);margin-bottom:6px"></div>
+      <label style="font-size:11px;display:block;margin-bottom:6px">Schlemiel (donor) FCS / LMD
+        <input id="spike-donor" type="file" accept=".fcs,.lmd,.LMD" style="width:100%" onchange="_spikeLoad('donor',this.files[0])"></label>
+      <div id="spike-donor-info" style="font-size:10px;color:var(--text2);margin-bottom:6px"></div>
+      <div id="spike-check" style="font-size:11px;margin-bottom:4px;min-height:14px"></div>
+      <div id="spike-comp" style="font-size:11px;margin-bottom:8px;min-height:14px"></div>
+      <div style="font-size:11px;margin-bottom:8px">
+        <label style="display:block;margin-bottom:3px"><input type="radio" name="spike-mode" value="time" checked onchange="_spikeUpdate()">
+          <b>Educational</b>: time based. Schlemiel events follow the schlimazel, separated by a gap of 3% of the longer acquisition.</label>
+        <label style="display:block"><input type="radio" name="spike-mode" value="interleave" onchange="_spikeUpdate()">
+          <b>Proficiency testing</b>: schlemiel events are interleaved at random positions among the schlimazel events.</label>
+      </div>
+      <div style="font-size:11px;margin-bottom:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span>Spike</span>
+        <input id="spike-pct" type="number" min="0" step="any" value="1" style="width:80px" oninput="_spikeUpdate('pct')">
+        <span>% of schlimazel events =</span>
+        <input id="spike-n" type="number" min="0" step="1" style="width:90px" oninput="_spikeUpdate('n')">
+        <span>events</span>
+      </div>
+      <div id="spike-summary" style="font-size:11px;color:var(--text2);margin-bottom:8px;min-height:14px"></div>
+      <label style="font-size:11px;display:block;margin-bottom:6px">Random seed (same seed = same events picked)
+        <input id="spike-seed" type="number" step="1" value="1" style="width:100%"></label>
+      <label style="font-size:11px;display:block;margin-bottom:6px">Output file name
+        <input id="spike-name" type="text" value="SpikeNG" style="width:100%"></label>
+      <label style="font-size:11px;display:block;margin-bottom:10px">
+        <input id="spike-key" type="checkbox"> Also download an answer key (CSV of the spiked event rows)</label>
+      <div id="spike-status" style="font-size:11px;color:var(--text2);min-height:14px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="document.getElementById('spike-modal').remove()">Close</button>
+        <button class="primary" id="spike-go" onclick="runSpike()" disabled>Create spiked FCS</button>
+      </div>
+    </div>`;
+  document.body.appendChild(o);
+}
+
+async function _spikeLoad(which, file) {
+  const info = document.getElementById(`spike-${which}-info`);
+  _spike[which] = null; _spikeUpdate();
+  if (!file) { info.textContent = ''; return; }
+  info.textContent = 'Reading…';
+  try {
+    const r = await _spikeParseFile(file);
+    _spike[which] = r;
+    info.textContent = `${r.nEvents.toLocaleString()} events · ${r.nPar} parameters`;
+  } catch (e) { info.textContent = 'Could not read this file: ' + e.message; }
+  _spikeUpdate(which === 'recip' ? 'pct' : undefined);
+}
+
+function _spikeUpdate(src) {
+  const { recip, donor } = _spike;
+  const pctEl = document.getElementById('spike-pct'), nEl = document.getElementById('spike-n');
+  if (!pctEl) return;
+  if (recip) {
+    if (src === 'n') pctEl.value = (100 * (parseInt(nEl.value) || 0) / (recip.nEvents || 1)).toFixed(4).replace(/\.?0+$/, '');
+    else nEl.value = spikeEventsFor(parseFloat(pctEl.value) || 0, recip.nEvents);
+  }
+  const chk = document.getElementById('spike-check'), sum = document.getElementById('spike-summary'), go = document.getElementById('spike-go');
+  let ok = false;
+  chk.textContent = ''; sum.textContent = '';
+  const cn = document.getElementById('spike-comp'); cn.textContent = '';
+  if (recip && donor) {
+    const c = spikeCompareColumns(recip, donor);
+    if (c.ok) { ok = true; chk.style.color = '#4caf7a'; chk.textContent = `✓ ${recip.nPar} column labels match` + (c.reordered ? ' (schlemiel columns reordered to match)' : ''); }
+    else { chk.style.color = '#e06c75'; chk.innerHTML = '✗ Column labels do not match:<br>' + c.problems.slice(0, 8).map(s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')).join('<br>') + (c.problems.length > 8 ? '<br>…' : ''); }
+    if (c.ok) { const note = spikeCompNote(recip, donor); cn.style.color = note.kind === 'warn' ? '#f5a623' : 'var(--text2)'; cn.textContent = (note.kind === 'warn' ? '⚠ ' : 'ℹ ') + note.text; }
+    const n = parseInt(nEl.value) || 0, use = Math.min(n, donor.nEvents);
+    sum.textContent = `${use.toLocaleString()} of ${donor.nEvents.toLocaleString()} schlemiel events → ${(recip.nEvents + use).toLocaleString()} events total (${(100 * use / (recip.nEvents + use || 1)).toFixed(3)}% of the result)` +
+      (n > donor.nEvents ? ` — only ${donor.nEvents.toLocaleString()} available` : '');
+    if (use <= 0) ok = false;
+  }
+  go.disabled = !ok;
+}
+
+async function runSpike() {
+  const { recip, donor } = _spike; if (!recip || !donor) return;
+  const status = document.getElementById('spike-status'), go = document.getElementById('spike-go');
+  go.disabled = true; status.textContent = 'Merging…';
+  try {
+    await new Promise(r => setTimeout(r, 20));
+    const mode = document.querySelector('input[name="spike-mode"]:checked').value;
+    const nSpike = parseInt(document.getElementById('spike-n').value) || 0;
+    const seed = parseInt(document.getElementById('spike-seed').value) || 1;
+    const r = spikeMerge(recip, donor, { mode, nSpike, seed });
+    const bytes = buildFCSBytes(r.params, r.data, r.nEvents, { timestep: r.timestep, spill: r.spill });
+    const base = _safeFileName(document.getElementById('spike-name').value || 'SpikeNG');
+    _downloadBytes(bytes, base + '.fcs');
+    if (document.getElementById('spike-key').checked) {
+      await new Promise(r => setTimeout(r, 1000));      // two downloads at once: browsers keep only one, so give the FCS file its own turn
+      const lines = [`# SpikeNG answer key. Mode: ${mode === 'time' ? 'educational (time based)' : 'proficiency (interleaved)'}; seed ${seed}; ${r.nSpike} spiked of ${r.nEvents} events`,
+        'row_1_based'];
+      for (let k = 0; k < r.spikeRows.length; k++) lines.push(r.spikeRows[k] + 1);
+      _downloadBytes(lines.join('\n') + '\n', base + '_key.csv', 'text/csv');
+    }
+    const msg = `Wrote ${base}.fcs: ${r.nEvents.toLocaleString()} events (${r.nSpike.toLocaleString()} spiked)` + (r.warnings.length ? ' — ' + r.warnings.join('; ') : '');
+    status.textContent = msg; showToast(msg, 8000);
+  } catch (e) { console.error(e); status.textContent = 'Failed: ' + e.message; }
+  go.disabled = false;
+}
+/*@lite:end*/
 // ─── TRANSFORM (log10) ────────────────────────────────────────────────────────
 const LOG10E = Math.LOG10E;  // 1/ln(10) ≈ 0.4343
 
@@ -1734,10 +2076,9 @@ function getAsinhCofactor(paramIdx) {
   const pr = _paramRanges.get(paramIdx);
   return (pr && pr.asinhCofactor != null) ? pr.asinhCofactor : DEFAULT_ASINH_COFACTOR;
 }
-// The cofactor a channel starts with: the OTflow optimum for this file, else the global default.
+// The cofactor a channel starts with: the global default (300 unless changed in Global Settings).
 function defaultCofactor(fcsFile, paramIdx) {
-  const o = fcsFile.otflowCofactors;
-  return (o && !isNaN(o[paramIdx])) ? o[paramIdx] : DEFAULT_ASINH_COFACTOR;
+  return DEFAULT_ASINH_COFACTOR;
 }
 // Returns the active file's data for the current render context
 function getContextFile() {
@@ -1928,6 +2269,7 @@ function loadFCS(buffer, filename) {
   }
 }
 
+const OTFLOW_ON_LOAD = false;   // cofactors start at 300; OT-flow is a Global Settings action
 // Spawns a pool of OTflow workers (one per CPU core, max 8) to compute cofactors
 // for all fluorescent parameters in parallel from the main thread.
 function startOTflowPool(parsedMsg) {
@@ -1943,13 +2285,11 @@ function startOTflowPool(parsedMsg) {
   const fluorParams = [];
   for (let p = 0; p < nPar; p++) { if (isAsinh[p]) fluorParams.push(p); }
 
-  // LMD files: skip OTflow entirely and use a fixed cofactor of 300 for all
-  // fluorescent channels. OTflow produces unreliable results on Beckman Coulter
-  // LMD data and the extra computation is wasted.
-  if (version.startsWith('LMD')) {
-    const cofactors = new Float32Array(nPar).fill(NaN);
-    for (const p of fluorParams) cofactors[p] = 300;
-    finalizeFCSLoad(data, colMins, colMaxs, cofactors,
+  // Files always start at the global default cofactor (300). OT-flow runs only when asked for in Global Settings
+  // (startOTflowSuggest); on LMD data it is unreliable and is never run. The rest of this function is the
+  // old on-load optimisation, kept for reference and switched off by OTFLOW_ON_LOAD.
+  if (!OTFLOW_ON_LOAD || version.startsWith('LMD')) {
+    finalizeFCSLoad(data, colMins, colMaxs, null,
                     params, nEvents, nPar, meta, version, compensated, filename,
                     rawData, spillMatrix, spillParamIdx);
     return;
@@ -2090,15 +2430,61 @@ async function loadFCSFallback(buffer, filename) {
     showToast('Error parsing file: ' + e.message);
   }
 }
+
+// OT-flow cofactor suggestions, run only when asked for in Global Settings. Applies to every fluorescent channel of the open
+// FCS files (LMD files are skipped: OT-flow is unreliable on them), replacing any manual cofactor, as one undo step.
+function startOTflowSuggest() {
+  const files = fcsFiles.filter(f => f.data && !String(f.version || '').startsWith('LMD'));
+  if (!files.length) { showToast(fcsFiles.length ? 'OT-flow is not used for LMD files (cofactor stays 300)' : 'Load a file first', 4000); return; }
+  const isFluor = p => !/\bFS[CH]\b|\bSS[CH]\b|FSC|SSC|\bTIME\b/.test((p.name + ' ' + (p.longName || '')).toUpperCase());
+  const jobs = [];
+  files.forEach(f => f.params.forEach((p, i) => { if (isFluor(p)) jobs.push({ f, p: i }); }));
+  if (!jobs.length) { showToast('No fluorescent channels found'); return; }
+  const workerSrc = document.getElementById('parse-worker-src').textContent;
+  const results = new Map();     // file -> Float32Array of suggestions
+  files.forEach(f => results.set(f, new Float32Array(f.nPar).fill(NaN)));
+  let next = 0, done = 0;
+  const finish = () => {
+    hideProgress();
+    pushUndo('Suggested cofactors with OT-flow');
+    let n = 0;
+    files.forEach(f => {
+      const sug = results.get(f);
+      f.otflowCofactors = sug;
+      for (let p = 0; p < f.nPar; p++) {
+        if (!isNaN(sug[p]) && sug[p] > 0) { f.paramRanges.set(p, { ...(f.paramRanges.get(p) || {}), asinhCofactor: sug[p] }); n++; }
+      }
+    });
+    invalidateSpatialCache(true);
+    files.forEach(f => reevaluateAllGates(f));
+    markAllDirty(); renderAllPlots();
+    showToast(`OT-flow set ${n} cofactor(s)`, 4000);
+  };
+  const run = () => {
+    if (next >= jobs.length) return;
+    const { f, p } = jobs[next++];
+    const col = new Float32Array(f.nEvents);
+    for (let e = 0; e < f.nEvents; e++) col[e] = f.data[e * f.nPar + p];
+    const url = URL.createObjectURL(new Blob([workerSrc], { type: 'application/javascript' }));
+    const w = new Worker(url);
+    const end = cf => {
+      URL.revokeObjectURL(url); w.terminate();
+      if (cf != null) results.get(f)[p] = cf;
+      done++;
+      showProgress(Math.round(100 * done / jobs.length), `OT-flow: optimizing cofactors (${done}/${jobs.length} channels)…`);
+      if (done === jobs.length) finish(); else run();
+    };
+    w.onmessage = ev => { if (ev.data.type === 'otflow_result') end(ev.data.cofactor); };
+    w.onerror = () => end(null);
+    w.postMessage({ mode: 'otflow', col: col.buffer, p, nEvents: f.nEvents, mcIter: 7 }, [col.buffer]);
+  };
+  showProgress(1, 'OT-flow: optimizing cofactors…');
+  for (let i = 0; i < Math.min(navigator.hardwareConcurrency || 4, 8, jobs.length); i++) run();
+}
 /*@lite:end*/
 function addFileToSession(fileObj) {
-  // Seed per-file param ranges from OTflow cofactors
-  if (fileObj.otflowCofactors) {
-    for (let p = 0; p < fileObj.nPar; p++) {
-      const cf = fileObj.otflowCofactors[p];
-      if (!isNaN(cf) && cf > 0) fileObj.paramRanges.set(p, { asinhCofactor: cf });
-    }
-  }
+  // Cofactors are not seeded here: every channel starts at the global default (300). Only a manual correction, an OT-flow
+  // run requested in Global Settings, or an applied template puts a per-channel value in paramRanges.
 
   // Create root population with globally unique ID (never resets popIdCounter)
   const rootPop = {
@@ -2342,6 +2728,11 @@ function showFileContextMenu(fileId, cx, cy) {
       onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
       📋 Paste gate here
     </div>` : ''}
+    ${typeof exportPopulationFCS === 'function' ? `<div class="ctx-item" onclick="exportPopulationFCS(${(getFileById(fileId) || {})._rootPopId});document.getElementById('file-ctx-menu')?.remove()"
+      style="padding:6px 14px;font-size:11px;cursor:pointer;color:var(--text)"
+      onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
+      ⬇ Export all events as FCS…
+    </div>` : ''}
     <div class="ctx-item" onclick="removeFile(${fileId});document.getElementById('file-ctx-menu')?.remove()"
       style="padding:6px 14px;font-size:11px;cursor:pointer;color:#e06c75"
       onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
@@ -2375,7 +2766,7 @@ function showPlotFileMenu(plotId, cx, cy) {
       <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${col};
                    ${isCurrent ? '' : 'opacity:0.5'}"></span>
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-            title="${f.filename}">${shortFilename(f.filename, 30)}</span>
+            title="${_h(f.filename)}">${_h(shortFilename(f.filename, 30))}</span>
       ${isCurrent ? '<span style="flex-shrink:0;color:var(--accent)">✓</span>' : ''}
     </div>`;
   }).join('');
@@ -2803,12 +3194,12 @@ function renderPlotCard(plot) {
 
   const pOpts = (sel) => sortedParamIndices().map(i => {
     const p = fcsFile ? fcsFile.params[i] : null; if (!p) return '';
-    return `<option value="${i}"${i===sel?' selected':''}>${p.name}${p.longName&&p.longName!==p.name?' · '+p.longName:''}</option>`;
+    return `<option value="${i}"${i===sel?' selected':''}>${_h(p.name)}${p.longName&&p.longName!==p.name?' · '+_h(p.longName):''}</option>`;
   }).join('');
   // Only show populations that belong to this plot's file
   const popOpts = () => populations
     .filter(p => p.fileId === plot.fileId)
-    .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${p.name} (${popCount(p).toLocaleString()})</option>`)
+    .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${_h(p.name)} (${popCount(p).toLocaleString()})</option>`)
     .join('');
 
   card.innerHTML = `
@@ -2818,7 +3209,7 @@ function renderPlotCard(plot) {
         style="width:8px;height:8px;border-radius:50%;flex-shrink:0;
                display:${fcsFiles.length > 1 ? 'inline-block' : 'none'};
                background:${fcsFile ? getFileColor(plot.fileId) : 'transparent'}"
-        title="${fcsFile ? fcsFile.filename : ''}"></span>
+        title="${fcsFile ? _h(fcsFile.filename) : ''}"></span>
       <span style="color:var(--text2);font-size:10px;flex-shrink:0">Pop:</span>
       <select id="pop-sel-${plot.id}" onchange="changePop(${plot.id},this.value)"
         title="Population shown on this plot. Every gate under it is drawn in its own colour."
@@ -2976,7 +3367,7 @@ function buildAxisControls(plot) {
   const pid = plot.id;
   const pOpts = (sel) => sortedParamIndices().map(i => {
     const p = fcsFile ? fcsFile.params[i] : null; if (!p) return '';
-    return `<option value="${i}"${i===sel?' selected':''}>${p.name}${p.longName&&p.longName!==p.name?' · '+p.longName:''}</option>`;
+    return `<option value="${i}"${i===sel?' selected':''}>${_h(p.name)}${p.longName&&p.longName!==p.name?' · '+_h(p.longName):''}</option>`;
   }).join('');
 
   // X axis controls (horizontal, bottom)
@@ -4961,7 +5352,7 @@ function updateAllPopSelects() {
     // Only show populations from the same file as this plot
     sel.innerHTML = populations
       .filter(p => p.fileId === plot.fileId)
-      .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${p.name} (${popCount(p).toLocaleString()})</option>`)
+      .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${_h(p.name)} (${popCount(p).toLocaleString()})</option>`)
       .join('');
   });
   updateAllFileSelects();
@@ -5012,7 +5403,7 @@ function changeFile(plotId, newFileId, propagate=true) {
   // Rebuild pop dropdown for this plot
   const popSel = document.getElementById(`pop-sel-${plotId}`);
   if (popSel) popSel.innerHTML = newFile.populations
-    .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${p.name} (${popCount(p).toLocaleString()})</option>`)
+    .map(p => `<option value="${p.id}"${p.id===plot.inputPop?' selected':''}>${_h(p.name)} (${popCount(p).toLocaleString()})</option>`)
     .join('');
 
   // Sync file dot indicator
@@ -5082,6 +5473,7 @@ function showGateMenu(popId, x, y) {
     { label: 'Copy',  disabled: isQuad || !!pop.boolInfo, run: () => copyGate(popId, false) },
     { label: 'Cut',   disabled: isQuad || !!pop.boolInfo, run: () => copyGate(popId, true) },
     { label: 'Paste', disabled: !_gateClipboard, run: () => pasteGate(popId) },
+    ...(typeof exportPopulationFCS === 'function' ? [{ label: 'Export events as FCS…', disabled: !popCount(pop), run: () => exportPopulationFCS(popId) }] : []),
     { label: 'Delete', danger: true, run: () => deleteGateFromTree(popId) },
   ]);
 }
@@ -5254,6 +5646,7 @@ function logChange(what) {
 function updateSaveButton() {
   const b = document.getElementById('save-btn');
   if (b) { b.classList.toggle('dirty', _dirty); b.textContent = _dirty ? '💾 Save changes •' : '💾 Save'; }
+  const tab = document.querySelector('#ws-strip .ws-item.active'); if (tab) tab.classList.toggle('dirty', _dirty);   // the live workspace's tab shows the dot too
 }
 function _plotPair(plot) {
   const f = getFileForPlot(plot);
@@ -5483,7 +5876,7 @@ function renderTabStrip() {
     el.className = 'tab-item' + (tab.id === activeTabId ? ' active' : '');
     el.dataset.tabId = tab.id;
     el.innerHTML = `
-      <button class="tab-main" title="Click to switch tabs. Right-click or double-click to rename. Drop a plot here to move it.">${tab.name} (${plotCount})</button>
+      <button class="tab-main" title="Click to switch tabs. Right-click or double-click to rename. Drop a plot here to move it.">${_h(tab.name)} (${plotCount})</button>
       <button class="tab-close" onclick="removeTab(${tab.id});event.stopPropagation()" title="Close tab">✕</button>`;
     el.querySelector('.tab-main').addEventListener('dblclick', () => renameTab(tab.id));
     el.querySelector('.tab-main').addEventListener('contextmenu', e => { e.preventDefault(); renameTab(tab.id); });
@@ -5911,7 +6304,7 @@ function showAxisRangeModal(plot, clientX, clientY) {
   let rowsHTML = '';
   axes.forEach(({ axis, paramIdx }) => {
     const p = fcsFile.params[paramIdx];
-    const label = p.longName && p.longName !== p.name ? `${p.name} · ${p.longName}` : p.name;
+    const label = _h(p.longName && p.longName !== p.name ? `${p.name} · ${p.longName}` : p.name);
     const scale = axis === 'x'
       ? plotScale(plot, 'x')
       : plotScale(plot, 'y');
@@ -6190,7 +6583,7 @@ function showColorPicker(popId, mx, my) {
 
       <div style="display:flex;flex-direction:column;gap:4px">
         <label style="font-size:10px;color:var(--text2)">Name</label>
-        <input class="modal-input" id="gate-rename-input" value="${pop.name.replace(/"/g,'&quot;')}"
+        <input class="modal-input" id="gate-rename-input" value="${_h(pop.name)}"
           style="width:100%" maxlength="80" placeholder="Gate name">
       </div>
 
@@ -6303,6 +6696,12 @@ function showGlobalSettingsDialog() {
         <div style="font-size:9px;color:var(--text2);margin-bottom:4px">Controls compression around zero for asinh scale.</div>
         <button onclick="applyGlobalAsinhCofactor()" style="width:100%;padding:4px;font-size:10px">Apply Cofactor to All Plots</button>
       </div>
+
+      ${typeof startOTflowSuggest === 'function' ? `<div style="border-bottom:1px solid var(--border2);padding-bottom:8px">
+        <label style="display:block;font-size:10px;color:var(--text2);margin-bottom:4px">OT-flow cofactor suggestions</label>
+        <div style="font-size:9px;color:var(--text2);margin-bottom:4px">Files open at cofactor 300 and are never changed automatically. This computes a suggested cofactor for every fluorescent channel of the open FCS files (not LMD files) and applies it, replacing any manual cofactor. Can be slow on large files. Undoable.</div>
+        <button onclick="document.getElementById('global-settings-modal').remove();startOTflowSuggest()" style="width:100%;padding:4px;font-size:10px">Suggest cofactors with OT-flow</button>
+      </div>` : ''}
 
       <div style="border-bottom:1px solid var(--border2);padding-bottom:8px">
         <label style="display:block;font-size:10px;color:var(--text2);margin-bottom:4px">Min Percentile (%)</label>
@@ -6457,7 +6856,7 @@ function showExportNameDialog() {
       </div>
       <div style="display:flex;flex-direction:column;gap:4px">
         <label style="font-size:10px;color:var(--text2)">Template name</label>
-        <input class="modal-input" id="tmpl-name-input" value="${defaultName}" placeholder="e.g. PBMC Panel 1" style="width:100%">
+        <input class="modal-input" id="tmpl-name-input" value="${_h(defaultName)}" placeholder="e.g. PBMC Panel 1" style="width:100%">
       </div>
       <div class="modal-actions">
         <button onclick="document.getElementById('export-name-modal').remove()">Cancel</button>
@@ -6686,6 +7085,34 @@ async function _gunzipB64(b64) {
 }
 
 /*@lite:begin*/
+// After an export: where the file went, its SHA-256, and what to tell recipients.
+async function showShareDone(where, blob, secure) {
+  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+  const sha = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+  document.getElementById('share-done')?.remove();
+  const o = document.createElement('div');
+  o.id = 'share-done'; o.className = 'modal-overlay';
+  const box = document.createElement('div'); box.className = 'modal-box'; box.style.maxWidth = '480px';
+  const h = document.createElement('h2'); h.textContent = 'Shared file saved';
+  const p1 = document.createElement('p'); p1.style.cssText = 'font-size:11px;color:var(--text2);margin:0 0 8px'; p1.textContent = where;
+  const p2 = document.createElement('p'); p2.style.cssText = 'font-size:11px;margin:0 0 8px'; p2.append('SHA-256: ');
+  const code = document.createElement('code'); code.style.wordBreak = 'break-all'; code.textContent = sha; p2.appendChild(code);
+  box.append(h, p1, p2);
+  const note = document.createElement('p'); note.style.cssText = 'font-size:11px;color:var(--text2);margin:0 0 8px';
+  const ta = document.createElement('textarea'); ta.readOnly = true; ta.style.cssText = 'width:100%;height:96px;font-size:11px;margin-bottom:8px';
+  if (secure) {
+    note.textContent = 'Secure channel: recipients will not be reminded to check this file. Before you publish it, check it and list its hash with scripts/check_shared.py (it writes a SHA256SUMS file), and publish only from a site you control.';
+    box.appendChild(note);
+  } else {
+    note.textContent = 'Recipients will see a reminder to check the file. You can paste this into your message:';
+    ta.value = 'This is a FlowNG shared analysis. Before opening it, check it at ' + CHECK_URL + ' (drop the file on that page; nothing is uploaded).\nFile SHA-256: ' + sha;
+    box.append(note, ta);
+  }
+  const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
+  const close = document.createElement('button'); close.className = 'primary'; close.textContent = 'Close'; close.addEventListener('click', () => o.remove());
+  row.appendChild(close); box.appendChild(row); o.appendChild(box); document.body.appendChild(o);
+}
+
 function showShareDialog() {
   if (!_shareFiles().length) { showToast('Load a file first'); return; }
   const existing = document.getElementById('share-modal');
@@ -6715,8 +7142,12 @@ function showShareDialog() {
       </div>
       <label style="font-size:11px;display:block;margin-bottom:6px">
         <input id="share-meta" type="checkbox"> Include full FCS header metadata (may contain patient/sample IDs)</label>
-      <label style="font-size:11px;display:block;margin-bottom:12px">
+      <label style="font-size:11px;display:block;margin-bottom:6px" title="Leaves out the dates and times the file would carry (when it was made, when the template was exported) and your History, so nothing in the file says who made it or when. Untick to keep your History for teaching.">
+        <input id="share-anon" type="checkbox" checked> Anonymise: leave out dates, times and my History (nothing says who made this or when)</label>
+      <label style="font-size:11px;display:block;margin-bottom:6px">
         <input id="share-sterile" type="checkbox" checked> Locked viewer: recipients cannot load other files, import, or export</label>
+      <label style="font-size:11px;display:block;margin-bottom:12px" title="Leave this off if the file goes by email, chat or a download link. Tick it when you publish the file yourself, from a site you control, and recipients cannot be expected to run the online check.">
+        <input id="share-secure" type="checkbox"> Secure distribution channel: I will publish this file from a site I control, so do not remind recipients to check it</label>
       <div id="share-status" style="font-size:11px;color:var(--text2);min-height:14px;margin-bottom:8px"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button onclick="document.getElementById('share-modal').remove()">Cancel</button>
@@ -6778,6 +7209,8 @@ async function doExportShareable() {
   const usedNames = new Set();
   const fullMeta = document.getElementById('share-meta').checked;
   const sterile = document.getElementById('share-sterile').checked;
+  const secure = document.getElementById('share-secure').checked;
+  const anon = document.getElementById('share-anon').checked;
   go.disabled = true;
   const safe = name.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
   const fileName = `${safe}_FlowNG_shared.html`;
@@ -6857,7 +7290,12 @@ async function doExportShareable() {
     await new Promise(r => setTimeout(r, 0));
     // format 2: a list of workspaces over one shared list of files. template/history mirror the first
     // workspace so a one-workspace file still has the old top-level shape.
-    const bundle = { format: 2, sterile, history: wsOut[0].history, name, created: new Date().toISOString(), files, template: wsOut[0].template, workspaces: wsOut };
+    const bundle = { format: 2, sterile, checkNotice: !secure, history: wsOut[0].history, name, created: new Date().toISOString(), files, template: wsOut[0].template, workspaces: wsOut };
+    if (anon) {          // no author, date or time information: created/exported stamps and the author's History
+      delete bundle.created; bundle.history = [];
+      wsOut.forEach(w => { w.history = []; if (w.template) delete w.template.exported; });
+      if (bundle.template) delete bundle.template.exported;
+    }
     // Original file names must not survive anywhere in the bundle (template gate parents, plots, ...).
     let jsonText = JSON.stringify(bundle);
     const esc = x => JSON.stringify(x).slice(1, -1);
@@ -6906,6 +7344,7 @@ async function doExportShareable() {
     document.getElementById('share-modal').remove();
     showToast(where, 10000);
     console.log('[FlowNG] ' + where);
+    await showShareDone(where, blob, secure);
   } catch (err) {
     console.error(err);
     status.textContent = 'Export failed: ' + err.message;
@@ -6955,6 +7394,7 @@ async function loadBundleIfPresent() {
     hideProgress();
     _bundleInfo = bundle;
     _bundleObj = bundle;
+    if (bundle.checkNotice) showCheckNotice();
     _authorSpill = bundle.files.map(f => f.spillMatrixAuthor || f.spillMatrix || null);
     // format 2 lists its workspaces; a format 1 file is one workspace over all its files
     const wsDefs = bundle.workspaces || [{ name: bundle.name, fileIdx: bundle.files.map((_, i) => i),
@@ -7210,11 +7650,11 @@ function _importGatesV3(tmpl) {
 
   const rowsHTML = mapping.map((m, i) => `
     <tr>
-      <td style="padding:4px 8px;font-size:11px;color:var(--text2)">${m.templateFile.sourceFile || 'File '+i}${m.templateFile.tube ? `<br><span style="font-size:10px">${m.templateFile.tube}</span>` : ''}</td>
+      <td style="padding:4px 8px;font-size:11px;color:var(--text2)">${_h(m.templateFile.sourceFile || 'File '+i)}${m.templateFile.tube ? `<br><span style="font-size:10px">${_h(m.templateFile.tube)}</span>` : ''}</td>
       <td style="padding:4px 8px">
         <select id="import-v3-sel-${i}" style="width:100%;font-size:11px;padding:2px 4px;background:var(--bg2);color:var(--text1);border:1px solid var(--border);border-radius:3px">
           <option value="" ${m.fcsFile ? '' : 'selected'}>(skip this section)</option>
-          ${poolFiles.map(f => `<option value="${f.fileId}" ${m.fcsFile && m.fcsFile.fileId===f.fileId?'selected':''}>${f.filename||'File '+f.fileId}${_fileTubeName(f) ? ' — ' + _fileTubeName(f) : ''}</option>`).join('')}
+          ${poolFiles.map(f => `<option value="${f.fileId}" ${m.fcsFile && m.fcsFile.fileId===f.fileId?'selected':''}>${_h(f.filename||'File '+f.fileId)}${_fileTubeName(f) ? ' — ' + _h(_fileTubeName(f)) : ''}</option>`).join('')}
         </select>
       </td>
       <td style="padding:4px 8px;font-size:10px;color:${m.fcsFile ? 'var(--accent)' : '#e0a33e'}">${m.fcsFile ? 'by ' + m.how : 'no match'}</td>
@@ -7366,6 +7806,8 @@ function _applyTemplateV3(tmpl, fileMap) {
     const rootPop = fileObj.populations.find(p => p._isAll);
     const rootPopId = rootPop ? rootPop.id : 0;
 
+    // A template dominates manual corrections: cofactors start again from the default, then the template's own are set.
+    fileObj.paramRanges.forEach(pr => { delete pr.asinhCofactor; });
     // Restore param ranges FIRST: gate membership depends on cofactors / axis ranges
     if (tf.paramRanges) {
       Object.entries(tf.paramRanges).forEach(([pName, pr]) => {
@@ -7547,8 +7989,8 @@ function showMetadata(fileId) {
         <div style="margin-left:auto;color:var(--text2);font-size:10px">${keys.length} keywords</div>
       </div>
       <div style="background:var(--bg2);border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:11px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">
-        <div><span style="color:var(--text2)">File:</span> <span title="${fileObj.filename || ''}">${shortFilename(fileObj.filename || 'unknown', 40)}</span></div>
-        <div><span style="color:var(--text2)">Format:</span> ${fcsVer}</div>
+        <div><span style="color:var(--text2)">File:</span> <span title="${_h(fileObj.filename || '')}">${_h(shortFilename(fileObj.filename || 'unknown', 40))}</span></div>
+        <div><span style="color:var(--text2)">Format:</span> ${_h(fcsVer)}</div>
         <div><span style="color:var(--text2)">Events:</span> ${(fileObj.nEvents || 0).toLocaleString()}</div>
         <div><span style="color:var(--text2)">Parameters:</span> ${fileObj.nPar || 0}</div>
         <div style="grid-column:1/-1"><span style="color:var(--text2)">Compensation:</span> ${compStatus}</div>
@@ -7578,8 +8020,8 @@ function renderMetaRows(keys, meta) {
   const tbody = document.getElementById('meta-tbody');
   if (!tbody) return;
   tbody.innerHTML = keys.map(k => {
-    const v = String(meta[k]).replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const kh = k.replace(/</g,'&lt;');
+    const v = _h(meta[k]);
+    const kh = _h(k);
     return `<tr><td style="color:var(--accent);font-family:monospace">${kh}</td><td>${v}</td></tr>`;
   }).join('');
 }
