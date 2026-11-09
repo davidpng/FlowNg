@@ -2,7 +2,7 @@
 
 **FlowNG** is a lightweight, client-side flow cytometry analysis and visualization tool that runs entirely in your web browser. Load your FCS or LMD files and start analyzing with interactive gating (polygon, rectangle and quadrant), spectral compensation, and automatic cofactor optimization. When you are done, export your analysis as one self-contained HTML file that a colleague can open, continue, save and pass on, all without your data ever leaving your computer.
 
-**[Try the live demo →](https://davidpng.github.io/FlowNg/FlowNG.html)** | **[Open the example shared analysis →](https://davidpng.github.io/FlowNg/samples/Complex_Analysis_FlowNg.html)** | [Privacy Policy](#data-security--privacy)
+**[Try the live demo →](https://davidpng.github.io/FlowNg/FlowNG.html)** | **[Open the example shared analysis →](https://davidpng.github.io/FlowNg/samples/Complex_Analysis_FlowNg.html)** | **[Check a shared file →](https://davidpng.github.io/FlowNg/check/)** | [Privacy Policy](#data-security--privacy)
 
 The demo runs in your browser from GitHub Pages; the page is static and nothing you load is uploaded.
 
@@ -43,6 +43,7 @@ The demo runs in your browser from GitHub Pages; the page is static and nothing 
 - Events are stored once (the uncompensated values plus the spillover matrix; compensation is rebuilt on open), column by column in byte planes and gzipped, as text inside the HTML. A browser cannot embed raw binary in an HTML file, so base64 text is the compact single-file option. A 34k-event, 14-parameter LMD (3.0 MB) shares as about 1.3 MB
 - **Saving a shared file and its History**: a shared file keeps working. Click **💾 Save** to write a new copy that contains your changes (gates, plots, axis settings, compensation) and the **🕘 History**, then pass that copy on; the next person opens it exactly where you left off. The original file is never altered, so keep it or download it again to start over, and **↺ Reset to author's gates** inside any copy goes back to the author's gates and compensation (undoable). In Chrome and Edge, Save opens a Save As dialog, so you can choose where the copy goes; elsewhere it downloads. The save button shows a dot while there are unsaved changes, and the browser warns before closing with unsaved changes
 - **History**: every gating action is logged with its time and a plain description, for example `Drew gate "Blasts" on SS INT LOG vs CD45 KO (984 events)`, `Moved gate "Lymphs"`, `Adjusted spillover CD5 into CD20: 0.0000 to 0.0123`, `Set cofactor of CD19 ECD to 3085`, `Pasted gate "Viable" under "Singlets"`, plus undo, redo and reset. There are no user names or accounts, only what was done and when. The log keeps the latest 500 entries and travels inside saved files; an author's own history is included when exporting a shared file (file names in it are replaced with the tube names you chose)
+- **Check before opening**: a shared file is a program, not a document. Drop it on the **[FlowNG Check page](https://davidpng.github.io/FlowNg/check/)** to confirm it contains only released FlowNG code and a data block (see [Checking a shared file](#checking-a-shared-file-before-opening-it))
 - **Example**: [`samples/Complex_Analysis_FlowNg.html`](samples/Complex_Analysis_FlowNg.html) is a shared analysis with several tabs of gated plots. Download it and open it in a browser.
 - **Privacy**: file names, dates and IDs often identify a patient. The export dialog asks you to rename the tubes, drops collection date/time and IDs from the FCS header, and writes only the pristine app, never the live page. Check the result before sharing
 - Options: cap events per file (large files default to 500,000), rename the tubes / files (or use Sample 1, 2, …), strip FCS header metadata (default; removes sample IDs and collection dates and times), and **Locked viewer** (default on)
@@ -229,6 +230,22 @@ Autocomp fits one pair at a time from the population you outline; it is not the 
 
 If the markers are missing, check that the plot is highlighted, that Select is active, and that the axis button reads ASINH. You can also right-click a plot and type a cofactor in the Axis Range dialog.
 
+### Checking a shared file before opening it
+
+A shared analysis is a single HTML file, which means it is also a program: anyone who changes it can make it do something else when you open it, and it will look the same. So check it first.
+
+1. Open the **[FlowNG Check page](https://davidpng.github.io/FlowNg/check/)** (type or bookmark that address; do not follow a link in the email that sent you the file).
+2. Drag the shared file onto the box, or click the box and choose it. The file is read on your computer and is not uploaded.
+3. **Green, "Genuine FlowNG file"**: the program inside is an unmodified FlowNG release and the rest of the file is data only. The page also shows the analysis name, how many files and events it holds, which FlowNG build made it, and the file's SHA-256 (the sender can send you theirs separately to compare). Open the file as usual.
+4. **Red, "Do not open this file"**: the page says why (the code is not any released FlowNG, the file has been changed, the data block is wrong, or it is not a shared FlowNG file at all). Ask the sender for a fresh copy from a source you trust.
+
+- **Anyone can make a file that passes.** The check does not depend on who made the file, only on the file being built from a released FlowNG version, so teachers, test providers and students can all share files and stay anonymous.
+- **Old files keep working.** Files made by released builds since 23 October 2026 pass. Builds before that wrote information about the page into the file and cannot be checked, so they show red. Files made before the HTML-escaping fix are also screened for odd characters in names.
+- **Update to the newest FlowNG** (green files only): puts the same analysis into the newest release and downloads it as a new file, after checking that the new file passes too. A locked viewer stays locked.
+- **What green does not mean:** the analysis is correct, or that the file has no patient information (see the privacy notes under Shareable HTML). It also cannot protect you from a fake copy of the Check page, so use only the official address: `https://davidpng.github.io/FlowNg/check/`.
+- **Sending files**: tell recipients to check them at that address, and publish files from one place you control. Test providers can run the same check on every file before posting (`scripts/test_check.py` shows how; the check code is in `check/index.html`).
+- The list of released builds is `check/manifest.json`. It is rebuilt at each release with `scripts/build_manifest.py`, and a build with a problem can be withdrawn through its `revoked` list. How it works, what is not yet done (a stricter content policy in the app itself, an anonymise option and optional author signing in the share dialog) and how to scan a file yourself are in [`doc/SECURITY.md`](doc/SECURITY.md).
+
 ### Export to FCS and SpikeNG (full version only)
 
 Right-click a population (or a file) and choose **Export events as FCS…** to save its events as a minimal FCS file with identifying metadata removed. **💉 SpikeNG** (toolbar) then merges two such files: the *schlemiel* (donor population) is spiked into the *schlimazel* (recipient). It checks the column labels match first, then either places the spike after the recipient with a time gap of 3% of the longer acquisition (educational), or interleaves it at random positions (proficiency testing). Enter the spike as a percentage of the recipient's events; an answer key of the spiked rows can be downloaded with the result. Exports keep the raw values and the spillover matrix, and SpikeNG merges raw values and applies the recipient's matrix to all events. Not available in locked shared files. See doc/SPEC.md section 14.
@@ -350,6 +367,7 @@ Notes:
 ✅ **No analytics**: No tracking, cookies, or telemetry  
 ✅ **Offline operation**: Works without internet connection  
 ✅ **Source visible**: Full code transparency (view HTML source)  
+✅ **Shared files can be checked**: the [Check page](https://davidpng.github.io/FlowNg/check/) confirms a shared file is released code plus data only (see above)  
 ✅ **Open source**: GNU AGPLv3 licensed
 
 ### FCS File Format Support
@@ -408,7 +426,8 @@ FlowNG is a research and educational tool **not intended for clinical diagnostic
 - No support for time-resolved kinetic data
 - Limited to 2D plot visualization (3D visualization not supported)
 - No built-in statistical testing (t-test, ANOVA, etc.)
-- No batch export of populations as FCS files
+- Export to FCS is one population at a time (no batch export)
+- The Check page proves a shared file contains released FlowNG code; it does not prove that released code has no bugs, and it only protects people who use it
 - Single-file application (all features in one HTML file)
 
 ### Unsupported File Formats
