@@ -7088,6 +7088,8 @@ function showShareDialog() {
       </div>
       <label style="font-size:11px;display:block;margin-bottom:6px">
         <input id="share-meta" type="checkbox"> Include full FCS header metadata (may contain patient/sample IDs)</label>
+      <label style="font-size:11px;display:block;margin-bottom:6px" title="Leaves out the dates and times the file would carry (when it was made, when the template was exported) and your History, so nothing in the file says who made it or when. Untick to keep your History for teaching.">
+        <input id="share-anon" type="checkbox" checked> Anonymise: leave out dates, times and my History (nothing says who made this or when)</label>
       <label style="font-size:11px;display:block;margin-bottom:6px">
         <input id="share-sterile" type="checkbox" checked> Locked viewer: recipients cannot load other files, import, or export</label>
       <label style="font-size:11px;display:block;margin-bottom:12px" title="Leave this off if the file goes by email, chat or a download link. Tick it when you publish the file yourself, from a site you control, and recipients cannot be expected to run the online check.">
@@ -7154,6 +7156,7 @@ async function doExportShareable() {
   const fullMeta = document.getElementById('share-meta').checked;
   const sterile = document.getElementById('share-sterile').checked;
   const secure = document.getElementById('share-secure').checked;
+  const anon = document.getElementById('share-anon').checked;
   go.disabled = true;
   const safe = name.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_');
   const fileName = `${safe}_FlowNG_shared.html`;
@@ -7234,6 +7237,11 @@ async function doExportShareable() {
     // format 2: a list of workspaces over one shared list of files. template/history mirror the first
     // workspace so a one-workspace file still has the old top-level shape.
     const bundle = { format: 2, sterile, checkNotice: !secure, history: wsOut[0].history, name, created: new Date().toISOString(), files, template: wsOut[0].template, workspaces: wsOut };
+    if (anon) {          // no author, date or time information: created/exported stamps and the author's History
+      delete bundle.created; bundle.history = [];
+      wsOut.forEach(w => { w.history = []; if (w.template) delete w.template.exported; });
+      if (bundle.template) delete bundle.template.exported;
+    }
     // Original file names must not survive anywhere in the bundle (template gate parents, plots, ...).
     let jsonText = JSON.stringify(bundle);
     const esc = x => JSON.stringify(x).slice(1, -1);
