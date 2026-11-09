@@ -294,6 +294,7 @@ When a test fails, fix the cause and rerun that section and section 2; do not we
 | 15.7 | Proficiency merge | Schlimazel events keep their order; spike rows are spread through the file; the Time channel stays non-decreasing |
 | 15.8 | Seed | Same seed gives the same output; spike values are all from the donor |
 | 15.9 | Output reopens | The merged FCS parses with the expected event and parameter count; the answer key lists the spike rows |
-| 15.10 | Locked files | A shared file with Locked viewer has no SpikeNG button, `buildFCSBytes`, `showSpikeDialog` or export menu item |
+| 15.10 | Compensation | Export of a compensated file writes raw values plus `$SPILLOVER`; re-reading gives identical raw and compensated values (diff 0). Raw schlimazel + compensated schlemiel: warning, output has no matrix, spike rows are raw. Compensated schlimazel + raw schlemiel: output has the schlimazel's matrix and a spiked row re-read equals the app's compensation of that raw event (error 0). Different matrices: note names the schlimazel's as used |
+| 15.11 | Locked files | A shared file with Locked viewer has no SpikeNG button, `buildFCSBytes`, `showSpikeDialog` or export menu item |
 
 Verified with the headless-Chrome harness on the TEST SAMPLE LMD (rows 15.1 to 15.9 on synthetic recipient/donor data of 1,000 and 200 events plus a real LMD round trip).

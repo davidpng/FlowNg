@@ -1724,7 +1724,8 @@ async function parseFCS(buffer) {
 // ─── FCS EXPORT + SpikeNG (full version only; stripped from locked shared files) ──────────────
 // Write a minimal FCS 3.1 file: only what a reader needs (float32 list-mode data, parameter
 // names/labels/ranges). Patient/sample IDs, dates, instrument settings and $SPILLOVER are not written.
-// params: [{name, longName, range}], data: Float32Array(nEvents*nPar); opts.timestep copies $TIMESTEP.
+// params: [{name, longName, range}], data: Float32Array(nEvents*nPar); opts.timestep copies $TIMESTEP;
+// opts.spill writes $SPILLOVER (data should then be the uncompensated values).
 function buildFCSBytes(params, data, nEvents, opts = {}) {
   const nPar = params.length;
   const D = '|';
@@ -1732,6 +1733,11 @@ function buildFCSBytes(params, data, nEvents, opts = {}) {
   const kv = [['$BYTEORD', '1,2,3,4'], ['$DATATYPE', 'F'], ['$MODE', 'L'], ['$NEXTDATA', '0'],
               ['$PAR', String(nPar)], ['$TOT', String(nEvents)]];
   if (opts.timestep) kv.push(['$TIMESTEP', clean(opts.timestep)]);
+  // opts.spill = { idx: [column indices], matrix: [[...]] }: written as names so any reader can apply it
+  if (opts.spill && opts.spill.idx.length) {
+    const sn = opts.spill.idx.length;
+    kv.push(['$SPILLOVER', [sn, ...opts.spill.idx.map(i => clean(params[i].name)), ...opts.spill.matrix.flat()].join(',')]);
+  }
   params.forEach((p, i) => {
     const n = i + 1;
     kv.push([`$P${n}B`, '32'], [`$P${n}E`, '0,0'], [`$P${n}N`, clean(p.name)]);
@@ -1777,17 +1783,20 @@ function exportPopulationFCS(popId) {
   const f = getFileById(pop.fileId); if (!f) return;
   const P = f.nPar;
   let data, n;
-  if (pop._isAll) { data = f.data; n = f.nEvents; }
+  // Uncompensated values + the current spillover matrix when the file has one, so compensation is not baked in
+  const src = f.rawData && f.spillMatrix && f.spillParamIdx ? f.rawData : f.data;
+  const spill = src === f.rawData ? { idx: f.spillParamIdx, matrix: f.spillMatrix } : null;
+  if (pop._isAll) { data = src; n = f.nEvents; }
   else {
     const idx = pop.indices; n = idx.length;
     if (!n) { showToast(`"${pop.name}" has no events to export`, 3500); return; }
     data = new Float32Array(n * P);
-    for (let i = 0; i < n; i++) data.set(f.data.subarray(idx[i] * P, idx[i] * P + P), i * P);
+    for (let i = 0; i < n; i++) data.set(src.subarray(idx[i] * P, idx[i] * P + P), i * P);
   }
-  const bytes = buildFCSBytes(f.params, data, n, { timestep: f.meta && f.meta['$TIMESTEP'] });
+  const bytes = buildFCSBytes(f.params, data, n, { timestep: f.meta && f.meta['$TIMESTEP'], spill });
   const name = _safeFileName(pop._isAll ? 'All_events' : pop.name) + '.fcs';
   _downloadBytes(bytes, name);
-  showToast(`Exported ${n.toLocaleString()} events of "${pop.name}" to ${name} (identifying metadata removed)`, 6000);
+  showToast(`Exported ${n.toLocaleString()} events of "${pop.name}" to ${name} (identifying metadata removed${spill ? '; uncompensated, with its spillover matrix' : ''})`, 6000);
 }
 
 // ─── SpikeNG ───
@@ -1839,6 +1848,17 @@ function spikeEventsFor(pct, nRecip) { return Math.max(0, Math.round(nRecip * pc
 
 // Core merge. mode: 'time' (educational) or 'interleave' (proficiency testing).
 // Returns { params, data, nEvents, spikeRows (0-based output rows), nSpike, gap, warnings }.
+// Compensation note for a pair: merging happens on uncompensated values; the output carries the schlimazel's matrix.
+function spikeCompNote(recip, donor) {
+  const has = f => !!(f.rawData && f.spillMatrix && f.spillParamIdx);
+  const sig = f => has(f) ? f.spillParamIdx.map(i => _normLabel(f.params[i].name)).join(',') + '|' + f.spillMatrix.flat().map(v => (+v).toPrecision(6)).join(',') : '';
+  if (has(recip) && has(donor)) return sig(recip) === sig(donor) ? { kind: 'ok', text: 'Both files carry the same spillover matrix; merged uncompensated, matrix kept' }
+    : { kind: 'info', text: 'The files have different spillover matrices: both are merged uncompensated and the schlimazel\'s matrix is applied to all events' };
+  if (has(recip)) return { kind: 'info', text: 'Schlimazel has a spillover matrix, schlemiel is raw: merged as raw, schlimazel\'s matrix is applied to all events' };
+  if (has(donor)) return { kind: 'warn', text: 'The schlemiel has a spillover matrix but the schlimazel does not: the result is uncompensated (the schlemiel\'s matrix is dropped and its events are used raw)' };
+  return { kind: 'ok', text: 'Neither file has a spillover matrix: merged as is' };
+}
+
 function spikeMerge(recip, donor, { mode, nSpike, seed = 1 }) {
   const cmp = spikeCompareColumns(recip, donor);
   if (!cmp.ok) throw new Error('Column labels do not match:\n' + cmp.problems.join('\n'));
@@ -1852,7 +1872,8 @@ function spikeMerge(recip, donor, { mode, nSpike, seed = 1 }) {
   for (let i = 0; i < nSpike; i++) { const j = i + Math.floor(rng() * (nD - i)); const t = pick[i]; pick[i] = pick[j]; pick[j] = t; }
   const chosen = pick.slice(0, nSpike).sort();
   const spike = new Float32Array(nSpike * P);
-  for (let k = 0; k < nSpike; k++) for (let c = 0; c < P; c++) spike[k * P + c] = donor.data[chosen[k] * P + dmap[c]];
+  const dRaw = donor.rawData || donor.data, rRaw = recip.rawData || recip.data;   // merge uncompensated values
+  for (let k = 0; k < nSpike; k++) for (let c = 0; c < P; c++) spike[k * P + c] = dRaw[chosen[k] * P + dmap[c]];
 
   const total = nR + nSpike;
   const out = new Float32Array(total * P);
@@ -1860,13 +1881,13 @@ function spikeMerge(recip, donor, { mode, nSpike, seed = 1 }) {
   const tR = _timeCol(recip);
   let gap = 0;
   if (mode === 'time') {
-    out.set(recip.data.subarray(0, nR * P), 0);
+    out.set(rRaw.subarray(0, nR * P), 0);
     out.set(spike, nR * P);
     for (let k = 0; k < nSpike; k++) spikeRows[k] = nR + k;
     if (tR >= 0 && nSpike) {
-      const [r0, r1] = _colRange(recip.data, nR, P, tR);
+      const [r0, r1] = _colRange(rRaw, nR, P, tR);
       const dT = _timeCol(donor);
-      const [d0, d1] = dT >= 0 ? _colRange(donor.data, nD, donor.nPar, dT) : [0, 0];
+      const [d0, d1] = dT >= 0 ? _colRange(dRaw, nD, donor.nPar, dT) : [0, 0];
       gap = _SPIKE_GAP_FRACTION * Math.max(r1 - r0, d1 - d0);          // 3% of the longer acquisition
       const [s0] = _colRange(spike, nSpike, P, tR);
       const shift = (r1 + gap) - s0;
@@ -1880,16 +1901,18 @@ function spikeMerge(recip, donor, { mode, nSpike, seed = 1 }) {
     let ri = 0, o = 0;
     for (let k = 0; k <= nSpike; k++) {
       const upto = k < nSpike ? slot[k] : nR;
-      if (upto > ri) { out.set(recip.data.subarray(ri * P, upto * P), o * P); o += upto - ri; ri = upto; }
+      if (upto > ri) { out.set(rRaw.subarray(ri * P, upto * P), o * P); o += upto - ri; ri = upto; }
       if (k < nSpike) {
         out.set(spike.subarray(k * P, k * P + P), o * P);
-        if (tR >= 0 && nR) out[o * P + tR] = recip.data[Math.max(0, ri - 1) * P + tR];   // inherit local time so it blends in
+        if (tR >= 0 && nR) out[o * P + tR] = rRaw[Math.max(0, ri - 1) * P + tR];   // inherit local time so it blends in
         spikeRows[k] = o; o++;
       }
     }
   }
   const params = recip.params.map((p, i) => ({ name: p.name, longName: p.longName, range: Math.max(p.range || 0, donor.params[dmap[i]].range || 0) }));
-  return { params, data: out, nEvents: total, spikeRows, nSpike, gap, warnings, timestep: recip.meta && recip.meta['$TIMESTEP'] };
+  const hasR = !!(recip.rawData && recip.spillMatrix && recip.spillParamIdx);
+  const note = spikeCompNote(recip, donor); if (note.kind === 'warn') warnings.push(note.text);
+  return { params, spill: hasR ? { idx: recip.spillParamIdx, matrix: recip.spillMatrix } : null, compNote: note.text, data: out, nEvents: total, spikeRows, nSpike, gap, warnings, timestep: recip.meta && recip.meta['$TIMESTEP'] };
 }
 
 async function _spikeParseFile(file) {
@@ -1916,7 +1939,8 @@ function showSpikeDialog() {
       <label style="font-size:11px;display:block;margin-bottom:6px">Schlemiel (donor) FCS / LMD
         <input id="spike-donor" type="file" accept=".fcs,.lmd,.LMD" style="width:100%" onchange="_spikeLoad('donor',this.files[0])"></label>
       <div id="spike-donor-info" style="font-size:10px;color:var(--text2);margin-bottom:6px"></div>
-      <div id="spike-check" style="font-size:11px;margin-bottom:8px;min-height:14px"></div>
+      <div id="spike-check" style="font-size:11px;margin-bottom:4px;min-height:14px"></div>
+      <div id="spike-comp" style="font-size:11px;margin-bottom:8px;min-height:14px"></div>
       <div style="font-size:11px;margin-bottom:8px">
         <label style="display:block;margin-bottom:3px"><input type="radio" name="spike-mode" value="time" checked onchange="_spikeUpdate()">
           <b>Educational</b>: time based. Schlemiel events follow the schlimazel, separated by a gap of 3% of the longer acquisition.</label>
@@ -1970,10 +1994,12 @@ function _spikeUpdate(src) {
   const chk = document.getElementById('spike-check'), sum = document.getElementById('spike-summary'), go = document.getElementById('spike-go');
   let ok = false;
   chk.textContent = ''; sum.textContent = '';
+  const cn = document.getElementById('spike-comp'); cn.textContent = '';
   if (recip && donor) {
     const c = spikeCompareColumns(recip, donor);
     if (c.ok) { ok = true; chk.style.color = '#4caf7a'; chk.textContent = `✓ ${recip.nPar} column labels match` + (c.reordered ? ' (schlemiel columns reordered to match)' : ''); }
     else { chk.style.color = '#e06c75'; chk.innerHTML = '✗ Column labels do not match:<br>' + c.problems.slice(0, 8).map(s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')).join('<br>') + (c.problems.length > 8 ? '<br>…' : ''); }
+    if (c.ok) { const note = spikeCompNote(recip, donor); cn.style.color = note.kind === 'warn' ? '#f5a623' : 'var(--text2)'; cn.textContent = (note.kind === 'warn' ? '⚠ ' : 'ℹ ') + note.text; }
     const n = parseInt(nEl.value) || 0, use = Math.min(n, donor.nEvents);
     sum.textContent = `${use.toLocaleString()} of ${donor.nEvents.toLocaleString()} schlemiel events → ${(recip.nEvents + use).toLocaleString()} events total (${(100 * use / (recip.nEvents + use || 1)).toFixed(3)}% of the result)` +
       (n > donor.nEvents ? ` — only ${donor.nEvents.toLocaleString()} available` : '');
@@ -1992,7 +2018,7 @@ async function runSpike() {
     const nSpike = parseInt(document.getElementById('spike-n').value) || 0;
     const seed = parseInt(document.getElementById('spike-seed').value) || 1;
     const r = spikeMerge(recip, donor, { mode, nSpike, seed });
-    const bytes = buildFCSBytes(r.params, r.data, r.nEvents, { timestep: r.timestep });
+    const bytes = buildFCSBytes(r.params, r.data, r.nEvents, { timestep: r.timestep, spill: r.spill });
     const base = _safeFileName(document.getElementById('spike-name').value || 'SpikeNG');
     _downloadBytes(bytes, base + '.fcs');
     if (document.getElementById('spike-key').checked) {
