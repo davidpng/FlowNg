@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Build check/manifest.json: the code hash of every released FlowNG version that can produce shared files.
+"""Build check/manifest.json: the code hash of every FlowNG release on the main branch.
 
-For each commit that changed FlowNG.html and has the pristine-snapshot fix, hash the `full` variant (whole app) and the
-`locked` variant (Locked viewer: loading/import/export code removed). The hash is made by check/index.html's own
-FlowCheck code running in headless Chrome, so the manifest and the Check page agree by construction.
+For each commit on main that changed FlowNG.html, hash the `full` variant (whole app) and the `locked` variant
+(Locked viewer: loading/import/export code removed). The hash is made by check/index.html's own FlowCheck code
+running in headless Chrome, so the manifest and the Check page agree by construction.
 
-Each entry carries a data-rules level for the data-block check:
-  strict    build is older than the HTML-escaping fix: names in the data block must not contain < > " '
-  standard  build escapes names before putting them in HTML
+Beta policy: only builds from the first one with the HTML-escaping fix and the pristine-snapshot fix are listed;
+shared files made by earlier builds are not supported. Branch-only commits are not listed (use --rev HEAD to test
+a branch locally, and rebuild on main before releasing).
 
-Usage:  /usr/bin/python3 scripts/build_manifest.py [--rev HEAD] [--out check/manifest.json]
-Run it on main at release time. Hand-edit "revoked" to withdraw a version: [{"hash": "...", "reason": "..."}].
+Usage:  /usr/bin/python3 scripts/build_manifest.py [--rev main] [--out check/manifest.json]
+Hand-edit "revoked" to withdraw a version: [{"hash": "...", "reason": "..."}].
 """
 import argparse, json, subprocess, sys, tempfile
 from pathlib import Path
@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from chrome_run import run_page, ROOT
 
 ap = argparse.ArgumentParser()
-ap.add_argument('--rev', default='HEAD')
+ap.add_argument('--rev', default='main', help='history to list (default: main)')
 ap.add_argument('--out', default=str(ROOT / 'check' / 'manifest.json'))
 args = ap.parse_args()
 
@@ -39,13 +39,12 @@ for line in git('log', '--reverse', '--format=%H %ad %s', '--date=short', args.r
         src = git('show', f'{sha}:FlowNG.html')
     except subprocess.CalledProcessError:
         continue
-    if 'flowng-bundle-loader' not in src or 'capturePristineSource' not in src:
-        continue   # before the pristine-snapshot fix: shared files then carried live UI state (even the loaded file name) and cannot be reproduced
-    rules = 'standard' if 'function _h(' in src else 'strict'
+    if 'flowng-bundle-loader' not in src or 'capturePristineSource' not in src or 'function _h(' not in src:
+        continue   # beta: builds before the pristine-snapshot and HTML-escaping fixes are not supported
     (jobdir / 'src' / f'{len(meta)}.html').write_text(src, encoding='utf-8')
     for variant in ('full', 'locked'):
         jobs.append({'n': len(meta), 'variant': variant})
-    meta.append({'seq': len(meta), 'commit': sha[:10], 'date': date, 'subject': subject[:90], 'dataRules': rules})
+    meta.append({'seq': len(meta), 'commit': sha[:10], 'date': date, 'subject': subject[:90]})
 (jobdir / 'jobs.json').write_text(json.dumps(jobs))
 
 res = run_page('build.html', jobdir)
@@ -61,5 +60,5 @@ for r in res['results']:
     entries.append({'hash': r['hash'], 'variant': r['variant'], **m})
 entries.sort(key=lambda e: (e['seq'], e['variant']))
 out.parent.mkdir(parents=True, exist_ok=True)
-out.write_text(json.dumps({'format': 2, 'canon': 'check/index.html FlowCheck.canonHash', 'entries': entries, 'revoked': revoked}, indent=1) + '\n')
-print(f'{len(entries)} entries ({sum(e["dataRules"] == "strict" for e in entries)} strict) -> {out}')
+out.write_text(json.dumps({'format': 3, 'generated': __import__('datetime').date.today().isoformat(), 'rev': args.rev, 'canon': 'check/index.html FlowCheck.canonHash', 'entries': entries, 'revoked': revoked}, indent=1) + '\n')
+print(f'{len(entries)} entries from {args.rev} -> {out}')

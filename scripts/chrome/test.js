@@ -5,8 +5,10 @@
   try {
     P('start');
     const f = document.getElementById('f');
+    const pageUrl = new URLSearchParams(location.search).get('check');
     while (!(f.contentWindow && f.contentWindow.FlowCheck)) await new Promise(r => setTimeout(r, 50));   // load can fire before a listener is attached
     P('iframe loaded');
+    let fetches = 0; if (pageUrl) { const of = f.contentWindow.fetch; f.contentWindow.fetch = function () { fetches++; return of.apply(this, arguments); }; }
     const W = f.contentWindow, FC = W.FlowCheck;
     const manifest = await (await fetch('/check/manifest.json', { cache: 'no-store' })).json();
     const sample = await (await fetch('/samples/Complex_Analysis_FlowNg.html')).text();
@@ -19,7 +21,7 @@
     const status = async (name, text, wantOk, mustSay) => {
       const v = await FC.check(text, manifest);
       const good = (v.status === 'ok') === wantOk && (!mustSay || v.reasons.some(r => r.includes(mustSay)));
-      add(name, good, v.status === 'ok' ? `ok ${v.variant} ${v.entry.commit} ${v.entry.dataRules}` : v.reasons.join(' | ').slice(0, 160));
+      add(name, good, v.status === 'ok' ? `ok ${v.variant} ${v.entry.commit}` : v.reasons.join(' | ').slice(0, 160));
       return v;
     };
     const BLK = /<script id="flowng-bundle" type="application\/json">([^<]*)<\/script>/;
@@ -72,18 +74,11 @@
     await st('data: size mismatch', JSON.stringify({ format: 2, files: [{ filename: 'f', nEvents: 1, nPar: 2, params: [{}] }] }), false, 'parameter list');
     await st('data: event data not plain encoded', minimal({ files: [{ filename: 'f', nEvents: 1, nPar: 1, params: [{}], rawData: 'AAAA"BBB' }] }), false, 'encoded');
     await st('data: array instead of object', '[1,2]', false, 'data object');
-    // strict rules apply to old builds only
-    const hostile = minimal({ files: [{ filename: 'a"><img src=x onerror=alert(1)>', nEvents: 1, nPar: 1, params: [{ name: 'P' }] }] });
-    await st('strict build: hostile file name rejected', hostile, false, 'older FlowNG build');
-    await st('strict build: hostile parameter name rejected', minimal({ files: [{ filename: 'f', nEvents: 1, nPar: 1, params: [{ name: "x'y" }] }] }), false, 'older FlowNG build');
-    await st('strict build: ordinary names with spaces/dots pass', minimal({ files: [{ filename: 'Sample 1.fcs', nEvents: 1, nPar: 1, params: [{ name: 'FS INT LIN', longName: 'CD45 KrO' }] }] }), true);
-    const cur = extras.find(e => /full/.test(e.name));
-    if (cur) {
-      await st('standard build: hostile names are escaped, so allowed', hostile, true, null, cur.text);
-      await st('standard build: other data rules still apply', 'not json', false, 'valid JSON', cur.text);
-    }
-    // history strings with quotes are normal
-    await st('strict build: quotes in history text are fine', minimal({ history: [{ t: 'x', what: 'Moved gate "Time"' }] }), true);
+    // names go through the app's HTML escaping, so odd characters are ordinary data
+    const hostile = minimal({ files: [{ filename: 'a"><img src=x onerror=alert(1)>', nEvents: 1, nPar: 1, params: [{ name: "x'y" }] }] });
+    await st('hostile file and parameter names are only data (the app escapes them)', hostile, true);
+    await st('ordinary names with spaces/dots pass', minimal({ files: [{ filename: 'Sample 1.fcs', nEvents: 1, nPar: 1, params: [{ name: 'FS INT LIN', longName: 'CD45 KrO' }] }] }), true);
+    await st('quotes in history text are fine', minimal({ history: [{ t: 'x', what: 'Moved gate "Time"' }] }), true);
 
     // revocation
     const rm = JSON.parse(JSON.stringify(manifest));
@@ -99,13 +94,14 @@
         const v = await FC.check(text, manifest);
         const up = await FC.buildUpdate(v.body, variant, appSrc, manifest);
         const again = await FC.check(up.text, manifest);
-        add('update: ' + label + ' -> newest, passes its own check, same data', again.status === 'ok' && again.body === v.body && again.variant === variant, `${again.entry && again.entry.commit} ${again.entry && again.entry.dataRules}`);
+        add('update: ' + label + ' -> newest, passes its own check, same data', again.status === 'ok' && again.body === v.body && again.variant === variant, `${again.entry && again.entry.commit}`);
       } catch (e) { add('update: ' + label, false, e.message); }
     }
     try { await FC.buildUpdate(minimal(), 'full', appSrc.replace('function showToast', 'function showToasT'), manifest); add('update refuses an app source that is not the newest release', false); }
     catch (e) { add('update refuses an app source that is not the newest release', /newest listed release/.test(e.message)); }
 
     // page behaviour: really drop files on the page
+    const fetchesBefore = fetches;
     const dropFile = async (text, name) => {
       const dt = new W.DataTransfer(); dt.items.add(new W.File([text], name, { type: 'text/html' }));
       W.document.getElementById('drop').dispatchEvent(new W.DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
@@ -115,6 +111,7 @@
     { const t = await dropFile(sample, 'good.html'); add('page: dropping a genuine file shows the green result', /Genuine FlowNG file/.test(t) && /Update to the newest/.test(t), t.slice(0, 80).replace(/\n/g, ' ')); }
     { const t = await dropFile(sample.replace('</body>', '<script>fetch(1)<\/script></body>'), 'bad.html'); add('page: dropping a tampered file shows the red result', /Do not open this file/.test(t) && !/Genuine/.test(t), t.slice(0, 80).replace(/\n/g, ' ')); }
     { const t = await dropFile('<html><body>hi</body></html>', 'plain.html'); add('page: dropping a plain web page shows red', /Do not open/.test(t)); }
+    if (pageUrl) add('offline copy: dropping files and updating used no network requests', fetches === fetchesBefore, 'requests: ' + (fetches - fetchesBefore));
     // the dropped file must never run anything or add elements to the page
     add('page: nothing from the dropped files ended up in the page', !W.document.querySelector('script[src]') && W.document.querySelectorAll('iframe,img,link[rel=stylesheet]').length === 0);
     // hostile file name is shown as text

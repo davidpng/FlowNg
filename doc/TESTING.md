@@ -305,24 +305,24 @@ Verified with the headless-Chrome harness on the TEST SAMPLE LMD (rows 15.1 to 1
 |---|---|---|
 | 16.1 | Load a file whose name, a parameter name and label, a population name, a tab name and a metadata keyword are all `"><img src=x onerror="window.__pwn=1"><b>`; then draw the plots and open the file menu, plot file menu, colour picker, axis range, global settings, metadata and template dialogs | `window.__pwn` stays 0, no `<img src="x">` or stray `<b>` is added to the page, and the payload text is visible as plain text (the unfixed code gave 13 executions) |
 
-## 17. Check page and shared-file manifest (security phases 1 to 3)
+## 17. Check page, manifest and publisher check (security)
 
-Run: `/usr/bin/python3 scripts/test_check.py shared_full.html shared_locked.html ...` (needs Chrome; exit 0 = all pass; about two minutes because the sample is 15 MB). The extra files are shared files made by the real app: name them `*full*` / `*locked*` and make them with the current build (headless Chrome: load a file, `generateStarterWorkspace()`, `showShareDialog()`, set `share-maxev` to 1000, `doExportShareable()`, capture the download). After any change to `FlowNG.html` that will be released, rebuild the manifest with `/usr/bin/python3 scripts/build_manifest.py` (the "update" tests need the repo's `FlowNG.html` to be the newest manifest entry) and re-run. Last run: 52 checks, 0 failed.
+Run: `/usr/bin/python3 scripts/test_check.py shared_full.html shared_locked.html ...` (needs Chrome; exit 0 = all pass; about two minutes because the sample is 15 MB), then `/usr/bin/python3 scripts/test_check.py --offline` for the offline copy. The extra files are shared files made by the real app: name them `*full*` / `*locked*` and make them with the current build (headless Chrome: load a file, `generateStarterWorkspace()`, `showShareDialog()`, set `share-maxev` to 1000, `doExportShareable()`, capture the download). After any change to `FlowNG.html`, rebuild the manifest (`/usr/bin/python3 scripts/build_manifest.py --rev HEAD` on a branch, plain on `main`) and re-wrap `samples/Complex_Analysis_FlowNg.html` (`scripts/build_test_daughter.py --unlocked --bundle` with the old sample, then restore its title), or the sample and the update tests fail. Last run: online 47 checks, offline 44, 0 failed.
 
 | # | Check | Expected |
 |---|---|---|
-| 17.1 | `samples/Complex_Analysis_FlowNg.html` and shared files from the current and an older build (`ce0647b2c5`), full and locked | Pass, listed in the manifest with the right commit and variant |
+| 17.1 | `samples/Complex_Analysis_FlowNg.html` and shared files from the current build, full and locked | Pass, listed in the manifest |
 | 17.2 | Allowed edits: new `<title>`, valid replacement data block, markup whitespace | Still pass |
 | 17.3 | Code attacks on the sample: extra `<script>`, `onload`, `<img onerror>`, `<iframe>`, external `<link>`, `<meta refresh>`, `<base>`, `<svg onload>`, `<noscript>` or `<template>` wrapper, one changed character, code added inside the app script, `style` on `<html>`, an added comment | Each red: code not in manifest |
 | 17.4 | Data-block tricks: a second look-alike script, two exact blocks, block moved, type changed to JavaScript, closed early then a script | Each red |
 | 17.5 | Not a shared file: the plain app source, text that is not HTML, an empty file | Red: no data block |
 | 17.6 | Data checks: not JSON, bad format number, no files, size mismatch, non-base64 event data, array instead of object | Each red with that reason |
-| 17.7 | Older build, hostile file or parameter name (`"><img ...>`, `x'y`) | Red ("older FlowNG build cannot display safely") |
-| 17.8 | Older build, ordinary names with spaces and dots, History text with quotes | Pass |
-| 17.9 | Current build, hostile names | Pass (escaped by `_h`), other data rules still apply |
-| 17.10 | A manifest with the sample's hash revoked | Red with the revocation reason |
-| 17.11 | Update: the older sample, the current full file, the current locked file | Each produces a file that passes its own check with identical data and the same variant |
-| 17.12 | Update with an app source that is not the newest manifest entry | Refused |
-| 17.13 | Drop real files on the page: genuine, tampered, a plain web page | Green with the Update button; red "Do not open this file"; red |
-| 17.14 | After those drops | No script, iframe, image or stylesheet from the dropped files is in the page; a hostile file name is shown as text and does not run |
-| 17.15 | Rebuild the manifest twice | Byte-identical; unique `(hash, variant)`; `standard` only for builds with `_h()`; nothing before `58c9f07755` |
+| 17.7 | Hostile file and parameter names (`"><img ...>`, `x'y`), ordinary names, History text with quotes | Pass (names are data; the app escapes them) |
+| 17.8 | A manifest with the sample's hash revoked | Red with the revocation reason |
+| 17.9 | Update: the sample, the current full file, the current locked file | Each produces a file that passes its own check with identical data and the same variant |
+| 17.10 | Update with an app source that is not the newest manifest entry | Refused |
+| 17.11 | Drop real files on the page: genuine, tampered, a plain web page | Green with the Update button; red "Do not open this file"; red |
+| 17.12 | After those drops | No script, iframe, image or stylesheet from the dropped files is in the page; a hostile file name is shown as text and does not run |
+| 17.13 | Offline copy (`--offline`): all of the above, with `fetch` counted | Same results; 0 network requests while dropping files and updating |
+| 17.14 | `scripts/check_shared.py` on the current sample and on a file from an earlier build | Sample PASS with its build and event count and listed in `SHA256SUMS`; earlier build FAIL; exit code 1 |
+| 17.15 | Manifest | Unique `(hash, variant)`; built from `main` lists only builds with `_h()` and the pristine-snapshot fix; rebuilt twice gives identical entries |

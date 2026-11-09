@@ -60,12 +60,13 @@
     <input id="pick" type="file" accept=".html,.htm,text/html">
   </div>
 
+  <p id="offline-note" class="sub" hidden></p>
   <div id="result" aria-live="polite"></div>
 
   <details>
     <summary>What does this check?</summary>
-    <p>A shared FlowNG file is the FlowNG program plus one block of data. This page compares the program part of your file, letter for letter in a normalised form, with every released version of FlowNG listed in <a href="manifest.json">manifest.json</a>. It also checks that the data block is plain data and nothing else. Who made the file does not matter: any file built from a released version passes.</p>
-    <p><strong>A green result means</strong> the file's program code is a released FlowNG build and its data block contains data only. <strong>It does not mean</strong> the analysis itself is correct, or that a file contains no patient information. Files made by builds from before the HTML-escaping fix are screened more strictly.</p>
+    <p>A shared FlowNG file is the FlowNG program plus one block of data. This page compares the program part of your file, letter for letter in a normalised form, with every released version of FlowNG listed in <a href="manifest.json">manifest.json</a> (only versions released on the main branch). It also checks that the data block is plain data and nothing else. Who made the file does not matter: any file built from a released version passes.</p>
+    <p><strong>A green result means</strong> the file's program code is a released FlowNG build and its data block contains data only. <strong>It does not mean</strong> the analysis itself is correct, or that a file contains no patient information.</p>
     <p><strong>A red result means do not open the file.</strong> Ask the sender for a fresh copy from the source you trust, or download FlowNG from the official site.</p>
     <p>Only trust this page at its official address, <code>https://davidpng.github.io/FlowNg/check/</code>. This page cannot protect you from a fake copy of itself.</p>
   </details>
@@ -141,9 +142,8 @@ const FlowCheck = (() => {
   }
 
   // ── data block ──
-  const NAME_KEYS = new Set(['filename', 'name', 'longName', 'tube', 'sourceFile', 'tabName', 'templateName']);
   const MAX_FILES = 200;
-  function validateBundle(body, dataRules) {
+  function validateBundle(body) {
     const problems = [];
     let b;
     try { b = JSON.parse(body); } catch (e) { return { ok: false, problems: ['The data block is not valid JSON.'], info: {} }; }
@@ -160,18 +160,6 @@ const FlowCheck = (() => {
     });
     if (b.template != null && typeof b.template !== 'object') problems.push('The template is not a data object.');
     if (b.workspaces != null && !Array.isArray(b.workspaces)) problems.push('The workspace list is not a list.');
-    // Builds from before the HTML-escaping fix put names into the page as HTML: names must not contain < > " '.
-    if (dataRules === 'strict') {
-      let bad = 0, example = '';
-      const scan = (o, key) => {
-        if (typeof o === 'string') { if (NAME_KEYS.has(key) && /[<>"']/.test(o)) { bad++; example = example || o.slice(0, 40); } }
-        else if (Array.isArray(o)) o.forEach(v => scan(v, key));
-        else if (o && typeof o === 'object') for (const k of Object.keys(o)) { if (k === 'meta') scanMeta(o[k]); else scan(o[k], k); }
-      };
-      const scanMeta = (m) => { if (m && typeof m === 'object') for (const [k, v] of Object.entries(m)) if (/[<>"']/.test(k) || (typeof v === 'string' && /[<>"']/.test(v))) { bad++; example = example || k.slice(0, 40); } };
-      scan(b, '');
-      if (bad) problems.push(`${bad} name(s) contain characters that this file's older FlowNG build cannot display safely (for example "${example}").`);
-    }
     const info = {
       name: typeof b.name === 'string' ? b.name : '',
       files: Array.isArray(b.files) ? b.files.length : 0,
@@ -200,7 +188,7 @@ const FlowCheck = (() => {
     const e = by.get(r.hash);
     if (!e) { v.reasons.push('The program code in this file is not any released version of FlowNG. It may have been changed after it was made.'); return v; }
     v.entry = e;
-    const val = validateBundle(r.body, e.dataRules);
+    const val = validateBundle(r.body);
     v.info = val.info;
     if (!val.ok) { v.reasons.push(...val.problems); return v; }
     v.status = 'ok'; v.body = r.body; v.variant = e.variant;
@@ -236,10 +224,24 @@ window.FlowCheck = FlowCheck;
   const $ = id => document.getElementById(id);
   const drop = $('drop'), pick = $('pick'), result = $('result');
   let manifest = null, manifestError = null;
-  const manifestReady = fetch('manifest.json', { cache: 'no-store' })
-    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(m => { if (!m || !Array.isArray(m.entries)) throw new Error('bad manifest'); manifest = m; })
-    .catch(e => { manifestError = e; });
+  // An offline copy of this page (scripts/build_offline_check.py) carries the manifest and the current FlowNG inside it
+  // and never uses the network. The online page reads manifest.json from this site.
+  let embedded = null;
+  const emb = document.getElementById('flowcheck-embedded');
+  if (emb) { try { embedded = JSON.parse(emb.textContent); } catch (e) { manifestError = e; } }
+  const manifestReady = embedded
+    ? Promise.resolve().then(() => { manifest = embedded.manifest; })
+    : fetch('manifest.json', { cache: 'no-store' })
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(m => { if (!m || !Array.isArray(m.entries)) throw new Error('bad manifest'); manifest = m; })
+        .catch(e => { manifestError = e; });
+  manifestReady.then(() => {
+    if (embedded && manifest) {
+      const n = $('offline-note');
+      n.hidden = false;
+      n.textContent = `Offline copy. It knows the FlowNG releases up to ${manifest.generated || 'its build date'} and uses no network. A file made by a newer release shows red here until you get a newer copy of this page.`;
+    }
+  });
 
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   const fmt = n => Number(n).toLocaleString();
@@ -270,7 +272,6 @@ window.FlowCheck = FlowCheck;
       return;
     }
     const e = v.entry, i = v.info;
-    const strict = e.dataRules === 'strict';
     const rows = [
       ['File', esc(file.name)],
       ['Analysis name', esc(i.name || '—')],
@@ -279,7 +280,7 @@ window.FlowCheck = FlowCheck;
       ['FlowNG build', `released ${esc(e.date)} (${esc(e.commit)})`],
       ['SHA-256', `<code>${fileHash}</code>`],
     ].map(([k, val]) => `<dt>${k}</dt><dd>${val}</dd>`).join('');
-    const note = strict ? '<p>This file was made with an older build. Its names were screened and are safe, but you can update it to the newest FlowNG below.</p>' : '';
+    const note = '';
     show('v-ok', '✅', 'Genuine FlowNG file', `<p>The program code is an unmodified FlowNG release and the data block contains data only. It is safe to open.</p>${note}`,
       `<div class="card" style="margin-top:12px"><dl>${rows}</dl><div class="row" id="actions"></div></div>`);
     addUpdate(v);
@@ -292,9 +293,14 @@ window.FlowCheck = FlowCheck;
     btn.addEventListener('click', async () => {
       btn.disabled = true; btn.textContent = 'Updating…';
       try {
-        const r = await fetch('../FlowNG.html', { cache: 'no-store' });
-        if (!r.ok) throw new Error('Could not load the current FlowNG (HTTP ' + r.status + ').');
-        const out = await FlowCheck.buildUpdate(v.body, v.variant, await r.text(), manifest);
+        let app;
+        if (embedded) app = embedded.app;
+        else {
+          const r = await fetch('../FlowNG.html', { cache: 'no-store' });
+          if (!r.ok) throw new Error('Could not load the current FlowNG (HTTP ' + r.status + ').');
+          app = await r.text();
+        }
+        const out = await FlowCheck.buildUpdate(v.body, v.variant, app, manifest);
         const a = document.createElement('a');
         a.href = URL.createObjectURL(new Blob([out.text], { type: 'text/html' }));
         a.download = (out.name.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_') || 'Shared_analysis') + '_updated.html';
