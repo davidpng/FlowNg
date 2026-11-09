@@ -7,19 +7,39 @@
   {
    "hash": "8b863b51e784c10908f6a6de20e1b3cd303bd2609cab43053bd83a891d6679c5",
    "variant": "full",
-   "seq": 0,
-   "commit": "eb00718964",
+   "seq": 2,
+   "commit": "1bdaf85560",
    "date": "2026-11-09",
-   "subject": "Escape file-derived names before putting them into HTML (_h); closes the injection finding"
+   "subject": "pending release: the tip of this pull request",
+   "pending": true
   },
   {
    "hash": "44d9514086acc8886d9d6e239b6506fc4ad30a0234302856d0f5ae3887ce2ae6",
    "variant": "locked",
-   "seq": 0,
-   "commit": "eb00718964",
+   "seq": 2,
+   "commit": "1bdaf85560",
    "date": "2026-11-09",
-   "subject": "Escape file-derived names before putting them into HTML (_h); closes the injection finding"
+   "subject": "pending release: the tip of this pull request",
+   "pending": true
   }
  ],
- "revoked": []
+ "since": "2026-11-07",
+ "revoked": [
+  {
+   "hash": "7aaee9b6026a8ade4a6e6b5d6bb4a1bb957d1607bf2b9d57acd7e504e1637933",
+   "variant": "full",
+   "commit": "da781b029c",
+   "date": "2026-11-07",
+   "reason": "This FlowNG version has a known problem (it does not escape names, so a crafted file could run code). Ask the sender to re-export the analysis with the current FlowNG.",
+   "auto": true
+  },
+  {
+   "hash": "43f780ea92a05a45df239a43777a901e43fc0360c2d3c267e26b2d7b7086fa5d",
+   "variant": "locked",
+   "commit": "da781b029c",
+   "date": "2026-11-07",
+   "reason": "This FlowNG version has a known problem (it does not escape names, so a crafted file could run code). Ask the sender to re-export the analysis with the current FlowNG.",
+   "auto": true
+  }
+ ]
 }
