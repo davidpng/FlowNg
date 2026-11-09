@@ -1987,7 +1987,7 @@ function showSpikeDialog() {
       <label style="font-size:11px;display:block;margin-bottom:6px">Output file name
         <input id="spike-name" type="text" value="SpikeNG" style="width:100%"></label>
       <label style="font-size:11px;display:block;margin-bottom:10px">
-        <input id="spike-key" type="checkbox" checked> Also download an answer key (CSV of the spiked event rows)</label>
+        <input id="spike-key" type="checkbox"> Also download an answer key (CSV of the spiked event rows)</label>
       <div id="spike-status" style="font-size:11px;color:var(--text2);min-height:14px;margin-bottom:8px"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button onclick="document.getElementById('spike-modal').remove()">Close</button>
@@ -2049,6 +2049,7 @@ async function runSpike() {
     const base = _safeFileName(document.getElementById('spike-name').value || 'SpikeNG');
     _downloadBytes(bytes, base + '.fcs');
     if (document.getElementById('spike-key').checked) {
+      await new Promise(r => setTimeout(r, 1000));      // two downloads at once: browsers keep only one, so give the FCS file its own turn
       const lines = [`# SpikeNG answer key. Mode: ${mode === 'time' ? 'educational (time based)' : 'proficiency (interleaved)'}; seed ${seed}; ${r.nSpike} spiked of ${r.nEvents} events`,
         'row_1_based'];
       for (let k = 0; k < r.spikeRows.length; k++) lines.push(r.spikeRows[k] + 1);
