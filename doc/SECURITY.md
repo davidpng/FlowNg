@@ -150,6 +150,15 @@ Open each in a throwaway browser profile. An alert box, a console error mentioni
 2. **Protect patient privacy.** The likeliest real harm is a trusted sender sharing identifiers by accident, not a forged file. Keep metadata stripping on, rename tubes, and review what is shared (phase 5 anonymise).
 3. **Tell users the rule.** Open shared files only from people or sites you know; if in doubt, drop the file on the Check page first.
 
+### Repository rules (in force since 9 Nov 2026)
+
+Saved in `.github/rulesets/` and created with `gh api -X POST repos/davidpng/FlowNg/rulesets --input <file>`; read the live rules back with `gh api repos/davidpng/FlowNg/rules/branches/main`.
+- **Only the owner is a collaborator.** Others can fork and open PRs (a public repository cannot stop that) but cannot push branches or merge. The owner merges; the admin role bypasses the PR rule for pull requests only.
+- **`main`:** no deletion, no force-push, a pull request is required with one approval, review by the code owner (`.github/CODEOWNERS`, the owner for every path), approvals dismissed on new pushes, the latest push approved by someone else, conversations resolved, and **merge commits only**. The last one matters: the Check manifest finds releases as "Merge pull request" commits, so a squash or rebase merge would leave a release out of the manifest.
+- **Tags `v*`:** only the owner can create, change or delete them.
+- **Repository settings:** squash and rebase merges off, branches deleted after merge, secret scanning with push protection on, private vulnerability reporting on, the Actions token read-only, and workflows from outside contributors need approval.
+- **Still your own job:** two-factor authentication (a hardware key if possible) on the owner account, and watching the collaborator and invitation lists (`gh api repos/davidpng/FlowNg/collaborators`, `.../invitations`).
+
 Phases 4 and 6 are **deferred** (not needed for this model); phase 5 is limited to the anonymise default.
 
 Goal: students and proficiency-testing sites can open a single shared HTML file from many different authors without having to trust the author, and without per-author keys.
