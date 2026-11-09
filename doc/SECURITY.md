@@ -145,6 +145,13 @@ Open each in a throwaway browser profile. An alert box, a console error mentioni
 
 ## 5. Roadmap: making shared HTML files safe to open
 
+**Trust model: know your sender.** FlowNG relies on people opening shared files only from senders and sites they know and trust, the same way they treat any HTML attachment. Nothing in FlowNG can make a file from an unknown sender safe. The checks below are an optional second layer for the cases where a known sender's account is hijacked or spoofed, or a file is altered on the way. They are deliberately not mandatory, and they are not to be grown further without a concrete threat. What matters most under this model:
+1. **Protect the senders and the source.** Two-factor authentication (a hardware key if possible) on the GitHub account that owns the repository and Pages site, branch protection on `main`, and pull-request review. If the source is altered, every user is affected, and the Check page and its manifest too.
+2. **Protect patient privacy.** The likeliest real harm is a trusted sender sharing identifiers by accident, not a forged file. Keep metadata stripping on, rename tubes, and review what is shared (phase 5 anonymise).
+3. **Tell users the rule.** Open shared files only from people or sites you know; if in doubt, drop the file on the Check page first.
+
+Phases 4 and 6 are **deferred** (not needed for this model); phase 5 is limited to the anonymise default.
+
 Goal: students and proficiency-testing sites can open a single shared HTML file from many different authors without having to trust the author, and without per-author keys.
 
 **Principle.** Every genuine shared file is released FlowNG code plus one data block. A central check can accept a file if (a) the code outside the data block is exactly a released build, and (b) the data block is only data. Authors can then stay anonymous. A file cannot vouch for itself (any check inside it can be edited out), so the check lives at a trusted address that the repo owner controls.
