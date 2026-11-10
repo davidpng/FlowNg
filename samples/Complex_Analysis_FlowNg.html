@@ -424,6 +424,12 @@
     box-shadow: 0 24px 64px rgba(0,0,0,0.6);
     gap: 14px;
   }
+  /* SpikeNG dialog: grows with its content (long file names, messages) and scrolls instead of letting rows squash or buttons leave the box */
+  #spike-modal .modal-box > * { flex-shrink: 0; }
+  #spike-modal .modal-box input[type=file] { max-width: 100%; }
+  #spike-modal .modal-box label, #spike-modal .modal-box div { overflow-wrap: anywhere; }
+  #spike-modal #spike-actions { position: sticky; bottom: -24px; background: var(--surface); padding: 10px 0 0; margin-top: auto; }
+  .pipette-icon { vertical-align: -2px; }
   .modal-box h2 { font-size: 14px; color: var(--text); margin: 0; letter-spacing: 0.5px; }
   .modal-input {
     background: var(--surface2);
@@ -741,7 +747,7 @@
         <button class="tool-btn" onclick="document.getElementById('file-input').click()" id="open-btn" title="Open one or more FCS / LMD files (or drop them on the page)">📂 Open FCS File</button>
         <button class="tool-btn" onclick="exportGates()" id="export-btn" style="display:none" title="Save gates, plots and axis settings as a JSON template (no event data)">↓ Export Template</button>
         <button class="tool-btn" onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Apply a saved JSON template to the loaded file(s)">↑ Import Template</button>
-        <button class="tool-btn" onclick="showSpikeDialog()" id="spike-btn" title="SpikeNG: spike a donor population (schlemiel) into a recipient file (schlimazel) after checking their column labels match">💉 SpikeNG</button>
+        <button class="tool-btn" onclick="showSpikeDialog()" id="spike-btn" title="SpikeNG: add a spike population (from another file) into a recipient file, after checking their column labels match; download the result as an FCS file or open it directly in FlowNG"><svg class="pipette-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg> SpikeNG</button>
         <button class="tool-btn" onclick="showShareDialog()" id="share-btn" style="display:none" title="Export one self-contained HTML containing the event data, compensation, gates and plots (not the original FCS/LMD file)">🔗 Export Shareable HTML</button>
         <input type="file" id="import-input" accept=".json" style="display:none">
 <!--@lite:end-->
@@ -1827,7 +1833,7 @@ function exportPopulationFCS(popId) {
 }
 
 // ─── SpikeNG ───
-// schlimazel = recipient file; schlemiel = donor population that is spiked in.
+// recipient = the file that receives the spike; donor (shown to users as the "spike" file) = the population that is added.
 const _SPIKE_GAP_FRACTION = 0.03;
 let _spike = { recip: null, donor: null };
 
@@ -1836,7 +1842,7 @@ function _normLabel(s) { return String(s || '').trim().replace(/\s+/g, ' ').toUp
 // Compare column labels. Returns { ok, map, reordered, problems }; map[i] = donor column that matches recipient column i.
 function spikeCompareColumns(recip, donor) {
   const problems = [];
-  if (recip.nPar !== donor.nPar) problems.push(`Different number of parameters: schlimazel has ${recip.nPar}, schlemiel has ${donor.nPar}`);
+  if (recip.nPar !== donor.nPar) problems.push(`Different number of parameters: the recipient has ${recip.nPar}, the spike file has ${donor.nPar}`);
   const rN = recip.params.map(p => _normLabel(p.name)), dN = donor.params.map(p => _normLabel(p.name));
   const dup = a => a.find((x, i) => a.indexOf(x) !== i);
   if (dup(rN) !== undefined || dup(dN) !== undefined) problems.push(`Duplicate parameter name "${dup(rN) ?? dup(dN)}" — cannot match columns unambiguously`);
@@ -1844,10 +1850,10 @@ function spikeCompareColumns(recip, donor) {
   const map = [];
   rN.forEach((n, i) => {
     const j = dN.indexOf(n);
-    if (j < 0) problems.push(`"${recip.params[i].name}" is in the schlimazel but not the schlemiel`);
+    if (j < 0) problems.push(`"${recip.params[i].name}" is in the recipient but not the spike file`);
     map.push(j);
   });
-  dN.forEach((n, j) => { if (!rN.includes(n)) problems.push(`"${donor.params[j].name}" is in the schlemiel but not the schlimazel`); });
+  dN.forEach((n, j) => { if (!rN.includes(n)) problems.push(`"${donor.params[j].name}" is in the spike file but not the recipient`); });
   if (problems.length) return { ok: false, problems };
   recip.params.forEach((rp, i) => {
     const dp = donor.params[map[i]];
@@ -1870,19 +1876,19 @@ function _colRange(data, n, P, c) {
   return n ? [lo, hi] : [0, 0];
 }
 
-// Number of spike events for a requested percentage of the schlimazel (recipient) events.
+// Number of spike events for a requested percentage of the recipient's events.
 function spikeEventsFor(pct, nRecip) { return Math.max(0, Math.round(nRecip * pct / 100)); }
 
 // Core merge. mode: 'time' (educational) or 'interleave' (proficiency testing).
 // Returns { params, data, nEvents, spikeRows (0-based output rows), nSpike, gap, warnings }.
-// Compensation note for a pair: merging happens on uncompensated values; the output carries the schlimazel's matrix.
+// Compensation note for a pair: merging happens on uncompensated values; the output carries the recipient's matrix.
 function spikeCompNote(recip, donor) {
   const has = f => !!(f.rawData && f.spillMatrix && f.spillParamIdx);
   const sig = f => has(f) ? f.spillParamIdx.map(i => _normLabel(f.params[i].name)).join(',') + '|' + f.spillMatrix.flat().map(v => (+v).toPrecision(6)).join(',') : '';
   if (has(recip) && has(donor)) return sig(recip) === sig(donor) ? { kind: 'ok', text: 'Both files carry the same spillover matrix; merged uncompensated, matrix kept' }
-    : { kind: 'info', text: 'The files have different spillover matrices: both are merged uncompensated and the schlimazel\'s matrix is applied to all events' };
-  if (has(recip)) return { kind: 'info', text: 'Schlimazel has a spillover matrix, schlemiel is raw: merged as raw, schlimazel\'s matrix is applied to all events' };
-  if (has(donor)) return { kind: 'warn', text: 'The schlemiel has a spillover matrix but the schlimazel does not: the result is uncompensated (the schlemiel\'s matrix is dropped and its events are used raw)' };
+    : { kind: 'info', text: 'The files have different spillover matrices: both are merged uncompensated and the recipient\'s matrix is applied to all events' };
+  if (has(recip)) return { kind: 'info', text: 'The recipient has a spillover matrix, the spike file is raw: merged as raw, the recipient\'s matrix is applied to all events' };
+  if (has(donor)) return { kind: 'warn', text: 'The spike file has a spillover matrix but the recipient does not: the result is uncompensated (the spike file\'s matrix is dropped and its events are used raw)' };
   return { kind: 'ok', text: 'Neither file has a spillover matrix: merged as is' };
 }
 
@@ -1891,7 +1897,7 @@ function spikeMerge(recip, donor, { mode, nSpike, seed = 1 }) {
   if (!cmp.ok) throw new Error('Column labels do not match:\n' + cmp.problems.join('\n'));
   const P = recip.nPar, nR = recip.nEvents, nD = donor.nEvents, warnings = [];
   const rng = _spikeRng(seed);
-  if (nSpike > nD) { warnings.push(`Only ${nD.toLocaleString()} schlemiel events available; spiking ${nD.toLocaleString()} instead of ${nSpike.toLocaleString()}`); nSpike = nD; }
+  if (nSpike > nD) { warnings.push(`Only ${nD.toLocaleString()} spike events available; spiking ${nD.toLocaleString()} instead of ${nSpike.toLocaleString()}`); nSpike = nD; }
   // Donor columns in recipient order
   const dmap = cmp.map;
   // Random subset of donor events (partial Fisher–Yates), kept in original order
@@ -1919,7 +1925,7 @@ function spikeMerge(recip, donor, { mode, nSpike, seed = 1 }) {
       const [s0] = _colRange(spike, nSpike, P, tR);
       const shift = (r1 + gap) - s0;
       for (let k = 0; k < nSpike; k++) out[(nR + k) * P + tR] += shift;
-    } else if (nSpike) warnings.push('No Time parameter found: the schlemiel events are appended after the schlimazel with no time gap');
+    } else if (nSpike) warnings.push('No Time parameter found: the spike events are appended after the recipient with no time gap');
   } else {
     // Interleave: each spike event goes into a random slot among the recipient events
     const slot = new Int32Array(nSpike);
@@ -1956,28 +1962,28 @@ function showSpikeDialog() {
   const o = document.createElement('div');
   o.id = 'spike-modal'; o.className = 'modal-overlay';
   o.innerHTML = `
-    <div class="modal-box" style="max-width:460px">
-      <h2>💉 SpikeNG</h2>
-      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Spike a donor population (schlemiel) into a recipient file (schlimazel).
-        Both must have identical column labels. Use <i>Export events as FCS</i> on a population to make the schlemiel.</p>
-      <label style="font-size:11px;display:block;margin-bottom:6px">Schlimazel (recipient) FCS / LMD
+    <div class="modal-box" style="width:min(520px,94vw);max-width:none;max-height:92vh;overflow-y:auto">
+      <h2><svg class="pipette-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg> SpikeNG</h2>
+      <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Add a spike population (from another file) into a recipient file.
+        Both must have identical column labels. Use <i>Export events as FCS</i> on a population to make the spike file.</p>
+      <label style="font-size:11px;display:block;margin-bottom:6px">Recipient FCS / LMD (receives the spike)
         <input id="spike-recip" type="file" accept=".fcs,.lmd,.LMD" style="width:100%" onchange="_spikeLoad('recip',this.files[0])"></label>
       <div id="spike-recip-info" style="font-size:10px;color:var(--text2);margin-bottom:6px"></div>
-      <label style="font-size:11px;display:block;margin-bottom:6px">Schlemiel (donor) FCS / LMD
+      <label style="font-size:11px;display:block;margin-bottom:6px">Spike FCS / LMD (the population to add)
         <input id="spike-donor" type="file" accept=".fcs,.lmd,.LMD" style="width:100%" onchange="_spikeLoad('donor',this.files[0])"></label>
       <div id="spike-donor-info" style="font-size:10px;color:var(--text2);margin-bottom:6px"></div>
       <div id="spike-check" style="font-size:11px;margin-bottom:4px;min-height:14px"></div>
       <div id="spike-comp" style="font-size:11px;margin-bottom:8px;min-height:14px"></div>
       <div style="font-size:11px;margin-bottom:8px">
         <label style="display:block;margin-bottom:3px"><input type="radio" name="spike-mode" value="time" checked onchange="_spikeUpdate()">
-          <b>Educational</b>: time based. Schlemiel events follow the schlimazel, separated by a gap of 3% of the longer acquisition.</label>
+          <b>Educational</b>: time based. Spike events follow the recipient, separated by a gap of 3% of the longer acquisition.</label>
         <label style="display:block"><input type="radio" name="spike-mode" value="interleave" onchange="_spikeUpdate()">
-          <b>Proficiency testing</b>: schlemiel events are interleaved at random positions among the schlimazel events.</label>
+          <b>Proficiency testing</b>: spike events are interleaved at random positions among the recipient events.</label>
       </div>
       <div style="font-size:11px;margin-bottom:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <span>Spike</span>
         <input id="spike-pct" type="number" min="0" step="any" value="1" style="width:80px" oninput="_spikeUpdate('pct')">
-        <span>% of schlimazel events =</span>
+        <span>% of recipient events =</span>
         <input id="spike-n" type="number" min="0" step="1" style="width:90px" oninput="_spikeUpdate('n')">
         <span>events</span>
       </div>
@@ -1989,9 +1995,10 @@ function showSpikeDialog() {
       <label style="font-size:11px;display:block;margin-bottom:10px">
         <input id="spike-key" type="checkbox"> Also download an answer key (CSV of the spiked event rows)</label>
       <div id="spike-status" style="font-size:11px;color:var(--text2);min-height:14px;margin-bottom:8px"></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
+      <div id="spike-actions" style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
         <button onclick="document.getElementById('spike-modal').remove()">Close</button>
-        <button class="primary" id="spike-go" onclick="runSpike()" disabled>Create spiked FCS</button>
+        <button id="spike-go" onclick="runSpike('download')" disabled title="Save the merged file as an FCS file">Download FCS file</button>
+        <button class="primary" id="spike-open" onclick="runSpike('import')" disabled title="Load the merged file straight into FlowNG (it waits in the Pool); nothing is downloaded">Open in FlowNG</button>
       </div>
     </div>`;
   document.body.appendChild(o);
@@ -2024,21 +2031,24 @@ function _spikeUpdate(src) {
   const cn = document.getElementById('spike-comp'); cn.textContent = '';
   if (recip && donor) {
     const c = spikeCompareColumns(recip, donor);
-    if (c.ok) { ok = true; chk.style.color = '#4caf7a'; chk.textContent = `✓ ${recip.nPar} column labels match` + (c.reordered ? ' (schlemiel columns reordered to match)' : ''); }
+    if (c.ok) { ok = true; chk.style.color = '#4caf7a'; chk.textContent = `✓ ${recip.nPar} column labels match` + (c.reordered ? ' (spike columns reordered to match)' : ''); }
     else { chk.style.color = '#e06c75'; chk.innerHTML = '✗ Column labels do not match:<br>' + c.problems.slice(0, 8).map(s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')).join('<br>') + (c.problems.length > 8 ? '<br>…' : ''); }
     if (c.ok) { const note = spikeCompNote(recip, donor); cn.style.color = note.kind === 'warn' ? '#f5a623' : 'var(--text2)'; cn.textContent = (note.kind === 'warn' ? '⚠ ' : 'ℹ ') + note.text; }
     const n = parseInt(nEl.value) || 0, use = Math.min(n, donor.nEvents);
-    sum.textContent = `${use.toLocaleString()} of ${donor.nEvents.toLocaleString()} schlemiel events → ${(recip.nEvents + use).toLocaleString()} events total (${(100 * use / (recip.nEvents + use || 1)).toFixed(3)}% of the result)` +
+    sum.textContent = `${use.toLocaleString()} of ${donor.nEvents.toLocaleString()} spike events → ${(recip.nEvents + use).toLocaleString()} events total (${(100 * use / (recip.nEvents + use || 1)).toFixed(3)}% of the result)` +
       (n > donor.nEvents ? ` — only ${donor.nEvents.toLocaleString()} available` : '');
     if (use <= 0) ok = false;
   }
   go.disabled = !ok;
+  const open = document.getElementById('spike-open'); if (open) open.disabled = !ok;
 }
 
-async function runSpike() {
+// dest: 'download' saves an FCS file; 'import' loads the merged result straight into FlowNG (it waits in the Pool).
+async function runSpike(dest = 'download') {
   const { recip, donor } = _spike; if (!recip || !donor) return;
-  const status = document.getElementById('spike-status'), go = document.getElementById('spike-go');
-  go.disabled = true; status.textContent = 'Merging…';
+  const status = document.getElementById('spike-status');
+  const btns = ['spike-go', 'spike-open'].map(id => document.getElementById(id)).filter(Boolean);
+  btns.forEach(b => { b.disabled = true; }); status.textContent = 'Merging…';
   try {
     await new Promise(r => setTimeout(r, 20));
     const mode = document.querySelector('input[name="spike-mode"]:checked').value;
@@ -2047,18 +2057,29 @@ async function runSpike() {
     const r = spikeMerge(recip, donor, { mode, nSpike, seed });
     const bytes = buildFCSBytes(r.params, r.data, r.nEvents, { timestep: r.timestep, spill: r.spill });
     const base = _safeFileName(document.getElementById('spike-name').value || 'SpikeNG');
-    _downloadBytes(bytes, base + '.fcs');
+    const info = `${r.nEvents.toLocaleString()} events (${r.nSpike.toLocaleString()} spiked)` + (r.warnings.length ? ' — ' + r.warnings.join('; ') : '');
+    let msg;
+    if (dest === 'import') {
+      const before = poolFiles.length;
+      loadFCS(bytes.buffer, base + '.fcs');            // same path as opening a file: parsed, compensated, added to the Pool
+      for (let i = 0; i < 300 && poolFiles.length === before; i++) await new Promise(r => setTimeout(r, 100));   // the loader reports its own progress; wait so our message is the last one shown
+      if (poolFiles.length === before) throw new Error('the file did not load');
+      msg = `Loaded ${base}.fcs into the Pool: ${info}. Tick it and click Open (or Starter), or add it to a workspace.`;
+    } else {
+      _downloadBytes(bytes, base + '.fcs');
+      msg = `Wrote ${base}.fcs: ${info}`;
+    }
     if (document.getElementById('spike-key').checked) {
-      await new Promise(r => setTimeout(r, 1000));      // two downloads at once: browsers keep only one, so give the FCS file its own turn
+      if (dest !== 'import') await new Promise(r => setTimeout(r, 1000));      // two downloads at once: browsers keep only one, so give the FCS file its own turn
       const lines = [`# SpikeNG answer key. Mode: ${mode === 'time' ? 'educational (time based)' : 'proficiency (interleaved)'}; seed ${seed}; ${r.nSpike} spiked of ${r.nEvents} events`,
         'row_1_based'];
       for (let k = 0; k < r.spikeRows.length; k++) lines.push(r.spikeRows[k] + 1);
       _downloadBytes(lines.join('\n') + '\n', base + '_key.csv', 'text/csv');
     }
-    const msg = `Wrote ${base}.fcs: ${r.nEvents.toLocaleString()} events (${r.nSpike.toLocaleString()} spiked)` + (r.warnings.length ? ' — ' + r.warnings.join('; ') : '');
-    status.textContent = msg; showToast(msg, 8000);
+    status.textContent = msg; showToast(msg, 9000);
+    if (dest === 'import') document.getElementById('spike-modal')?.remove();
   } catch (e) { console.error(e); status.textContent = 'Failed: ' + e.message; }
-  go.disabled = false;
+  if (document.getElementById('spike-modal')) _spikeUpdate();
 }
 /*@lite:end*/
 // ─── TRANSFORM (log10) ────────────────────────────────────────────────────────

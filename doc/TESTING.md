@@ -313,14 +313,16 @@ When a test fails, fix the cause and rerun that section and section 2; do not we
 | 15.1 | Write then parse: `buildFCSBytes(params, data, n)` then `parseFCS` | Same event count, parameter count, names and labels; values identical; TEXT holds only structural keywords, `$PnB/E/N/R/S`, no `$DATE`, `$SPILLOVER`, IDs |
 | 15.2 | Export a population (right-click, Export events as FCS…) | One download named after the population (`T_gate.fcs`), event count equals the population; an empty population is disabled; a file's context menu exports all events |
 | 15.3 | Column check | Matching files pass; a renamed, missing or extra column is refused with the differing names listed; same names in another order pass and the donor is reordered so spiked values land in the right columns; duplicates are refused |
-| 15.4 | Spike amount | 1% of 5,000 schlimazel events is 50; editing the events box updates the percent and the reverse; the summary shows total and the spike's share |
-| 15.5 | Donor too small | Requesting more than the donor holds uses all donor events once and warns |
-| 15.6 | Educational merge | Schlimazel rows untouched and first, spike rows last; first spike Time = schlimazel max Time + 3% of the longer Time span; no Time column gives a warning and no gap |
-| 15.7 | Proficiency merge | Schlimazel events keep their order; spike rows are spread through the file; the Time channel stays non-decreasing |
-| 15.8 | Seed | Same seed gives the same output; spike values are all from the donor |
+| 15.4 | Spike amount | 1% of 5,000 recipient events is 50; editing the events box updates the percent and the reverse; the summary shows total and the spike's share |
+| 15.5 | Spike file too small | Requesting more than the spike file holds uses all its events once and warns |
+| 15.6 | Educational merge | Recipient rows untouched and first, spike rows last; first spike Time = recipient max Time + 3% of the longer Time span; no Time column gives a warning and no gap |
+| 15.7 | Proficiency merge | Recipient events keep their order; spike rows are spread through the file; the Time channel stays non-decreasing |
+| 15.8 | Seed | Same seed gives the same output; spike values are all from the spike file |
 | 15.9 | Output reopens | The merged FCS parses with the expected event and parameter count; with the answer key box ticked (off by default) the key lists the spike rows and downloads after the FCS file; unticked, only the FCS file downloads |
-| 15.10 | Compensation | Export of a compensated file writes raw values plus `$SPILLOVER`; re-reading gives identical raw and compensated values (diff 0). Raw schlimazel + compensated schlemiel: warning, output has no matrix, spike rows are raw. Compensated schlimazel + raw schlemiel: output has the schlimazel's matrix and a spiked row re-read equals the app's compensation of that raw event (error 0). Different matrices: note names the schlimazel's as used |
+| 15.10 | Compensation | Export of a compensated file writes raw values plus `$SPILLOVER`; re-reading gives identical raw and compensated values (diff 0). Raw recipient + compensated spike file: warning, output has no matrix, spike rows are raw. Compensated recipient + raw spike file: output has the recipient's matrix and a spiked row re-read equals the app's compensation of that raw event (error 0). Different matrices: note names the recipient's as used |
 | 15.11 | Locked files | A shared file with Locked viewer has no SpikeNG button, `buildFCSBytes`, `showSpikeDialog` or export menu item |
+| 15.12 | Open in FlowNG | The dialog has **Download FCS file** and **Open in FlowNG** and says recipient and spike (never the old names); Open in FlowNG loads the merged file into the Pool (name from the output-name box, event and parameter counts as expected), downloads nothing, closes the dialog, and the toast says it is in the Pool; with the answer-key box ticked the CSV still downloads |
+| 15.13 | SpikeNG layout and icon | The toolbar button and dialog title use the pipette icon (inline SVG), not the syringe emoji; with long file names and messages in a short window (520 px high) the dialog stays in view, its rows do not overlap, and Close / Download FCS file / Open in FlowNG stay inside it (the box scrolls) |
 
 Verified with the headless-Chrome harness on the TEST SAMPLE LMD (rows 15.1 to 15.9 on synthetic recipient/donor data of 1,000 and 200 events plus a real LMD round trip).
 

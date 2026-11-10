@@ -1,6 +1,6 @@
 {
  "format": 3,
- "generated": "2026-11-09",
+ "generated": "2026-11-10",
  "rev": "HEAD",
  "canon": "check/index.html FlowCheck.canonHash",
  "entries": [
@@ -8,17 +8,33 @@
    "hash": "adbe0edbd480ef8da05bb31976f2fb4144c56289dfd4433f9198b59621b501bd",
    "variant": "full",
    "seq": 2,
-   "commit": "96077d3c85",
+   "commit": "0ac908eb5b",
    "date": "2026-11-09",
-   "subject": "pending release: the tip of this pull request",
-   "pending": true
+   "subject": "Merge pull request #27 from davidpng/spikeng-export-merge"
   },
   {
    "hash": "003be48d3c72725bc64481e96b1199c4ea37ba2be12a0c070062ade4aef0cfd9",
    "variant": "locked",
    "seq": 2,
-   "commit": "96077d3c85",
+   "commit": "0ac908eb5b",
    "date": "2026-11-09",
+   "subject": "Merge pull request #27 from davidpng/spikeng-export-merge"
+  },
+  {
+   "hash": "ded2e7f1ed9b001ff707483eaddf588425ba5f0b880cb4760c24488ad39e56bc",
+   "variant": "full",
+   "seq": 3,
+   "commit": "e9c025f05f",
+   "date": "2026-11-10",
+   "subject": "pending release: the tip of this pull request",
+   "pending": true
+  },
+  {
+   "hash": "776e2b8744cff99ff40fd60ac05b3b63939648209029ab0e007924389d9b77d4",
+   "variant": "locked",
+   "seq": 3,
+   "commit": "e9c025f05f",
+   "date": "2026-11-10",
    "subject": "pending release: the tip of this pull request",
    "pending": true
   }
