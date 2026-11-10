@@ -424,6 +424,12 @@
     box-shadow: 0 24px 64px rgba(0,0,0,0.6);
     gap: 14px;
   }
+  /* SpikeNG dialog: grows with its content (long file names, messages) and scrolls instead of letting rows squash or buttons leave the box */
+  #spike-modal .modal-box > * { flex-shrink: 0; }
+  #spike-modal .modal-box input[type=file] { max-width: 100%; }
+  #spike-modal .modal-box label, #spike-modal .modal-box div { overflow-wrap: anywhere; }
+  #spike-modal #spike-actions { position: sticky; bottom: -24px; background: var(--surface); padding: 10px 0 0; margin-top: auto; }
+  .pipette-icon { vertical-align: -2px; }
   .modal-box h2 { font-size: 14px; color: var(--text); margin: 0; letter-spacing: 0.5px; }
   .modal-input {
     background: var(--surface2);
@@ -741,7 +747,7 @@
         <button class="tool-btn" onclick="document.getElementById('file-input').click()" id="open-btn" title="Open one or more FCS / LMD files (or drop them on the page)">📂 Open FCS File</button>
         <button class="tool-btn" onclick="exportGates()" id="export-btn" style="display:none" title="Save gates, plots and axis settings as a JSON template (no event data)">↓ Export Template</button>
         <button class="tool-btn" onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Apply a saved JSON template to the loaded file(s)">↑ Import Template</button>
-        <button class="tool-btn" onclick="showSpikeDialog()" id="spike-btn" title="SpikeNG: add a spike population (from another file) into a recipient file, after checking their column labels match; download the result as an FCS file or open it directly in FlowNG">💉 SpikeNG</button>
+        <button class="tool-btn" onclick="showSpikeDialog()" id="spike-btn" title="SpikeNG: add a spike population (from another file) into a recipient file, after checking their column labels match; download the result as an FCS file or open it directly in FlowNG"><svg class="pipette-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg> SpikeNG</button>
         <button class="tool-btn" onclick="showShareDialog()" id="share-btn" style="display:none" title="Export one self-contained HTML containing the event data, compensation, gates and plots (not the original FCS/LMD file)">🔗 Export Shareable HTML</button>
         <input type="file" id="import-input" accept=".json" style="display:none">
 <!--@lite:end-->
@@ -1956,8 +1962,8 @@ function showSpikeDialog() {
   const o = document.createElement('div');
   o.id = 'spike-modal'; o.className = 'modal-overlay';
   o.innerHTML = `
-    <div class="modal-box" style="max-width:460px">
-      <h2>💉 SpikeNG</h2>
+    <div class="modal-box" style="width:min(520px,94vw);max-width:none;max-height:92vh;overflow-y:auto">
+      <h2><svg class="pipette-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg> SpikeNG</h2>
       <p style="font-size:11px;color:var(--text2);margin:0 0 10px">Add a spike population (from another file) into a recipient file.
         Both must have identical column labels. Use <i>Export events as FCS</i> on a population to make the spike file.</p>
       <label style="font-size:11px;display:block;margin-bottom:6px">Recipient FCS / LMD (receives the spike)
@@ -1989,7 +1995,7 @@ function showSpikeDialog() {
       <label style="font-size:11px;display:block;margin-bottom:10px">
         <input id="spike-key" type="checkbox"> Also download an answer key (CSV of the spiked event rows)</label>
       <div id="spike-status" style="font-size:11px;color:var(--text2);min-height:14px;margin-bottom:8px"></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
+      <div id="spike-actions" style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
         <button onclick="document.getElementById('spike-modal').remove()">Close</button>
         <button id="spike-go" onclick="runSpike('download')" disabled title="Save the merged file as an FCS file">Download FCS file</button>
         <button class="primary" id="spike-open" onclick="runSpike('import')" disabled title="Load the merged file straight into FlowNG (it waits in the Pool); nothing is downloaded">Open in FlowNG</button>

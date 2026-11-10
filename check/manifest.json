@@ -21,10 +21,19 @@
    "subject": "Merge pull request #27 from davidpng/spikeng-export-merge"
   },
   {
-   "hash": "2e5d4c03ddb1eb65d45319fe4569b1a3625a1138bbc62a974f4bf0763c43eb43",
+   "hash": "ded2e7f1ed9b001ff707483eaddf588425ba5f0b880cb4760c24488ad39e56bc",
    "variant": "full",
    "seq": 3,
-   "commit": "0ac908eb5b",
+   "commit": "e9c025f05f",
+   "date": "2026-11-10",
+   "subject": "pending release: the tip of this pull request",
+   "pending": true
+  },
+  {
+   "hash": "776e2b8744cff99ff40fd60ac05b3b63939648209029ab0e007924389d9b77d4",
+   "variant": "locked",
+   "seq": 3,
+   "commit": "e9c025f05f",
    "date": "2026-11-10",
    "subject": "pending release: the tip of this pull request",
    "pending": true

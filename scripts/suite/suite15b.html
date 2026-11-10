@@ -21,10 +21,24 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms)); const res={};
  // the old joke names are gone from the dialog
  E('showSpikeDialog()'); res.words=/schlemiel|schlimazel/i.test(w.document.getElementById('spike-modal').innerText);
  res.labels=[...w.document.querySelectorAll('#spike-modal label')].map(l=>l.childNodes[0].textContent.trim()).slice(0,2);
+
+ // layout: icon, and the dialog grows/scrolls so nothing leaves the box on a short window with long text
+ f.style.height='520px'; await sleep(300); E(`document.getElementById('spike-modal')&&document.getElementById('spike-modal').remove()`); E('showSpikeDialog()');
+ w.eval(`(()=>{const long='A_very_long_sample_file_name_with_many_parts_that_would_normally_push_things_around_0123456789.fcs · 123,456,789 events · 14 parameters';
+   document.getElementById('spike-recip-info').textContent=long; document.getElementById('spike-donor-info').textContent=long;
+   document.getElementById('spike-comp').textContent='ℹ The files have different spillover matrices: both are merged uncompensated and the recipient matrix is applied to all events, which is a long sentence on purpose';
+   document.getElementById('spike-check').textContent='✓ 14 column labels match (spike columns reordered to match)';})()`);
+ await sleep(300);
+ res.layout=w.eval(`(()=>{const b=document.querySelector('#spike-modal .modal-box'),a=document.getElementById('spike-actions'),br=b.getBoundingClientRect(),ar=a.getBoundingClientRect();
+   const kids=[...b.children].filter(c=>c.id!=='spike-actions'&&c.offsetHeight>0).map(c=>c.getBoundingClientRect());
+   let overlap=false;for(let i=1;i<kids.length;i++)if(kids[i].top<kids[i-1].bottom-1)overlap=true;
+   return {boxBottom:Math.round(br.bottom),vh:innerHeight,actionsInsideBox:ar.bottom<=br.bottom+1&&ar.top>=br.top,boxInView:br.top>=0&&br.bottom<=innerHeight+1,scrolls:b.scrollHeight>b.clientHeight,overlap,buttons:[...a.querySelectorAll('button')].map(x=>x.getBoundingClientRect().bottom<=br.bottom+1)}})()`);
+ res.icon=w.eval(`({btn:!!document.querySelector('#spike-btn svg.pipette-icon'),title:!!document.querySelector('#spike-modal h2 svg.pipette-icon'),emoji:/💉/.test(document.getElementById('spike-btn').textContent+document.querySelector('#spike-modal h2').textContent)})`);
  }catch(e){res.error=String(e)+e.stack}
   if(res.error)R('0','harness error',false,res.error);
 
  R('15.12','Open in FlowNG: loads the merged file into the Pool (510 events), no download, dialog closes; the dialog says recipient and spike, not the old names',res.buttons&&res.buttons[1]&&res.import&&res.import.name==='SpikeNG.fcs'&&res.import.n===510&&res.import.nPar===3&&res.import.downloads===0&&res.import.modalClosed&&/Pool/.test(res.import.toast)&&res.words===false&&/Recipient/.test(res.labels[0])&&/Spike/.test(res.labels[1]),{import:res.import,labels:res.labels,words:res.words});
+ R('15.13','SpikeNG uses a pipette icon (not the syringe emoji); with long file names on a short window the box stays in view, rows do not overlap, and the buttons stay inside it (the box scrolls)',res.icon&&res.icon.btn&&res.icon.title&&!res.icon.emoji&&res.layout&&res.layout.boxInView&&res.layout.actionsInsideBox&&!res.layout.overlap&&res.layout.buttons.every(Boolean),{layout:res.layout,icon:res.icon});
  R('15.9b','answer key off by default; FCS only when unticked; FCS then key (1 s apart) when ticked',res.keyDefault===false&&JSON.stringify(res.unchecked)==='["SpikeNG.fcs"]'&&JSON.stringify(res.checked)==='["SpikeNG.fcs","SpikeNG_key.csv"]'&&res.gapMs>=900,res);
 
  await finish('s15b'); })();
