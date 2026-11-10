@@ -11,9 +11,20 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms)); const res={};
  await w.eval('runSpike()'); res.unchecked=w.eval('__dl.map(x=>x.name)');
  w.eval('__dl.length=0'); d.getElementById('spike-key').checked=true; await w.eval('runSpike()'); const dl=w.eval('__dl.map(x=>({n:x.name,t:x.t}))');
  res.checked=dl.map(x=>x.n); res.gapMs=dl.length>1?dl[1].t-dl[0].t:null; res.goEnabledAfter=!d.getElementById('spike-go').disabled; res.status=d.getElementById('spike-status').textContent.slice(0,80);
+
+ // open directly in FlowNG instead of downloading
+ w.eval('__dl.length=0'); d.getElementById('spike-key').checked=false; w.eval(`window.__toast0=document.getElementById('toast').textContent`);
+ res.buttons=[!!d.getElementById('spike-go'),!!d.getElementById('spike-open'),d.getElementById('spike-open').textContent];
+ const pool0=w.eval('poolFiles.length'); await w.eval("runSpike('import')");
+ for(let i=0;i<60&&w.eval('poolFiles.length')===pool0;i++) await sleep(250);
+ res.import=w.eval(`(()=>{const f=poolFiles[poolFiles.length-1];return {name:f&&f.filename,n:f&&f.nEvents,nPar:f&&f.nPar,downloads:__dl.length,modalClosed:!document.getElementById('spike-modal'),toast:document.getElementById("toast").textContent.slice(0,90)}})()`);
+ // the old joke names are gone from the dialog
+ E('showSpikeDialog()'); res.words=/schlemiel|schlimazel/i.test(w.document.getElementById('spike-modal').innerText);
+ res.labels=[...w.document.querySelectorAll('#spike-modal label')].map(l=>l.childNodes[0].textContent.trim()).slice(0,2);
  }catch(e){res.error=String(e)+e.stack}
   if(res.error)R('0','harness error',false,res.error);
 
+ R('15.12','Open in FlowNG: loads the merged file into the Pool (510 events), no download, dialog closes; the dialog says recipient and spike, not the old names',res.buttons&&res.buttons[1]&&res.import&&res.import.name==='SpikeNG.fcs'&&res.import.n===510&&res.import.nPar===3&&res.import.downloads===0&&res.import.modalClosed&&/Pool/.test(res.import.toast)&&res.words===false&&/Recipient/.test(res.labels[0])&&/Spike/.test(res.labels[1]),{import:res.import,labels:res.labels,words:res.words});
  R('15.9b','answer key off by default; FCS only when unticked; FCS then key (1 s apart) when ticked',res.keyDefault===false&&JSON.stringify(res.unchecked)==='["SpikeNG.fcs"]'&&JSON.stringify(res.checked)==='["SpikeNG.fcs","SpikeNG_key.csv"]'&&res.gapMs>=900,res);
 
  await finish('s15b'); })();
