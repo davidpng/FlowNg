@@ -135,6 +135,15 @@ Open each in a throwaway browser profile. An alert box, a console error mentioni
 - **Linters.** Extract the script and run it through a security-aware linter, for example `eslint` with `eslint-plugin-security` and `eslint-plugin-no-unsanitized`, or `semgrep --config p/javascript`. `python3 scripts/extract_js_for_graphify.py` already pulls the JavaScript out of the HTML.
 - **Python helpers.** `scripts/` has no third-party dependencies (`pyproject.toml` lists none), so there is nothing to audit there.
 
+## 3a. The ManifoldNG module (a compiled binary inside the file)
+
+The full FlowNG.html carries one block that is not readable source: `<script id="manifoldng-wasm" type="application/octet-stream">`, a WebAssembly module (gzip + base64, about 1.3 MB of text) built from `manifoldng/` (Rust, plus three vendored crates with small, listed patches: `manifoldng/vendor/PATCHES.md`).
+
+- **What it can do.** WebAssembly runs sandboxed inside a Web Worker. This module imports one function, `env.mng_progress` (it reports progress numbers), and nothing else: no network, no DOM, no storage, no timers. Check with `node -e "const m=new WebAssembly.Module(require('fs').readFileSync('manifoldng.wasm'));console.log(WebAssembly.Module.imports(m))"`.
+- **Is it the published build?** The block's `data-sha256` is the SHA-256 of the uncompressed module; the worker refuses to run a module that does not match it. `/usr/bin/python3 scripts/build_manifoldng.py --check` rebuilds the module from source (pinned toolchain `manifoldng/rust-toolchain.toml`, `Cargo.lock`, `--locked`) and confirms FlowNG.html holds exactly those bytes. The build remaps local paths, so the module carries no user name or home folder; the script refuses a build that does.
+- **The Check page** hashes the block as program text, like every script, so a changed module changes the release hash.
+- **Locked shared files** do not contain the module (it sits inside the locked-viewer markers).
+
 ## 4. Safe use checklist
 
 1. Get `FlowNG.html` from the repository or a tagged release and check its hash (3.1).

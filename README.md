@@ -56,7 +56,7 @@ The demo runs in your browser from GitHub Pages; the page is static and nothing 
 
 ### 🔒 Privacy-First Design
 - **Client-side only**: All data processing occurs in your browser; data never transmitted to any server
-- **No external dependencies**: Single-file application (about 420 KB) with zero external libraries
+- **No external dependencies**: Single-file application (about 1.8 MB, of which 1.3 MB is the ManifoldNG WebAssembly module) with zero external libraries
 - **Works offline**: No internet connection required after initial page load
 - **Transparent code**: GNU AGPLv3 licensed with full source visible in the HTML file
 
@@ -247,6 +247,12 @@ A shared analysis is a single HTML file, which means it is also a program: anyon
 - **Distributing files over a secure channel** (test providers, teachers): run `scripts/check_shared.py file1.html file2.html …` once before publishing. It uses the same check, prints PASS or FAIL for each file, and writes `SHA256SUMS` for the passing ones. Publish only those files, with `SHA256SUMS`, from a site you control. Recipients who get files from that site do not need to run the online check.
 - **Sending files by email or chat** instead: tell recipients to check them at the official address. In **Export Shareable HTML**, leave **Secure distribution channel** unticked (default) and the file shows a small reminder to check it when opened, and the export dialog gives you a message to paste with the file's SHA-256. Tick the box when you publish the file yourself from a site you control: no reminder is shown.
 - The list of releases is `check/manifest.json`. It is rebuilt for each merged pull request with `scripts/build_manifest.py` (releases are merge commits on main from 7 November 2026; branch commits are not releases), and a build with a problem can be withdrawn through its `revoked` list. How it works, what is deliberately not done (a stricter content policy in the app itself and optional author signing, both deferred) and how to scan a file yourself are in [`doc/SECURITY.md`](doc/SECURITY.md).
+
+### ManifoldNG: UMAP, t-SNE, Phenograph, FlowSOM (full version only)
+
+Right-click a population (or a file) and choose **ManifoldNG: UMAP, t-SNE, clustering…**. Embeddings (UMAP, t-SNE, PaCMAP, densMAP, PHATE, diffusion map) add two new linear axes named after the method and the gate, such as `UMAP_CD19+_1` and `UMAP_CD19+_2`, each scaled 0 to 10, and open a plot of them. Clusterings (Phenograph, FlowSOM) add a cluster-label parameter and one population per cluster under the population you ran. Everything runs in your browser in a WebAssembly module built from `manifoldng/` (Rust) and embedded in the file; nothing is sent anywhere.
+
+Each method's default event count is the number it finishes in about **60 seconds on your computer**: the dialog measures your computer's speed once, predicts time and memory for your choice, and samples the population at random (seeded) when it is larger. Defaults differ a lot by method (on an Apple M4 Pro with 20 channels: t-SNE 31,000 to 98,000, UMAP 180,000, Phenograph 440,000, FlowSOM 1,600,000); see `doc/MANIFOLDNG_BENCH.md`. You can type a larger number: the dialog warns with the predicted time and memory (**Run anyway**), and refuses only a count that would not fit in the module's 4 GB memory. The bottom status bar shows the stage, time left and **Cancel** while it works. Results travel in shared HTML files and exported FCS files, and the same seed gives the same result. See doc/SPEC.md section 16a.
 
 ### Export to FCS and SpikeNG (full version only)
 
@@ -478,7 +484,7 @@ Plots render on a 2D canvas, so no GPU features are required.
 
 ## Development and Testing
 
-FlowNG is one file, `FlowNG.html` (main script plus two worker scripts). To work on it, serve the folder (`python3 -m http.server`) and open it; no build step.
+FlowNG is one file, `FlowNG.html` (main script plus three worker scripts and the embedded ManifoldNG module). To work on it, serve the folder (`python3 -m http.server`) and open it; no build step, except after changing `manifoldng/` (run `scripts/build_manifoldng.py`).
 
 | File | Purpose |
 |---|---|
@@ -489,6 +495,7 @@ FlowNG is one file, `FlowNG.html` (main script plus two worker scripts). To work
 | `scripts/extract_js_for_graphify.py` | Pulls the scripts out of the HTML so graphify (the `graphifyy` Python package) can build a real call graph; the result is in `graphify-out/` (`GRAPH_REPORT.md`, `graph.html`) |
 | [`check/index.html`](check/index.html), `check/manifest.json`, `scripts/build_manifest.py`, `scripts/build_offline_check.py`, `scripts/check_shared.py`, `scripts/test_check.py` | **FlowNG Check**: a page where anyone drops a shared file to confirm it contains released FlowNG code and a data-only block (at `https://davidpng.github.io/FlowNg/check/`), the manifest of released code hashes (main releases only), an offline copy of the page, a publisher-side batch check, and the tests. Run the scripts with `/usr/bin/python3` on macOS. See `doc/SECURITY.md` section 5 |
 | `scripts/kaluza_to_flowng.py` | Kaluza template converter (see above) |
+| `manifoldng/`, `scripts/build_manifoldng.py`, [`doc/MANIFOLDNG_BENCH.md`](doc/MANIFOLDNG_BENCH.md) | ManifoldNG: the Rust crate (UMAP, t-SNE, PaCMAP, densMAP, PHATE, diffusion maps via the vendored manifolds-rs; Phenograph and FlowSOM), its benchmark (`manifoldng/bench/`) and the script that builds it and embeds it in FlowNG.html (`--check` confirms the embedded bytes match a fresh build) |
 | `.github/` | Repository rules saved as JSON (`rulesets/`), `CODEOWNERS` and the security policy; see `doc/SECURITY.md` |
 
 Notes for contributors: code between `/*@lite:begin*/` and `/*@lite:end*/` (and `<!--@lite:...-->`) is removed from locked shared files, so anything a locked file needs (Save, History, rendering, gating) must stay outside those markers. Worker scripts cannot call main-script functions; a helper used in a worker needs its own copy.
@@ -571,6 +578,7 @@ A: Yes. Load several files; each appears as its own root in the population tree,
 ## Changelog
 
 ### Latest
+- **ManifoldNG** (full version): UMAP, t-SNE, PaCMAP, densMAP, PHATE, diffusion maps, Phenograph and FlowSOM on a gated population, in an embedded WebAssembly module, with per-method default event counts of about 60 seconds (more on request, with a time and memory warning) and a status bar with Cancel
 - **SpikeNG and FCS export** (full version): export a population's events as a minimal FCS file; merge a donor population into a recipient file, time-based (educational) or interleaved (proficiency testing), with the column labels checked first
 - **Shared-file safety**: the FlowNG Check page, a manifest of released builds, an offline copy of the page, a publisher check; export dialog options **Anonymise** (default), **Secure distribution channel** and a result dialog with the file's SHA-256; names from files are escaped before they reach the page
 - **Cofactors**: every channel starts at 300 for FCS and LMD files; OT-flow runs only on request in Settings; templates take over from manual corrections

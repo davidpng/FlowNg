@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ManifoldNG Chrome benchmark</title>
+<script>
+// Runs one method in a Web Worker (as FlowNG will) on the first n rows of the
+// benchmark matrix and POSTs {secs, peakMB, ...} to /result.
+// URL: bench.html?method=1&n=100000&d=20&wasm=data/bench.wasm&data=data/mm_mrd.f32
+const q = new URLSearchParams(location.search);
+const workerSrc = `
+onmessage = async ({ data: { wasm, X, n, d, method, seed, calibrate } }) => {
+  const { instance } = await WebAssembly.instantiate(wasm, { env: { mng_progress: () => {} } });
+  const e = instance.exports;
+  if (calibrate) {
+    const ts = []; for (let i = 0; i < 7; i++) { const t = performance.now(); e.mng_calibrate(); ts.push((performance.now() - t) / 1000); }
+    ts.sort((a, b) => a - b); postMessage({ calibrate: ts, median: ts[3] }); return;
+  }
+  const dp = e.mng_alloc(X.byteLength);
+  new Float32Array(e.memory.buffer, dp, X.length).set(X);
+  const pp = e.mng_alloc(8);
+  const t0 = performance.now();
+  const rc = e.mng_run(method, dp, n, d, pp, 0, seed);
+  const secs = (performance.now() - t0) / 1000;
+  const peakMB = e.memory.buffer.byteLength / 2 ** 20;
+  let error = null, resultLen = 0;
+  if (rc) error = new TextDecoder().decode(new Uint8Array(e.memory.buffer, e.mng_error_ptr(), e.mng_error_len()).slice());
+  else resultLen = e.mng_result_len();
+  postMessage({ secs, peakMB, error, resultLen });
+};`;
+(async () => {
+  const method = +q.get('method'), n = +q.get('n'), d = +q.get('d');
+  const post = r => fetch('/result', { method: 'POST', body: JSON.stringify({ method, n, d, browser: navigator.userAgent, ...r }) });
+  try {
+    const wasm = await (await fetch(q.get('wasm'))).arrayBuffer();
+    if (q.get('calibrate')) {
+      const w = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: 'application/javascript' })));
+      w.onmessage = ({ data }) => post(data); w.postMessage({ wasm, calibrate: true }); return;
+    }
+    const buf = await (await fetch(q.get('data'), { headers: { Range: `bytes=0-${n * d * 4 - 1}` } })).arrayBuffer();
+    const X = new Float32Array(buf.slice(0, n * d * 4));
+    if (X.length !== n * d) throw new Error(`got ${X.length} values, need ${n * d}`);
+    const w = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: 'application/javascript' })));
+    w.onmessage = ({ data }) => post(data);
+    w.onerror = ev => post({ error: String(ev.message || 'worker error') });
+    w.postMessage({ wasm, X, n, d, method, seed: 42 }, [X.buffer]);
+  } catch (err) { post({ error: String(err) }); }
+})();
+</script>

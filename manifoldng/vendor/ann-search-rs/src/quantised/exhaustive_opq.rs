@@ -1,0 +1,898 @@
+//! Exhaustive OPQ index: quantises the original data via optimised product
+//! quantisation.
+
+use faer::RowRef;
+use rayon::prelude::*;
+use std::ops::AddAssign;
+
+use crate::prelude::*;
+use crate::quantised::pq_search::*;
+use crate::quantised::quantisers::*;
+use crate::utils::k_means_utils::sample_vectors;
+use crate::utils::pack_knn_results;
+use crate::utils::verbosity::{BuildLog, QueryProgress};
+
+/// Exhaustive PQ index
+///
+/// ### Fields
+///
+/// * `quantised_codes` - Encoded vectors (M u8 codes per vector)
+/// * `dim` - Original dimensions
+/// * `n` - Number of samples in the index
+/// * `metric` - Distance metric
+/// * `codebook` - Product quantiser with M codebooks
+#[cfg_attr(feature = "serialise", derive(serde::Serialize, serde::Deserialize))]
+pub struct ExhaustiveOpqIndex<T> {
+    quantised_codes: Vec<u8>,
+    dim: usize,
+    n: usize,
+    metric: Dist,
+    codebook: OptimisedProductQuantiser<T>,
+}
+
+///////////////////////
+// VectorDistanceAdc //
+///////////////////////
+
+impl<T> VectorDistanceAdc<T> for ExhaustiveOpqIndex<T>
+where
+    T: AnnSearchFloat + AddAssign + SimdDistance,
+{
+    fn codebook_m(&self) -> usize {
+        self.codebook.m()
+    }
+
+    fn codebook_n_centroids(&self) -> usize {
+        self.codebook.n_centroids()
+    }
+
+    fn codebook_subvec_dim(&self) -> usize {
+        self.codebook.subvec_dim()
+    }
+
+    fn centroids(&self) -> &[T] {
+        &[]
+    }
+
+    fn dim(&self) -> usize {
+        self.dim
+    }
+
+    fn quantised_codes(&self) -> &[u8] {
+        &self.quantised_codes
+    }
+
+    fn metric(&self) -> Dist {
+        self.metric
+    }
+
+    fn codebooks(&self) -> &[Vec<T>] {
+        self.codebook.codebooks()
+    }
+}
+
+/////////////////////////
+// DimensionValidation //
+/////////////////////////
+
+impl<T> DimensionValidation for ExhaustiveOpqIndex<T> {
+    fn dim(&self) -> usize {
+        self.dim
+    }
+}
+
+///////////
+// Shape //
+///////////
+
+impl<T> ExhaustiveOpqIndex<T> {
+    /// Number of indexed samples.
+    ///
+    /// ### Returns
+    ///
+    /// The row count the index was built from. Pairs with
+    /// [`DimensionValidation::dim`] so every index exposes its shape the same
+    /// way, which is what the Python bindings' handle macro reads.
+    pub fn n(&self) -> usize {
+        self.n
+    }
+}
+
+/////////////////////////
+// Main implementation //
+/////////////////////////
+
+impl<T> ExhaustiveOpqIndex<T>
+where
+    T: AnnSearchFloat + AddAssign,
+{
+    /// Build an exhaustive product quantiser index
+    ///
+    /// ### Params
+    ///
+    /// * `data` - Matrix reference with vectors as rows (n × dim)
+    /// * `m` - Number of subspaces for PQ (dim must be divisible by m)
+    /// * `metric` - Distance metric (Euclidean or Cosine)
+    /// * `max_iters` - Optional maximum k-means iterations (defaults to `30`)
+    /// * `n_pq_centroids` - Number of centroids to use for the product
+    ///   quantisation. If not provided, it uses the default `256`
+    /// * `seed` - Random seed
+    /// * `verbosity` - Prints start, progress and end at `Normal`
+    ///
+    /// ### Returns
+    ///
+    /// Index ready for querying
+    pub fn build(
+        data: impl AnnMatrix<T>,
+        m: usize,
+        metric: Dist,
+        max_iters: Option<usize>,
+        n_pq_centroids: Option<usize>,
+        seed: usize,
+        verbosity: Verbosity,
+    ) -> Result<Self, AnnSearchErrors> {
+        let log = BuildLog::new("Exhaustive-OPQ index", verbosity);
+        if metric == Dist::Manhattan {
+            return Err(AnnSearchErrors::DistanceNotSupported(metric));
+        }
+
+        let (mut vectors_flat, n, dim) = data.into_row_major();
+        let max_iters = max_iters.unwrap_or(30);
+
+        if metric == Dist::Cosine {
+            vectors_flat
+                .par_chunks_mut(dim)
+                .for_each(|chunk| normalise_vector(chunk));
+        }
+
+        let sampled;
+        let training_data: &[T] = if n > 500_000 {
+            sampled = sample_vectors(&vectors_flat, dim, n, 250_000, seed).0;
+            &sampled
+        } else {
+            &vectors_flat
+        };
+
+        let codebook = OptimisedProductQuantiser::train(
+            training_data,
+            dim,
+            m,
+            n_pq_centroids,
+            None,
+            max_iters,
+            seed,
+            verbosity,
+        )?;
+
+        let mut quantised_codes = vec![0u8; n * m];
+        quantised_codes
+            .par_chunks_mut(ENCODE_ROW_TILE * m)
+            .zip(vectors_flat.par_chunks(ENCODE_ROW_TILE * dim))
+            .for_each(|(codes, rows)| codebook.encode_rows(rows, codes));
+
+        log.finish();
+
+        Ok(Self {
+            quantised_codes,
+            codebook,
+            dim,
+            n,
+            metric,
+        })
+    }
+
+    /// Map a query into codebook space
+    ///
+    /// Codes are OPQ-encoded, so the codebooks live in the rotated space and
+    /// the lookup table has to be built there too. `R` is orthogonal, so
+    /// `||q - x|| == ||R q - R x||`, and normalising after the rotation is the
+    /// same as before it.
+    ///
+    /// ### Params
+    ///
+    /// * `q` - Query, length `dim`
+    /// * `out` - Output, `R q`, length `dim`; unit length under cosine
+    #[inline]
+    fn prepare(&self, q: &[T], out: &mut [T]) {
+        self.codebook.rotate_to(q, out);
+        if self.metric == Dist::Cosine {
+            normalise_vector(out);
+        }
+    }
+
+    /// Score one block of prepared queries, see [`exhaustive_block`]
+    ///
+    /// ### Params
+    ///
+    /// * `qs` - Queries in codebook space, `nb * dim`
+    /// * `k` - Neighbours per query
+    /// * `luts` - Scratch lookup tables
+    /// * `heaps` - Scratch heaps
+    ///
+    /// ### Returns
+    ///
+    /// Per query `(ids, distances)`, nearest first
+    fn score_block(
+        &self,
+        qs: &[T],
+        k: usize,
+        luts: &mut Vec<T>,
+        heaps: &mut Vec<BoundedMaxHeap<T>>,
+    ) -> Vec<(Vec<usize>, Vec<T>)> {
+        exhaustive_block(
+            qs,
+            &self.quantised_codes,
+            self.codebook.pq().codebooks_t(),
+            self.codebook.m(),
+            self.codebook.subvec_dim(),
+            self.codebook.n_centroids(),
+            lut_scale(self.metric),
+            k,
+            luts,
+            heaps,
+        )
+    }
+
+    /// Score blocks of queries in parallel
+    ///
+    /// ### Params
+    ///
+    /// * `nq` - Number of queries
+    /// * `block` - Queries per block, see [`exhaustive_block`]
+    /// * `k` - Neighbours per query
+    /// * `prepare` - Writes query `i` in codebook space into the slice
+    /// * `progress` - Ticked once per query
+    ///
+    /// ### Returns
+    ///
+    /// Per query `(ids, distances)` in input order, nearest first
+    fn run_blocks<P: Fn(usize, &mut [T]) + Sync>(
+        &self,
+        nq: usize,
+        block: usize,
+        k: usize,
+        prepare: P,
+        progress: &QueryProgress,
+    ) -> Vec<(Vec<usize>, Vec<T>)> {
+        let dim = self.dim;
+        (0..nq.div_ceil(block))
+            .into_par_iter()
+            .map_init(
+                || (Vec::new(), Vec::new(), Vec::new()),
+                |(qs, luts, heaps): &mut (Vec<T>, Vec<T>, Vec<BoundedMaxHeap<T>>), b| {
+                    let rows = b * block..((b + 1) * block).min(nq);
+                    qs.resize(rows.len() * dim, T::zero());
+                    for (j, i) in rows.clone().enumerate() {
+                        prepare(i, &mut qs[j * dim..(j + 1) * dim]);
+                    }
+                    let out = self.score_block(qs, k, luts, heaps);
+                    rows.for_each(|_| progress.tick());
+                    out
+                },
+            )
+            .flatten()
+            .collect()
+    }
+
+    /// Query the index for approximate nearest neighbours
+    ///
+    /// Uses asymmetric distance computation (ADC): builds lookup tables
+    /// from query subvectors to all centroids, then computes distances
+    /// via table lookups. Performs exhaustive search over all vectors.
+    ///
+    /// ### Params
+    ///
+    /// * `query_vec` - Query vector
+    /// * `k` - Number of neighbours to return
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of (indices, distances) sorted by distance
+    pub fn query(
+        &self,
+        query_vec: &[T],
+        k: usize,
+    ) -> Result<(Vec<usize>, Vec<T>), AnnSearchErrors> {
+        self.check_dim(query_vec.len())?;
+        let mut q = vec![T::zero(); self.dim];
+        self.prepare(query_vec, &mut q);
+        let mut out = self.score_block(&q, k, &mut Vec::new(), &mut Vec::new());
+        Ok(out.pop().expect("one query in, one result out"))
+    }
+
+    /// Query many vectors at once
+    ///
+    /// From `BATCH_MIN_QUERIES` queries up, scores blocks of
+    /// `EXH_QUERY_BLOCK` queries against each tile of codes, so the codes
+    /// are read once per block rather than once per query. Below it, one query
+    /// per task. Both give identical results.
+    ///
+    /// ### Params
+    ///
+    /// * `queries` - Row-major queries, `nq * query_dim`
+    /// * `query_dim` - Query dimensionality, must match the index
+    /// * `k` - Number of neighbours to return
+    /// * `return_dist` - Whether to return distances
+    /// * `verbosity` - Prints start, progress and end at `Normal`
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of `(knn_indices, optional distances)`, one row per query
+    pub fn query_batch(
+        &self,
+        queries: &[T],
+        query_dim: usize,
+        k: usize,
+        return_dist: bool,
+        verbosity: Verbosity,
+    ) -> KnnOptionResult<T> {
+        self.check_dim(query_dim)?;
+        let nq = queries.len() / query_dim;
+        let progress = QueryProgress::new("Exhaustive-OPQ index", nq, false, verbosity);
+        let block = if nq >= BATCH_MIN_QUERIES {
+            EXH_QUERY_BLOCK
+        } else {
+            1
+        };
+        let results = self.run_blocks(
+            nq,
+            block,
+            k,
+            |i, q| self.prepare(&queries[i * query_dim..(i + 1) * query_dim], q),
+            &progress,
+        );
+        progress.finish();
+        Ok(pack_knn_results(results, return_dist))
+    }
+
+    /// Query using a matrix row reference
+    ///
+    /// ### Params
+    ///
+    /// * `query_row` - Row reference
+    /// * `k` - Number of neighbours to return
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of (indices, distances) sorted by distance
+    pub fn query_row(
+        &self,
+        query_row: RowRef<T>,
+        k: usize,
+    ) -> Result<(Vec<usize>, Vec<T>), AnnSearchErrors> {
+        if query_row.col_stride() == 1 {
+            let slice =
+                unsafe { std::slice::from_raw_parts(query_row.as_ptr(), query_row.ncols()) };
+            return self.query(slice, k);
+        }
+
+        let query_vec: Vec<T> = query_row.iter().cloned().collect();
+        self.query(&query_vec, k)
+    }
+
+    /// Generate kNN graph from vectors stored in the index
+    ///
+    /// Reconstructs each vector from its PQ codes and scores blocks of them
+    /// exhaustively, as [`ExhaustiveOpqIndex::query_batch`] does. The decoded
+    /// codes already live in the rotated space, so neither the inverse nor the
+    /// forward rotation is needed.
+    ///
+    /// ### Params
+    ///
+    /// * `k` - Number of neighbours per vector
+    /// * `return_dist` - Whether to return distances
+    /// * `verbosity` - Prints start, progress and end at `Normal`
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of `(knn_indices, optional distances)` where each row corresponds
+    /// to a vector in the index
+    pub fn generate_knn(
+        &self,
+        k: usize,
+        return_dist: bool,
+        verbosity: Verbosity,
+    ) -> KnnOptionResult<T> {
+        let m = self.codebook.m();
+        let progress = QueryProgress::new("Exhaustive-OPQ index", self.n, true, verbosity);
+        let results = self.run_blocks(
+            self.n,
+            EXH_QUERY_BLOCK,
+            k,
+            |i, q| {
+                self.codebook
+                    .pq()
+                    .decode_into(&self.quantised_codes[i * m..(i + 1) * m], q);
+                if self.metric == Dist::Cosine {
+                    normalise_vector(q);
+                }
+            },
+            &progress,
+        );
+        progress.finish();
+
+        Ok(pack_knn_results(results, return_dist))
+    }
+
+    /// Returns the size of the index in bytes
+    ///
+    /// ### Returns
+    ///
+    /// Number of bytes used by the index
+    pub fn memory_usage_bytes(&self) -> usize {
+        std::mem::size_of_val(self)
+            + self.quantised_codes.capacity() * std::mem::size_of::<u8>()
+            + self.codebook.memory_usage_bytes()
+    }
+}
+
+///////////
+// Tests //
+///////////
+
+/////////////
+// IndexIo //
+/////////////
+
+#[cfg(feature = "serialise")]
+impl<T> IndexIo for ExhaustiveOpqIndex<T>
+where
+    T: AnnSearchFloat,
+{
+    type Elem = T;
+
+    const KIND: &'static str = "exhaustive_opq";
+
+    fn load_aux(&mut self, _dir: &std::path::Path) -> Result<(), AnnSearchErrors> {
+        self.codebook.pq_mut().rebuild_codebooks_t();
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use faer::Mat;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+
+    fn create_simple_dataset() -> Mat<f32> {
+        let mut data = Vec::new();
+        // Create 6 vectors of 32 dimensions
+        // First 3 near origin
+        for i in 0..3 {
+            for j in 0..32 {
+                data.push(i as f32 * 0.1 + j as f32 * 0.01);
+            }
+        }
+        // Next 3 far from origin
+        for i in 0..3 {
+            for j in 0..32 {
+                data.push(10.0 + i as f32 * 0.1 + j as f32 * 0.01);
+            }
+        }
+        Mat::from_fn(6, 32, |i, j| data[i * 32 + j])
+    }
+
+    #[test]
+    fn test_build_euclidean() {
+        let data = create_simple_dataset();
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(10),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        assert_eq!(index.dim, 32);
+        assert_eq!(index.n, 6);
+        assert_eq!(index.metric, Dist::SquaredEuclidean);
+        assert_eq!(index.quantised_codes.len(), 48); // 6 vectors * 8 subspaces
+    }
+
+    #[test]
+    fn test_build_cosine() {
+        let data = create_simple_dataset();
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::Cosine,
+            Some(10),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        assert_eq!(index.metric, Dist::Cosine);
+    }
+
+    #[test]
+    fn test_query_returns_k_results() {
+        let data = create_simple_dataset();
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(10),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|x| x as f32 * 0.01).collect();
+        let (indices, distances) = index.query(&query, 3).unwrap();
+
+        assert_eq!(indices.len(), 3);
+        assert_eq!(distances.len(), 3);
+    }
+
+    #[test]
+    fn test_query_k_exceeds_n() {
+        let data = create_simple_dataset();
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(10),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|x| x as f32 * 0.01).collect();
+        let (indices, _) = index.query(&query, 100).unwrap();
+
+        assert_eq!(indices.len(), 6);
+    }
+
+    #[test]
+    fn test_query_distances_sorted() {
+        let data = create_simple_dataset();
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(10),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|x| x as f32 * 0.01).collect();
+        let (_, distances) = index.query(&query, 3).unwrap();
+
+        for i in 1..distances.len() {
+            assert!(distances[i] >= distances[i - 1]);
+        }
+    }
+
+    #[test]
+    fn test_query_cosine() {
+        let data = create_simple_dataset();
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::Cosine,
+            Some(10),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|x| if x < 16 { 1.0 } else { 0.0 }).collect();
+        let (indices, distances) = index.query(&query, 3).unwrap();
+
+        assert_eq!(indices.len(), 3);
+        assert_eq!(distances.len(), 3);
+    }
+
+    #[test]
+    fn test_query_deterministic() {
+        let data = create_simple_dataset();
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(10),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|x| 0.5 + x as f32 * 0.01).collect();
+
+        let (indices1, distances1) = index.query(&query, 3).unwrap();
+        let (indices2, distances2) = index.query(&query, 3).unwrap();
+
+        assert_eq!(indices1, indices2);
+        assert_eq!(distances1, distances2);
+    }
+
+    #[test]
+    fn test_query_row() {
+        let data = create_simple_dataset();
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(10),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query_mat = Mat::<f32>::from_fn(1, 32, |_, j| 0.5 + j as f32 * 0.01);
+        let row = query_mat.row(0);
+
+        let (indices, distances) = index.query_row(row, 3).unwrap();
+
+        assert_eq!(indices.len(), 3);
+        assert_eq!(distances.len(), 3);
+    }
+
+    #[test]
+    fn test_build_different_m() {
+        let data = Mat::from_fn(20, 32, |i, j| (i + j) as f32);
+
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(5),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        assert_eq!(index.codebook.m(), 8);
+        assert_eq!(index.codebook.subvec_dim(), 4);
+        assert_eq!(index.quantised_codes.len(), 160); // 20 vectors * 8 subspaces
+    }
+
+    #[test]
+    fn test_build_lookup_tables() {
+        let data = create_simple_dataset();
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(10),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|x| x as f32 * 0.01).collect();
+        // Rotated, as the query path does: the codebooks live in R-space.
+        let table = index.build_lookup_tables_direct(&index.codebook.rotate(&query));
+
+        // M * n_centroids = 8 * 4
+        assert_eq!(table.len(), 32);
+    }
+
+    /// `query` must build its lookup table in the rotated space.
+    ///
+    /// Codes are `PQ(R x)`, so a table built from the *unrotated* query scores
+    /// in the wrong basis. That still yields non-negative distances of the right
+    /// length, which is why the shape assertions elsewhere in this module cannot
+    /// catch it. This goes through the public query path and asserts a stored
+    /// vector retrieves itself: under the unrotated table the per-subspace
+    /// distances are meaningless and self-retrieval collapses.
+    #[test]
+    fn test_opq_query_scores_in_the_rotated_space() {
+        // Spread points rather than tight blobs, and a codebook fine enough to
+        // tell them apart. With coarse codes every point in a cluster shares a
+        // code and top-1 is chance, which would make this test meaningless
+        // whichever basis the table is built in.
+        let (n, dim) = (300usize, 32usize);
+        let mut rng = StdRng::seed_from_u64(7);
+        let flat: Vec<f32> = (0..n * dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+        let data = Mat::from_fn(n, dim, |i, j| flat[i * dim + j]);
+
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(128),
+            Some(2),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        // Only meaningful if training actually moved R off the identity.
+        let probe: Vec<f32> = (0..dim).map(|x| x as f32 * 0.03).collect();
+        let moved = index
+            .codebook
+            .rotate(&probe)
+            .iter()
+            .zip(probe.iter())
+            .any(|(a, b)| (a - b).abs() > 1e-6);
+        assert!(moved, "rotation is the identity, test proves nothing");
+
+        let hits = (0..n)
+            .filter(|&i| {
+                let q = &flat[i * dim..(i + 1) * dim];
+                index
+                    .query(q, 1)
+                    .map(|(ids, _)| ids[0] == i)
+                    .unwrap_or(false)
+            })
+            .count();
+
+        // Measured on this fixture: 169/300 with the rotation, 11/300 without.
+        // 40% sits clear of both, so this fails loudly if the rotation is
+        // dropped from the query path again.
+        assert!(
+            hits * 10 >= n * 4,
+            "only {}/{} vectors retrieved themselves; the lookup table is \
+             probably being built in the unrotated basis",
+            hits,
+            n
+        );
+    }
+
+    #[test]
+    fn test_compute_distance_adc() {
+        let data = create_simple_dataset();
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(10),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|x| x as f32 * 0.01).collect();
+        // Rotated, as the query path does: the codebooks live in R-space.
+        let table = index.build_lookup_tables_direct(&index.codebook.rotate(&query));
+
+        let dist = index.compute_distance_adc(0, &table);
+
+        assert!(dist >= 0.0);
+    }
+
+    #[test]
+    fn test_encoding_reconstruction() {
+        let data = Mat::from_fn(50, 32, |i, j| (i + j) as f32);
+
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(5),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        // Query with vector from dataset
+        let query: Vec<f32> = (0..32).map(|x| x as f32).collect();
+        let (indices, _) = index.query(&query, 1).unwrap();
+
+        // Should find exact or very close match
+        assert_eq!(indices[0], 0);
+    }
+
+    #[test]
+    fn test_memory_usage() {
+        let data = create_simple_dataset();
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(10),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let memory = index.memory_usage_bytes();
+        assert!(memory > 0);
+    }
+
+    #[test]
+    fn test_generate_knn() {
+        let data = Mat::from_fn(10, 32, |i, j| (i + j) as f32);
+
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(5),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let (knn_indices, knn_distances) = index.generate_knn(3, true, Verbosity::Quiet).unwrap();
+
+        assert_eq!(knn_indices.len(), 10);
+        assert!(knn_distances.is_some());
+
+        let distances = knn_distances.unwrap();
+        assert_eq!(distances.len(), 10);
+
+        for i in 0..10 {
+            assert_eq!(knn_indices[i].len(), 3);
+            assert_eq!(distances[i].len(), 3);
+        }
+    }
+
+    #[test]
+    fn test_generate_knn_without_distances() {
+        let data = Mat::from_fn(10, 32, |i, j| (i + j) as f32);
+
+        let index = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            8,
+            Dist::SquaredEuclidean,
+            Some(5),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let (knn_indices, knn_distances) = index.generate_knn(3, false, Verbosity::Quiet).unwrap();
+
+        assert_eq!(knn_indices.len(), 10);
+        assert!(knn_distances.is_none());
+
+        for i in 0..10 {
+            assert_eq!(knn_indices[i].len(), 3);
+        }
+    }
+
+    #[test]
+    fn test_different_m_values() {
+        let data = Mat::from_fn(20, 64, |i, j| (i + j) as f32);
+
+        // Test m=4
+        let index_4 = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            4,
+            Dist::SquaredEuclidean,
+            Some(5),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+        assert_eq!(index_4.codebook.m(), 4);
+        assert_eq!(index_4.codebook.subvec_dim(), 16);
+
+        // Test m=16
+        let index_16 = ExhaustiveOpqIndex::build(
+            data.as_ref(),
+            16,
+            Dist::SquaredEuclidean,
+            Some(5),
+            Some(4),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+        assert_eq!(index_16.codebook.m(), 16);
+        assert_eq!(index_16.codebook.subvec_dim(), 4);
+    }
+}

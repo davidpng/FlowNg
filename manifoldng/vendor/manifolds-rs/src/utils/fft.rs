@@ -1,0 +1,1762 @@
+//! FFT implementation for the acceleration tSNE form
+//!
+//! Transforms run on rustfft (complex) and realfft (real input/output). The
+//! FFT length is padded up from `2 m` to a length rustfft handles fast, see
+//! [`fft_len`].
+
+use num_traits::{Float, FromPrimitive, Signed, ToPrimitive};
+use rayon::prelude::*;
+use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
+use rustfft::num_complex::Complex;
+use rustfft::{Fft, FftNum, FftPlanner};
+use std::fmt::Debug;
+use std::sync::{Arc, Mutex, MutexGuard};
+
+pub use crate::utils::math::choose_grid_size;
+use crate::utils::prefetch::prefetch_read;
+
+/// How many points ahead the charge-spreading loop prefetches.
+///
+/// Points within a box row are scattered across the per-point buffers, so
+/// their loads miss once `n` outgrows the caches. Far enough ahead to cover a
+/// memory round trip, near enough that the lines are still resident when used.
+const SPREAD_PREFETCH_DIST: usize = 8;
+
+////////////
+// Traits //
+////////////
+
+/// Floating-point types the FFT path runs on (`f32`, `f64`).
+pub trait FftFloat:
+    FftNum + Float + FromPrimitive + ToPrimitive + Send + Sync + Debug + Signed + 'static
+{
+}
+
+impl<T> FftFloat for T where
+    T: FftNum + Float + FromPrimitive + ToPrimitive + Send + Sync + Debug + Signed + 'static
+{
+}
+
+/////////////
+// Helpers //
+/////////////
+
+/// FFT length for a grid of `n` nodes per axis after zero padding.
+///
+/// The convolution only needs a length of at least `n`; anything longer is
+/// more zero padding and leaves the kept output window untouched. rustfft is
+/// several times faster on its radix-4 sizes than on lengths with factors of
+/// 5, 7, 11, 13 or 17 that `6 * n_boxes` produces, so round up to the next
+/// `2^a` or `3 * 2^a`.
+///
+/// ### Params
+///
+/// * `n` - Minimum length, `2 * n_interp_points * n_boxes_per_dim`
+///
+/// ### Returns
+///
+/// Smallest `2^a` or `3 * 2^a` that is at least `n`.
+pub fn fft_len(n: usize) -> usize {
+    let p = n.next_power_of_two();
+    let q = 3 * p / 4;
+    if q >= n {
+        q
+    } else {
+        p
+    }
+}
+
+/// 1D plans for one FFT length.
+///
+/// rustfft and realfft plans are `Send + Sync` and take caller scratch, so
+/// one set is planned per length and shared by every lane.
+#[derive(Clone)]
+pub struct FftPlans<T: FftFloat> {
+    /// Row real-to-complex plan
+    pub r2c: Arc<dyn RealToComplex<T>>,
+    /// Row complex-to-real plan
+    pub c2r: Arc<dyn ComplexToReal<T>>,
+    /// Column forward plan
+    pub fwd: Arc<dyn Fft<T>>,
+    /// Column backward plan, unnormalised like the forward one
+    pub bwd: Arc<dyn Fft<T>>,
+}
+
+impl<T: FftFloat> FftPlans<T> {
+    /// Plan all four 1D transforms for a given length.
+    ///
+    /// ### Params
+    ///
+    /// * `n_fft` - Transform length, even
+    ///
+    /// ### Returns
+    ///
+    /// The plans.
+    pub fn new(n_fft: usize) -> Self {
+        let mut real = RealFftPlanner::<T>::new();
+        let mut cplx = FftPlanner::<T>::new();
+        Self {
+            r2c: real.plan_fft_forward(n_fft),
+            c2r: real.plan_fft_inverse(n_fft),
+            fwd: cplx.plan_fft_forward(n_fft),
+            bwd: cplx.plan_fft_inverse(n_fft),
+        }
+    }
+
+    /// Scratch length that covers every plan in the set, with the column
+    /// transforms run out of place.
+    ///
+    /// ### Returns
+    ///
+    /// Number of complex values.
+    fn scratch_len(&self) -> usize {
+        self.r2c
+            .get_scratch_len()
+            .max(self.c2r.get_scratch_len())
+            .max(self.fwd.get_outofplace_scratch_len())
+            .max(self.bwd.get_outofplace_scratch_len())
+    }
+
+    /// Real row to half spectrum. realfft uses `input` as scratch, so it is
+    /// garbage afterwards, zero padding included.
+    ///
+    /// ### Params
+    ///
+    /// * `input` - Real row, length `n_fft`; clobbered
+    /// * `output` - Half spectrum, length `n_fft / 2 + 1`
+    /// * `scratch` - At least [`FftPlans::scratch_len`]
+    #[inline]
+    fn r2c(&self, input: &mut [T], output: &mut [Complex<T>], scratch: &mut [Complex<T>]) {
+        self.r2c
+            .process_with_scratch(input, output, scratch)
+            .expect("r2c buffer lengths fixed at lane creation");
+    }
+
+    /// Half spectrum to real row.
+    ///
+    /// realfft rejects a non-zero imaginary part in the DC and Nyquist bins.
+    /// Both are rounding noise here (the output is real), so they are zeroed
+    /// first. `n_fft` is always even, so the last bin is the Nyquist bin.
+    ///
+    /// ### Params
+    ///
+    /// * `input` - Half spectrum, length `n_fft / 2 + 1`; clobbered
+    /// * `output` - Real row, length `n_fft`
+    /// * `scratch` - At least [`FftPlans::scratch_len`]
+    #[inline]
+    fn c2r(&self, input: &mut [Complex<T>], output: &mut [T], scratch: &mut [Complex<T>]) {
+        let last = input.len() - 1;
+        input[0].im = T::zero();
+        input[last].im = T::zero();
+        self.c2r
+            .process_with_scratch(input, output, scratch)
+            .expect("c2r buffer lengths fixed at lane creation");
+    }
+}
+
+/// 2D real-to-complex transform of a square grid, transposed and scaled.
+///
+/// Rows go through r2c, then each of the `n_fft / 2 + 1` columns through a
+/// forward c2c. Runs once per grid rebuild, parallel over rows then columns.
+///
+/// ### Params
+///
+/// * `real` - Row-major `n_fft x n_fft` real grid
+/// * `n_fft` - Grid side length
+/// * `plans` - Plans for `n_fft`
+/// * `norm` - Factor folded into every output value
+///
+/// ### Returns
+///
+/// Spectrum in column-major `[k][u]` layout, `k < n_fft / 2 + 1`,
+/// `u < n_fft`, multiplied by `norm`.
+fn r2c_2d_transposed<T: FftFloat>(
+    real: &[T],
+    n_fft: usize,
+    plans: &FftPlans<T>,
+    norm: T,
+) -> Vec<Complex<T>> {
+    let n_half = n_fft / 2 + 1;
+    let zero = Complex::new(T::zero(), T::zero());
+    let scratch_len = plans.scratch_len();
+
+    let mut rows = vec![zero; n_fft * n_half];
+    rows.par_chunks_mut(n_half)
+        .zip(real.par_chunks(n_fft))
+        .for_each_init(
+            || (vec![T::zero(); n_fft], vec![zero; scratch_len]),
+            |(buf, scratch), (out, row)| {
+                buf.copy_from_slice(row);
+                plans.r2c(buf, out, scratch);
+            },
+        );
+
+    let mut spec_t = vec![zero; n_half * n_fft];
+    spec_t.par_chunks_mut(n_fft).enumerate().for_each_init(
+        || (vec![zero; n_fft], vec![zero; scratch_len]),
+        |(buf, scratch), (k, col)| {
+            for (u, v) in buf.iter_mut().enumerate() {
+                *v = rows[u * n_half + k];
+            }
+            plans.fwd.process_outofplace_with_scratch(buf, col, scratch);
+            for v in col.iter_mut() {
+                *v = *v * norm;
+            }
+        },
+    );
+    spec_t
+}
+
+//////////////////
+// FftWorkspace //
+//////////////////
+
+/// Per-thread buffers and scratch for the 1D FFT passes.
+///
+/// The 2D convolution is split into 1D row and column passes so it spreads
+/// over every thread rather than one thread per expansion term. Plans are
+/// shared; each lane owns the buffers its thread transforms in.
+pub struct FftLane<T: FftFloat> {
+    /// Real row input, length `n_fft`. The tail past the data is zero
+    /// padding, rewritten before every r2c because realfft clobbers it.
+    pub row_in: Vec<T>,
+    /// Real row output of the inverse transform, length `n_fft`
+    pub row_out: Vec<T>,
+    /// Half spectrum of one row, length `n_fft / 2 + 1`
+    pub row_spec: Vec<Complex<T>>,
+    /// Column buffer, length `n_fft`
+    pub col_a: Vec<Complex<T>>,
+    /// Column buffer, length `n_fft`
+    pub col_b: Vec<Complex<T>>,
+    /// Column buffer, length `n_fft`; three-kernel path only
+    pub col_c: Vec<Complex<T>>,
+    /// Scratch for every plan in `plans`
+    pub scratch: Vec<Complex<T>>,
+    /// Shared 1D plans
+    pub plans: FftPlans<T>,
+}
+
+impl<T: FftFloat> FftLane<T> {
+    /// Create one lane's buffers for a given set of plans.
+    ///
+    /// ### Params
+    ///
+    /// * `n_fft` - FFT length along each axis
+    /// * `plans` - Plans for `n_fft`
+    ///
+    /// ### Returns
+    ///
+    /// The lane, buffers zeroed.
+    fn new(n_fft: usize, plans: &FftPlans<T>) -> Self {
+        let zero = Complex::new(T::zero(), T::zero());
+        Self {
+            row_in: vec![T::zero(); n_fft],
+            row_out: vec![T::zero(); n_fft],
+            row_spec: vec![zero; n_fft / 2 + 1],
+            col_a: vec![zero; n_fft],
+            col_b: vec![zero; n_fft],
+            col_c: vec![zero; n_fft],
+            scratch: vec![zero; plans.scratch_len()],
+            plans: plans.clone(),
+        }
+    }
+}
+
+/// Reusable FFT plans and buffers for FFT convolution.
+///
+/// Holds the plans, per-thread lanes and scratch so they persist across
+/// calls to `n_body_fft_2d` and across optimisation epochs. Rebuild only when
+/// `n_fft` changes, i.e. when the grid resizes.
+pub struct FftWorkspace<T: FftFloat> {
+    /// FFT array dimension this workspace was built for
+    pub n_fft: usize,
+    /// One buffer set per rayon thread, built on first use
+    pub lanes: Vec<Mutex<FftLane<T>>>,
+    /// Row-transformed spectra, layout `[row][term][k]` over the `m`
+    /// non-zero input rows
+    pub spec_rows: Vec<Complex<T>>,
+    /// Column-transformed and kernel-multiplied spectra, layout
+    /// `[term][k][row]` over the `m` output rows that are kept
+    pub spec_cols: Vec<Complex<T>>,
+    /// Per-point box index and intra-box position, length n_points.
+    pub box_data: Vec<((usize, usize), T, T)>,
+    /// Per-point Lagrange x-weights, length n_points * n_interp_points.
+    pub x_weights: Vec<T>,
+    /// Per-point Lagrange y-weights, length n_points * n_interp_points.
+    pub y_weights: Vec<T>,
+    /// Grid charge coefficients, length total_grid_points * n_terms.
+    pub w_coefficients: Vec<T>,
+    /// Convolved grid values, length total_grid_points * n_terms. Compact
+    /// and term-minor so the gather reads all terms of a node from one
+    /// cache line.
+    pub y_tilde_values: Vec<T>,
+    /// Counting-sort bucket starts over box rows, length n_boxes + 1.
+    pub row_starts: Vec<u32>,
+    /// Point indices grouped by box row, length n_points.
+    pub order: Vec<u32>,
+}
+
+impl<T: FftFloat> FftWorkspace<T> {
+    /// Create workspace for a given FFT dimension.
+    ///
+    /// Plans and buffers are created lazily on the first `n_body_fft_2d`
+    /// call, once `n_terms` is known.
+    ///
+    /// ### Params
+    ///
+    /// * `n_fft` - FFT array dimension, the grid's `n_fft`
+    ///
+    /// ### Returns
+    ///
+    /// Workspace ready for use with `n_body_fft_2d`
+    pub fn new(n_fft: usize) -> Self {
+        Self {
+            n_fft,
+            lanes: Vec::new(),
+            spec_rows: Vec::new(),
+            spec_cols: Vec::new(),
+            box_data: Vec::new(),
+            x_weights: Vec::new(),
+            y_weights: Vec::new(),
+            w_coefficients: Vec::new(),
+            y_tilde_values: Vec::new(),
+            row_starts: Vec::new(),
+            order: Vec::new(),
+        }
+    }
+}
+
+/// Lock the calling rayon thread's lane.
+///
+/// Each thread maps to its own lane, so the lock is uncontended; it only
+/// exists to hand out `&mut` buffers from a shared slice.
+///
+/// ### Params
+///
+/// * `lanes` - One lane per rayon thread
+///
+/// ### Returns
+///
+/// Guard over this thread's lane.
+#[inline]
+fn lock_lane<T: FftFloat>(lanes: &[Mutex<FftLane<T>>]) -> MutexGuard<'_, FftLane<T>> {
+    let idx = rayon::current_thread_index().unwrap_or(0) % lanes.len();
+    lanes[idx].lock().expect("FFT lane mutex poisoned")
+}
+
+/////////////
+// FftGrid //
+/////////////
+
+/// Grid structure for FFT-based interpolation.
+///
+/// Manages 2D uniform grid discretisation and pre-computed FFT kernel for
+/// efficient potential field evaluation via convolution. The grid divides
+/// coordinate space into boxes, each containing interpolation nodes for
+/// Lagrange polynomial interpolation.
+pub struct FftGrid<T: FftFloat> {
+    /// Number of boxes per dimension
+    pub n_boxes_per_dim: usize,
+    /// Number of interpolation nodes per box dimension (typically 3)
+    pub n_interp_points: usize,
+    /// Width of each box in coordinate space
+    pub box_width: T,
+    /// Minimum coordinate value (same for x and y; assumes square domain)
+    pub coord_min: T,
+    /// Interpolation node positions within `[0,1]` normalised box coordinates
+    pub interp_spacings: Vec<T>,
+    /// Pre-computed Lagrange polynomial denominators for each node
+    pub lagrange_denominators: Vec<T>,
+    /// Global grid node x-coordinates (length
+    /// `n_interp_points * n_boxes_per_dim`)
+    pub global_x_coords: Vec<T>,
+    /// `global_y_coords` - Global grid node y-coordinates (length
+    /// `n_interp_points * n_boxes_per_dim`)
+    pub global_y_coords: Vec<T>,
+    /// Pre-computed FFT of convolution kernel, column-major: layout
+    /// `[k][u]` with `k < n_fft/2 + 1` and `u < n_fft`. Empty for grids from
+    /// [`FftGrid::new_geometry`]
+    pub fft_kernel: Vec<Complex<T>>,
+    /// FFT array dimension: `2 * n_interp_points * n_boxes_per_dim` rounded
+    /// up by [`fft_len`]
+    pub n_fft: usize,
+}
+
+impl<T: FftFloat> FftGrid<T> {
+    /// Create new FFT grid structure.
+    ///
+    /// Initialises uniform 2D grid covering square domain
+    /// `[coord_min, coord_max]^2`, computes Lagrange interpolation coefficients,
+    /// and pre-computes FFT of the kernel `K(r) = 1/(1 + r^2)^2`.
+    ///
+    /// ### Params
+    ///
+    /// * `coord_min` - Minimum coordinate (applies to both x and y)
+    /// * `coord_max` - Maximum coordinate (applies to both x and y)
+    /// * `n_boxes_per_dim` - Number of boxes per dimension
+    /// * `n_interp_points` - Number of interpolation nodes per box per
+    ///   dimension
+    ///
+    /// ### Returns
+    ///
+    /// Initialised grid structure ready for FFT-accelerated convolution
+    pub fn new(coord_min: T, coord_max: T, n_boxes_per_dim: usize, n_interp_points: usize) -> Self {
+        let mut grid = Self::new_geometry(coord_min, coord_max, n_boxes_per_dim, n_interp_points);
+        grid.fft_kernel =
+            Self::precompute_kernel(&grid.global_x_coords, &grid.global_y_coords, grid.n_fft);
+        grid
+    }
+
+    /// Create the grid geometry without the 4-term kernel spectrum.
+    ///
+    /// For the three-kernel path, which builds its own spectra via
+    /// [`FftKernels3k`]; `fft_kernel` is left empty.
+    ///
+    /// ### Params
+    ///
+    /// * `coord_min` - Minimum coordinate (applies to both x and y)
+    /// * `coord_max` - Maximum coordinate (applies to both x and y)
+    /// * `n_boxes_per_dim` - Number of boxes per dimension
+    /// * `n_interp_points` - Number of interpolation nodes per box per
+    ///   dimension
+    ///
+    /// ### Returns
+    ///
+    /// Grid geometry with an empty `fft_kernel`
+    pub fn new_geometry(
+        coord_min: T,
+        coord_max: T,
+        n_boxes_per_dim: usize,
+        n_interp_points: usize,
+    ) -> Self {
+        let box_width = (coord_max - coord_min) / T::from_usize(n_boxes_per_dim).unwrap();
+
+        let h = T::one() / T::from_usize(n_interp_points).unwrap();
+        let two = T::one() + T::one();
+
+        let mut interp_spacings = vec![T::zero(); n_interp_points];
+        interp_spacings[0] = h / two;
+        for i in 1..n_interp_points {
+            interp_spacings[i] = interp_spacings[i - 1] + h;
+        }
+
+        let mut lagrange_denominators = vec![T::one(); n_interp_points];
+        for i in 0..n_interp_points {
+            for j in 0..n_interp_points {
+                if i != j {
+                    lagrange_denominators[i] =
+                        lagrange_denominators[i] * (interp_spacings[i] - interp_spacings[j]);
+                }
+            }
+        }
+
+        let n_interp_1d = n_interp_points * n_boxes_per_dim;
+        let global_h = h * box_width;
+
+        let mut global_x_coords = vec![T::zero(); n_interp_1d];
+        let mut global_y_coords = vec![T::zero(); n_interp_1d];
+        global_x_coords[0] = coord_min + global_h / two;
+        global_y_coords[0] = coord_min + global_h / two;
+
+        for i in 1..n_interp_1d {
+            global_x_coords[i] = global_x_coords[i - 1] + global_h;
+            global_y_coords[i] = global_y_coords[i - 1] + global_h;
+        }
+
+        let n_fft = fft_len(2 * n_interp_1d);
+
+        Self {
+            n_boxes_per_dim,
+            n_interp_points,
+            box_width,
+            coord_min,
+            interp_spacings,
+            lagrange_denominators,
+            global_x_coords,
+            global_y_coords,
+            fft_kernel: Vec::new(),
+            n_fft,
+        }
+    }
+
+    /// Pre-compute FFT of convolution kernel.
+    ///
+    /// Constructs spatial kernel `K(r) = 1/(1 + r^2)^2` on zero-padded grid,
+    /// exploiting circular symmetry by populating four quadrants. Transforms
+    /// to frequency domain via R2C FFT for efficient convolution.
+    ///
+    /// ### Params
+    ///
+    /// * `x_coords` - Grid node x-coordinates
+    /// * `y_coords` - Grid node y-coordinates
+    /// * `n_fft` - FFT array dimension, at least `2 * len(x_coords)`
+    ///
+    /// ### Returns
+    ///
+    /// Complex-valued FFT of kernel in column-major `[k][u]` layout,
+    /// dimensions `(n_fft/2 + 1) x n_fft`, pre-scaled by `1 / n_fft^2` so the
+    /// inverse transform needs no separate normalisation
+    fn precompute_kernel(x_coords: &[T], y_coords: &[T], n_fft: usize) -> Vec<Complex<T>> {
+        let n_interp = x_coords.len();
+        let x_0 = x_coords[0];
+        let y_0 = y_coords[0];
+
+        let mut kernel_real = vec![T::zero(); n_fft * n_fft];
+
+        for i in 0..n_interp {
+            for j in 0..n_interp {
+                let dx = x_coords[i] - x_0;
+                let dy = y_coords[j] - y_0;
+                let dist_sq = dx * dx + dy * dy;
+                let denom = T::one() + dist_sq;
+                let k_val = T::one() / (denom * denom);
+
+                kernel_real[(n_interp + i) * n_fft + (n_interp + j)] = k_val;
+                if i > 0 {
+                    kernel_real[(n_interp - i) * n_fft + (n_interp + j)] = k_val;
+                }
+                if j > 0 {
+                    kernel_real[(n_interp + i) * n_fft + (n_interp - j)] = k_val;
+                }
+                if i > 0 && j > 0 {
+                    kernel_real[(n_interp - i) * n_fft + (n_interp - j)] = k_val;
+                }
+            }
+        }
+
+        // [k][u] so the column pass reads each column contiguously, with the
+        // 1 / n_fft^2 normalisation folded in.
+        let norm = T::one() / T::from_usize(n_fft * n_fft).unwrap();
+        r2c_2d_transposed(&kernel_real, n_fft, &FftPlans::new(n_fft), norm)
+    }
+
+    /// Map point coordinates to containing box indices.
+    ///
+    /// ### Params
+    ///
+    /// * `x` - X coordinate
+    /// * `y` - Y coordinate
+    ///
+    /// ### Returns
+    ///
+    /// Tuple `(y_box_index, x_box_index)` clamped to `[0, n_boxes_per_dim)`
+    #[inline]
+    pub fn point_to_box(&self, x: T, y: T) -> (usize, usize) {
+        let x_idx = ((x - self.coord_min) / self.box_width)
+            .to_usize()
+            .unwrap_or(0)
+            .min(self.n_boxes_per_dim - 1);
+        let y_idx = ((y - self.coord_min) / self.box_width)
+            .to_usize()
+            .unwrap_or(0)
+            .min(self.n_boxes_per_dim - 1);
+        (y_idx, x_idx)
+    }
+
+    /// Compute normalised position within box.
+    ///
+    /// ### Params
+    ///
+    /// * `coord` - Coordinate value (x or y)
+    /// * `box_idx` - Box index along corresponding dimension
+    ///
+    /// ### Returns
+    ///
+    /// Position in `[0, 1]` normalised box coordinates
+    #[inline]
+    pub fn position_in_box(&self, coord: T, box_idx: usize) -> T {
+        let box_min = self.coord_min + T::from_usize(box_idx).unwrap() * self.box_width;
+        (coord - box_min) / self.box_width
+    }
+
+    /// Check if all points lie within grid interior.
+    ///
+    /// ### Params
+    ///
+    /// * `xs` - X coordinates of points
+    /// * `ys` - Y coordinates of points
+    /// * `margin` - Inset distance from grid boundaries
+    ///
+    /// ### Returns
+    ///
+    /// `true` if all points satisfy
+    /// `coord_min + margin <= {x,y} <= coord_max - margin`
+    pub fn contains_points(&self, xs: &[T], ys: &[T], margin: T) -> bool {
+        let coord_max =
+            self.coord_min + self.box_width * T::from_usize(self.n_boxes_per_dim).unwrap();
+        let inner_min = self.coord_min + margin;
+        let inner_max = coord_max - margin;
+
+        for (&x, &y) in xs.iter().zip(ys) {
+            if x < inner_min || x > inner_max || y < inner_min || y > inner_max {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Compute axis-aligned bounding box of embedding with padding.
+    ///
+    /// ### Params
+    ///
+    /// * `embd` - Point coordinates, shape `[n_points][2]`
+    /// * `padding_fraction` - Fractional padding relative to data spread
+    ///
+    /// ### Returns
+    ///
+    /// Tuple `(min_coord, max_coord)` defining square bounding box
+    pub fn compute_bounds(embd: &[Vec<T>], padding_fraction: T) -> (T, T) {
+        let mut min_val = embd[0][0];
+        let mut max_val = embd[0][0];
+
+        for p in embd {
+            min_val = min_val.min(p[0]).min(p[1]);
+            max_val = max_val.max(p[0]).max(p[1]);
+        }
+
+        let spread = max_val - min_val;
+        let padding = spread * padding_fraction;
+        (min_val - padding, max_val + padding)
+    }
+
+    /// Create grid from embedding data with automatic size selection.
+    ///
+    /// Computes bounding box with 10% padding, determines grid size via
+    /// `choose_grid_size` heuristic, then initialises grid structure.
+    ///
+    /// ### Params
+    ///
+    /// * `embd` - Point coordinates, shape `[n_points][2]`
+    /// * `n_interp_points` - Interpolation nodes per box per dimension
+    /// * `intervals_per_integer` - Target box width (typically 1.0)
+    /// * `min_intervals` - Minimum number of boxes per dimension (typically 50)
+    ///
+    /// ### Returns
+    ///
+    /// Initialised grid structure sized appropriately for data
+    pub fn from_embedding(
+        embd: &[Vec<T>],
+        n_interp_points: usize,
+        intervals_per_integer: f64,
+        min_intervals: usize,
+    ) -> Self {
+        let padding = T::from_f64(0.1).unwrap();
+        let (coord_min, coord_max) = Self::compute_bounds(embd, padding);
+        let n_boxes = choose_grid_size(
+            coord_min.to_f64().unwrap(),
+            coord_max.to_f64().unwrap(),
+            intervals_per_integer,
+            min_intervals,
+        );
+        Self::new(coord_min, coord_max, n_boxes, n_interp_points)
+    }
+}
+
+/// Compute Lagrange interpolation weights.
+///
+/// For a point at position `y_in_box` (in `[0, 1]`), computes the weights for all
+/// interpolation nodes using Lagrange polynomials.
+///
+/// ### Params
+///
+/// * `y_in_box` - Position within box, range `[0, 1]`
+/// * `spacings` - Interpolation node positions in `[0, 1]`
+/// * `denominators` - Pre-computed denominators: product of
+///   (`spacings[i] - spacings[j]`) for j != i
+/// * `weights` - Output buffer for weights
+#[inline]
+pub fn lagrange_weights<T: FftFloat>(
+    y_in_box: T,
+    spacings: &[T],
+    denominators: &[T],
+    weights: &mut [T],
+) {
+    let n = spacings.len();
+    for i in 0..n {
+        let mut numerator = T::one();
+        for j in 0..n {
+            if i != j {
+                numerator = numerator * (y_in_box - spacings[j]);
+            }
+        }
+        weights[i] = numerator / denominators[i];
+    }
+}
+
+/// Compute repulsive forces/potentials using FFT acceleration.
+///
+/// Generic implementation supporting f32/f64 via the `FftFloat` trait.
+/// Accepts a pre-allocated workspace to avoid per-call planning and buffer
+/// allocation. The caller must also provide the output buffer, which is
+/// overwritten.
+///
+/// The three stages are parallel: charge spreading over box rows (points in
+/// different box rows write disjoint grid slabs), the FFT convolution as 1D
+/// row and column passes over per-thread buffers, and gathering over points.
+///
+/// ### Params
+///
+/// * `xs` - X-coordinates of the points
+/// * `ys` - Y-coordinates of the points
+/// * `charges` - Charges of the points, shape `[n_points * n_terms]`
+/// * `n_terms` - Number of terms in the expansion
+/// * `grid` - FFT grid (pre-computed kernel and interpolation data)
+/// * `ws` - Reusable FFT workspace (plans and buffers); must have been
+///   created with the same `n_fft` as the grid
+/// * `potentials_out` - Output buffer, shape `[n_points * n_terms]`; will
+///   be overwritten with computed potentials
+pub fn n_body_fft_2d<T: FftFloat>(
+    xs: &[T],
+    ys: &[T],
+    charges: &[T],
+    n_terms: usize,
+    grid: &FftGrid<T>,
+    ws: &mut FftWorkspace<T>,
+    potentials_out: &mut [T],
+) {
+    let n_points = xs.len();
+    let n_interp = grid.n_interp_points;
+    let n_boxes = grid.n_boxes_per_dim;
+    let n_interp_1d = n_interp * n_boxes;
+    let total_grid_points = n_interp_1d * n_interp_1d;
+    let n_fft = ws.n_fft;
+    let n_half = n_fft / 2 + 1;
+
+    assert_eq!(ws.n_fft, grid.n_fft, "Workspace n_fft does not match grid");
+    assert_eq!(
+        potentials_out.len(),
+        n_points * n_terms,
+        "Output buffer size mismatch"
+    );
+
+    // Grow scratch buffers if their sizes don't match. In steady state these
+    // are all no-ops (sizes are constant once n_boxes stabilises).
+    let weights_len = n_points * n_interp;
+    let grid_buf_len = total_grid_points * n_terms;
+    if ws.box_data.len() != n_points {
+        ws.box_data.resize(n_points, ((0, 0), T::zero(), T::zero()));
+        ws.order.resize(n_points, 0);
+    }
+    if ws.x_weights.len() != weights_len {
+        ws.x_weights.resize(weights_len, T::zero());
+        ws.y_weights.resize(weights_len, T::zero());
+    }
+    if ws.w_coefficients.len() != grid_buf_len {
+        ws.w_coefficients.resize(grid_buf_len, T::zero());
+        ws.y_tilde_values.resize(grid_buf_len, T::zero());
+    }
+    let spec_len = n_interp_1d * n_terms * n_half;
+    if ws.spec_rows.len() != spec_len {
+        ws.spec_rows
+            .resize(spec_len, Complex::new(T::zero(), T::zero()));
+        ws.spec_cols
+            .resize(spec_len, Complex::new(T::zero(), T::zero()));
+    }
+    if ws.lanes.is_empty() {
+        let plans = FftPlans::new(n_fft);
+        ws.lanes = (0..rayon::current_num_threads().max(1))
+            .map(|_| Mutex::new(FftLane::new(n_fft, &plans)))
+            .collect();
+    }
+
+    // step 1: box assignment and relative coords, written in place
+    ws.box_data
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(i, slot)| {
+            let (box_y, box_x) = grid.point_to_box(xs[i], ys[i]);
+            let x_in_box = grid.position_in_box(xs[i], box_x);
+            let y_in_box = grid.position_in_box(ys[i], box_y);
+            *slot = ((box_y, box_x), x_in_box, y_in_box);
+        });
+
+    // step 1b: Lagrange interpolation weights into flat per-axis buffers
+    {
+        let box_data = &ws.box_data;
+        let interp_spacings = &grid.interp_spacings;
+        let lagrange_denominators = &grid.lagrange_denominators;
+        ws.x_weights
+            .par_chunks_mut(n_interp)
+            .zip(ws.y_weights.par_chunks_mut(n_interp))
+            .enumerate()
+            .for_each(|(i, (x_w, y_w))| {
+                let (_, x_pos, y_pos) = box_data[i];
+                lagrange_weights(x_pos, interp_spacings, lagrange_denominators, x_w);
+                lagrange_weights(y_pos, interp_spacings, lagrange_denominators, y_w);
+            });
+    }
+
+    // step 1c: counting sort of point indices by box row, so spreading can
+    // run one thread per box row without write conflicts.
+    ws.row_starts.clear();
+    ws.row_starts.resize(n_boxes + 1, 0);
+    for &((box_y, _), _, _) in ws.box_data.iter() {
+        ws.row_starts[box_y + 1] += 1;
+    }
+    for b in 0..n_boxes {
+        ws.row_starts[b + 1] += ws.row_starts[b];
+    }
+    let mut cursor = ws.row_starts.clone();
+    for i in 0..n_points {
+        let ((box_y, _), _, _) = ws.box_data[i];
+        ws.order[cursor[box_y] as usize] = i as u32;
+        cursor[box_y] += 1;
+    }
+
+    // step 1d: charge spreading, parallel over box rows. A point writes only
+    // to its own box's n_interp x n_interp nodes, and a box row `by` owns the
+    // contiguous w_coefficients slab of grid rows [by * n_interp,
+    // (by + 1) * n_interp), so slabs are disjoint across threads.
+    {
+        let box_data = &ws.box_data;
+        let x_weights = &ws.x_weights;
+        let y_weights = &ws.y_weights;
+        let order = &ws.order;
+        let row_starts = &ws.row_starts;
+        let slab_len = n_interp * n_interp_1d * n_terms;
+
+        ws.w_coefficients
+            .par_chunks_mut(slab_len)
+            .enumerate()
+            .for_each(|(by, slab)| {
+                slab.fill(T::zero());
+                let (lo, hi) = (row_starts[by] as usize, row_starts[by + 1] as usize);
+                for (t, &pi) in order[lo..hi].iter().enumerate() {
+                    if let Some(&pa) = order[lo..hi].get(t + SPREAD_PREFETCH_DIST) {
+                        let a = pa as usize;
+                        prefetch_read(&box_data[a]);
+                        prefetch_read(&x_weights[a * n_interp]);
+                        prefetch_read(&y_weights[a * n_interp]);
+                        prefetch_read(&charges[a * n_terms]);
+                    }
+                    let i = pi as usize;
+                    let ((_, box_x), _, _) = box_data[i];
+                    let w_start_idx = i * n_interp;
+                    for interp_y in 0..n_interp {
+                        let wy = y_weights[w_start_idx + interp_y];
+                        let row = interp_y * n_interp_1d + box_x * n_interp;
+                        for interp_x in 0..n_interp {
+                            let weight = wy * x_weights[w_start_idx + interp_x];
+                            let base = (row + interp_x) * n_terms;
+                            for term in 0..n_terms {
+                                slab[base + term] =
+                                    slab[base + term] + weight * charges[i * n_terms + term];
+                            }
+                        }
+                    }
+                }
+            });
+    }
+
+    // step 2: FFT convolution as three 1D passes. The input is non-zero only
+    // in the top-left m x m block and only rows and columns m..2m of the
+    // output are kept, so the row passes touch m rows and the pad is never
+    // transformed.
+    let m = n_interp_1d;
+    let lanes = &ws.lanes;
+    let c_zero = Complex::new(T::zero(), T::zero());
+
+    // step 2a: forward r2c over the non-zero input rows.
+    {
+        let w_coefficients = &ws.w_coefficients;
+        ws.spec_rows
+            .par_chunks_mut(n_terms * n_half)
+            .enumerate()
+            .for_each(|(r, out)| {
+                let mut guard = lock_lane(lanes);
+                let lane = &mut *guard;
+                for term in 0..n_terms {
+                    for j in 0..m {
+                        lane.row_in[j] = w_coefficients[(r * m + j) * n_terms + term];
+                    }
+                    lane.row_in[m..].fill(T::zero());
+                    lane.plans
+                        .r2c(&mut lane.row_in, &mut lane.row_spec, &mut lane.scratch);
+                    out[term * n_half..(term + 1) * n_half].copy_from_slice(&lane.row_spec);
+                }
+            });
+    }
+
+    // step 2b: per column, forward c2c, kernel multiply (the kernel spectrum
+    // carries the 1 / n_fft^2 normalisation), backward c2c, keep the lower
+    // half.
+    {
+        let spec_rows = &ws.spec_rows;
+        let fft_kernel = &grid.fft_kernel;
+        ws.spec_cols
+            .par_chunks_mut(m)
+            .enumerate()
+            .for_each(|(idx, out)| {
+                let (term, k) = (idx / n_half, idx % n_half);
+                let mut guard = lock_lane(lanes);
+                let lane = &mut *guard;
+                for r in 0..m {
+                    lane.col_a[r] = spec_rows[(r * n_terms + term) * n_half + k];
+                }
+                lane.col_a[m..].fill(c_zero);
+                lane.plans.fwd.process_outofplace_with_scratch(
+                    &mut lane.col_a,
+                    &mut lane.col_b,
+                    &mut lane.scratch,
+                );
+
+                let kern = &fft_kernel[k * n_fft..(k + 1) * n_fft];
+                for (v, &kv) in lane.col_b.iter_mut().zip(kern) {
+                    *v = *v * kv;
+                }
+
+                lane.plans.bwd.process_outofplace_with_scratch(
+                    &mut lane.col_b,
+                    &mut lane.col_a,
+                    &mut lane.scratch,
+                );
+                out.copy_from_slice(&lane.col_a[m..2 * m]);
+            });
+    }
+
+    // step 2c: inverse c2r over the kept output rows, writing the kept columns
+    // straight into the compact term-minor buffer.
+    {
+        let spec_cols = &ws.spec_cols;
+        ws.y_tilde_values
+            .par_chunks_mut(m * n_terms)
+            .enumerate()
+            .for_each(|(gy, row_out)| {
+                let mut guard = lock_lane(lanes);
+                let lane = &mut *guard;
+                for term in 0..n_terms {
+                    let base = term * n_half * m + gy;
+                    for k in 0..n_half {
+                        lane.row_spec[k] = spec_cols[base + k * m];
+                    }
+                    lane.plans
+                        .c2r(&mut lane.row_spec, &mut lane.row_out, &mut lane.scratch);
+                    for gx in 0..m {
+                        row_out[gx * n_terms + term] = lane.row_out[m + gx];
+                    }
+                }
+            });
+    }
+
+    // step 3: gathering (parallel over points, pre-allocated output)
+    {
+        let box_data = &ws.box_data;
+        let x_weights = &ws.x_weights;
+        let y_weights = &ws.y_weights;
+        let y_tilde_values = &ws.y_tilde_values;
+
+        potentials_out
+            .par_chunks_mut(n_terms)
+            .enumerate()
+            .for_each(|(i, out)| {
+                for term in out.iter_mut() {
+                    *term = T::zero();
+                }
+                let ((box_y, box_x), _, _) = box_data[i];
+                let w_start_idx = i * n_interp;
+
+                for interp_y in 0..n_interp {
+                    let gy = box_y * n_interp + interp_y;
+                    let wy = y_weights[w_start_idx + interp_y];
+                    for interp_x in 0..n_interp {
+                        let gx = box_x * n_interp + interp_x;
+                        let weight = wy * x_weights[w_start_idx + interp_x];
+                        let grid_idx = gy * n_interp_1d + gx;
+
+                        for term in 0..n_terms {
+                            out[term] =
+                                out[term] + weight * y_tilde_values[grid_idx * n_terms + term];
+                        }
+                    }
+                }
+            });
+    }
+}
+
+//////////////////////////
+// Three-kernel variant //
+//////////////////////////
+
+/// Pre-computed spectra of the three kernels `q`, `q^2 dx`, `q^2 dy` with
+/// `q = 1 / (1 + |d|^2)` and `d` the target-minus-source offset.
+///
+/// Convolving a unit charge grid with these gives `Z_i` and the repulsive
+/// force components directly, so nothing is reconstructed from absolute
+/// coordinates and nothing cancels.
+pub struct FftKernels3k<T: FftFloat> {
+    /// Spectra for `[q, q^2 dx, q^2 dy]`, each column-major `[k][u]`,
+    /// pre-scaled by `1 / n_fft^2`
+    pub spectra: [Vec<Complex<T>>; 3],
+}
+
+impl<T: FftFloat> FftKernels3k<T> {
+    /// Build the three kernel spectra for a grid.
+    ///
+    /// ### Params
+    ///
+    /// * `grid` - FFT grid supplying node coordinates and `n_fft`
+    ///
+    /// ### Returns
+    ///
+    /// The three spectra.
+    pub fn new(grid: &FftGrid<T>) -> Self {
+        let xc = &grid.global_x_coords;
+        let yc = &grid.global_y_coords;
+        let m = xc.len() as isize;
+        let n_fft = grid.n_fft;
+        let norm = T::one() / T::from_usize(n_fft * n_fft).unwrap();
+
+        // signed node offsets for d in -(m - 1)..m, index d + m - 1
+        let offsets = |c: &[T]| -> Vec<T> {
+            (-(m - 1)..m)
+                .map(|d| {
+                    let v = c[d.unsigned_abs()] - c[0];
+                    if d < 0 {
+                        -v
+                    } else {
+                        v
+                    }
+                })
+                .collect()
+        };
+        let (ox, oy) = (offsets(xc), offsets(yc));
+
+        // spatial kernels, filled in parallel over rows. Row index carries
+        // the y offset, column the x offset.
+        // spatial kernels, filled in parallel over rows. Row index carries
+        // the y offset, column the x offset. Rows past the 2m - 1 offsets are
+        // padding up to `n_fft`.
+        let reals: Vec<Vec<T>> = (0..3)
+            .map(|t| {
+                let mut real = vec![T::zero(); n_fft * n_fft];
+                real.par_chunks_mut(n_fft).enumerate().for_each(|(r, row)| {
+                    if r == 0 || r > oy.len() {
+                        return;
+                    }
+                    let q_y = oy[r - 1];
+                    for (col, &q_x) in ox.iter().enumerate() {
+                        let q = T::one() / (T::one() + q_x * q_x + q_y * q_y);
+                        row[col + 1] = match t {
+                            0 => q,
+                            1 => q * q * q_x,
+                            _ => q * q * q_y,
+                        };
+                    }
+                });
+                real
+            })
+            .collect();
+
+        // [k][u] with the normalisation folded in
+        let plans = FftPlans::new(n_fft);
+        let spectra: Vec<Vec<Complex<T>>> = reals
+            .iter()
+            .map(|real| r2c_2d_transposed(real, n_fft, &plans, norm))
+            .collect();
+
+        Self {
+            spectra: spectra.try_into().expect("three spectra"),
+        }
+    }
+}
+
+/// Reusable buffers for [`n_body_fft_2d_3k`].
+pub struct FftWorkspace3k<T: FftFloat> {
+    /// FFT array dimension this workspace was built for
+    pub n_fft: usize,
+    /// One lane per rayon thread
+    lanes: Vec<Mutex<FftLane<T>>>,
+    /// Row spectra of the charge grid, layout `[row][k]`
+    spec_rows: Vec<Complex<T>>,
+    /// Kernel-multiplied inverse column spectra, layout `[k][kernel][row]`
+    spec_cols: Vec<Complex<T>>,
+    /// Per-point box index and intra-box position
+    box_data: Vec<((usize, usize), T, T)>,
+    /// Per-point Lagrange x-weights
+    x_weights: Vec<T>,
+    /// Per-point Lagrange y-weights
+    y_weights: Vec<T>,
+    /// Unit-charge grid, length `m^2`
+    w: Vec<T>,
+    /// Convolved grids, kernel-minor, length `3 m^2`
+    y_tilde: Vec<T>,
+    /// Counting-sort bucket starts over box rows
+    row_starts: Vec<u32>,
+    /// Point indices grouped by box row
+    order: Vec<u32>,
+}
+
+impl<T: FftFloat> FftWorkspace3k<T> {
+    /// Create an empty workspace for a given FFT dimension.
+    ///
+    /// ### Params
+    ///
+    /// * `n_fft` - FFT array dimension of the grid
+    ///
+    /// ### Returns
+    ///
+    /// Workspace; buffers grow on first use.
+    pub fn new(n_fft: usize) -> Self {
+        Self {
+            n_fft,
+            lanes: Vec::new(),
+            spec_rows: Vec::new(),
+            spec_cols: Vec::new(),
+            box_data: Vec::new(),
+            x_weights: Vec::new(),
+            y_weights: Vec::new(),
+            w: Vec::new(),
+            y_tilde: Vec::new(),
+            row_starts: Vec::new(),
+            order: Vec::new(),
+        }
+    }
+}
+
+/// Repulsion via three kernels against a unit charge grid.
+///
+/// Returns, per point, `Z_i = sum_j q_ij` (self term included),
+/// `sum_j q_ij^2 (x_i - x_j)` and `sum_j q_ij^2 (y_i - y_j)`. One forward
+/// transform of the charge grid feeds three kernel multiplies and inverse
+/// transforms.
+///
+/// ### Params
+///
+/// * `xs` - X coordinates
+/// * `ys` - Y coordinates
+/// * `grid` - FFT grid
+/// * `kernels` - Spectra built from the same grid
+/// * `ws` - Workspace built with the grid's `n_fft`
+/// * `out` - Output, length `3 n_points`, `[z, fx, fy]` per point
+pub fn n_body_fft_2d_3k<T: FftFloat>(
+    xs: &[T],
+    ys: &[T],
+    grid: &FftGrid<T>,
+    kernels: &FftKernels3k<T>,
+    ws: &mut FftWorkspace3k<T>,
+    out: &mut [T],
+) {
+    let n_points = xs.len();
+    let n_interp = grid.n_interp_points;
+    let n_boxes = grid.n_boxes_per_dim;
+    let m = n_interp * n_boxes;
+    let n_fft = ws.n_fft;
+    let n_half = n_fft / 2 + 1;
+
+    assert_eq!(ws.n_fft, grid.n_fft, "Workspace n_fft does not match grid");
+    assert_eq!(out.len(), n_points * 3, "Output buffer size mismatch");
+
+    if ws.box_data.len() != n_points {
+        ws.box_data.resize(n_points, ((0, 0), T::zero(), T::zero()));
+        ws.order.resize(n_points, 0);
+        ws.x_weights.resize(n_points * n_interp, T::zero());
+        ws.y_weights.resize(n_points * n_interp, T::zero());
+    }
+    if ws.w.len() != m * m {
+        ws.w.resize(m * m, T::zero());
+        ws.y_tilde.resize(3 * m * m, T::zero());
+        ws.spec_rows
+            .resize(m * n_half, Complex::new(T::zero(), T::zero()));
+        ws.spec_cols
+            .resize(3 * n_half * m, Complex::new(T::zero(), T::zero()));
+    }
+    if ws.lanes.is_empty() {
+        let plans = FftPlans::new(n_fft);
+        ws.lanes = (0..rayon::current_num_threads().max(1))
+            .map(|_| Mutex::new(FftLane::new(n_fft, &plans)))
+            .collect();
+    }
+
+    ws.box_data
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(i, slot)| {
+            let (box_y, box_x) = grid.point_to_box(xs[i], ys[i]);
+            let x_in_box = grid.position_in_box(xs[i], box_x);
+            let y_in_box = grid.position_in_box(ys[i], box_y);
+            *slot = ((box_y, box_x), x_in_box, y_in_box);
+        });
+
+    {
+        let box_data = &ws.box_data;
+        let sp = &grid.interp_spacings;
+        let dn = &grid.lagrange_denominators;
+        ws.x_weights
+            .par_chunks_mut(n_interp)
+            .zip(ws.y_weights.par_chunks_mut(n_interp))
+            .enumerate()
+            .for_each(|(i, (x_w, y_w))| {
+                let (_, x_pos, y_pos) = box_data[i];
+                lagrange_weights(x_pos, sp, dn, x_w);
+                lagrange_weights(y_pos, sp, dn, y_w);
+            });
+    }
+
+    ws.row_starts.clear();
+    ws.row_starts.resize(n_boxes + 1, 0);
+    for &((box_y, _), _, _) in ws.box_data.iter() {
+        ws.row_starts[box_y + 1] += 1;
+    }
+    for b in 0..n_boxes {
+        ws.row_starts[b + 1] += ws.row_starts[b];
+    }
+    let mut cursor = ws.row_starts.clone();
+    for i in 0..n_points {
+        let ((box_y, _), _, _) = ws.box_data[i];
+        ws.order[cursor[box_y] as usize] = i as u32;
+        cursor[box_y] += 1;
+    }
+
+    // unit-charge splat, parallel over box rows (disjoint grid slabs)
+    {
+        let box_data = &ws.box_data;
+        let x_weights = &ws.x_weights;
+        let y_weights = &ws.y_weights;
+        let order = &ws.order;
+        let row_starts = &ws.row_starts;
+        ws.w.par_chunks_mut(n_interp * m)
+            .enumerate()
+            .for_each(|(by, slab)| {
+                slab.fill(T::zero());
+                let (lo, hi) = (row_starts[by] as usize, row_starts[by + 1] as usize);
+                for (t, &pi) in order[lo..hi].iter().enumerate() {
+                    if let Some(&pa) = order[lo..hi].get(t + SPREAD_PREFETCH_DIST) {
+                        let a = pa as usize;
+                        prefetch_read(&box_data[a]);
+                        prefetch_read(&x_weights[a * n_interp]);
+                        prefetch_read(&y_weights[a * n_interp]);
+                    }
+                    let i = pi as usize;
+                    let ((_, box_x), _, _) = box_data[i];
+                    let wi = i * n_interp;
+                    for iy in 0..n_interp {
+                        let wy = y_weights[wi + iy];
+                        let row = iy * m + box_x * n_interp;
+                        for ix in 0..n_interp {
+                            slab[row + ix] = slab[row + ix] + wy * x_weights[wi + ix];
+                        }
+                    }
+                }
+            });
+    }
+
+    let lanes = &ws.lanes;
+
+    // forward r2c over the m non-zero rows
+    {
+        let w = &ws.w;
+        ws.spec_rows
+            .par_chunks_mut(n_half)
+            .enumerate()
+            .for_each(|(r, out_row)| {
+                let mut guard = lock_lane(lanes);
+                let lane = &mut *guard;
+                lane.row_in[..m].copy_from_slice(&w[r * m..(r + 1) * m]);
+                lane.row_in[m..].fill(T::zero());
+                lane.plans
+                    .r2c(&mut lane.row_in, &mut lane.row_spec, &mut lane.scratch);
+                out_row.copy_from_slice(&lane.row_spec);
+            });
+    }
+
+    // per column: one forward c2c, then per kernel a multiply and backward
+    // c2c, keeping the lower half
+    {
+        let spec_rows = &ws.spec_rows;
+        let spectra = &kernels.spectra;
+        ws.spec_cols
+            .par_chunks_mut(3 * m)
+            .enumerate()
+            .for_each(|(k, out_col)| {
+                let mut guard = lock_lane(lanes);
+                let lane = &mut *guard;
+                for r in 0..m {
+                    lane.col_a[r] = spec_rows[r * n_half + k];
+                }
+                lane.col_a[m..].fill(Complex::new(T::zero(), T::zero()));
+                lane.plans.fwd.process_outofplace_with_scratch(
+                    &mut lane.col_a,
+                    &mut lane.col_b,
+                    &mut lane.scratch,
+                );
+
+                // col_a is rewritten per kernel; the out-of-place inverse
+                // clobbers its input, never col_b
+                for t in 0..3 {
+                    let kern = &spectra[t][k * n_fft..(k + 1) * n_fft];
+                    for ((a, &b), &kv) in lane.col_a.iter_mut().zip(&lane.col_b).zip(kern) {
+                        *a = b * kv;
+                    }
+                    lane.plans.bwd.process_outofplace_with_scratch(
+                        &mut lane.col_a,
+                        &mut lane.col_c,
+                        &mut lane.scratch,
+                    );
+                    out_col[t * m..(t + 1) * m].copy_from_slice(&lane.col_c[m..2 * m]);
+                }
+            });
+    }
+
+    // inverse c2r over the kept rows, kernel-minor compact output
+    {
+        let spec_cols = &ws.spec_cols;
+        ws.y_tilde
+            .par_chunks_mut(3 * m)
+            .enumerate()
+            .for_each(|(gy, row_out)| {
+                let mut guard = lock_lane(lanes);
+                let lane = &mut *guard;
+                for t in 0..3 {
+                    for k in 0..n_half {
+                        lane.row_spec[k] = spec_cols[(k * 3 + t) * m + gy];
+                    }
+                    lane.plans
+                        .c2r(&mut lane.row_spec, &mut lane.row_out, &mut lane.scratch);
+                    for gx in 0..m {
+                        row_out[gx * 3 + t] = lane.row_out[m + gx];
+                    }
+                }
+            });
+    }
+
+    // gather
+    {
+        let box_data = &ws.box_data;
+        let x_weights = &ws.x_weights;
+        let y_weights = &ws.y_weights;
+        let y_tilde = &ws.y_tilde;
+        out.par_chunks_mut(3).enumerate().for_each(|(i, o)| {
+            let (mut z, mut fx, mut fy) = (T::zero(), T::zero(), T::zero());
+            let ((box_y, box_x), _, _) = box_data[i];
+            let wi = i * n_interp;
+            for iy in 0..n_interp {
+                let gy = box_y * n_interp + iy;
+                let wy = y_weights[wi + iy];
+                for ix in 0..n_interp {
+                    let gx = box_x * n_interp + ix;
+                    let wt = wy * x_weights[wi + ix];
+                    let g = (gy * m + gx) * 3;
+                    z = z + wt * y_tilde[g];
+                    fx = fx + wt * y_tilde[g + 1];
+                    fy = fy + wt * y_tilde[g + 2];
+                }
+            }
+            o[0] = z;
+            o[1] = fx;
+            o[2] = fy;
+        });
+    }
+}
+
+///////////
+// Tests //
+///////////
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lagrange_weights() {
+        let spacings = vec![0.25, 0.5, 0.75];
+        let mut denominators = vec![0.0; 3];
+        let mut weights = vec![0.0; 3];
+
+        for i in 0..spacings.len() {
+            let mut denom = 1.0;
+            for j in 0..spacings.len() {
+                if i != j {
+                    denom *= spacings[i] - spacings[j];
+                }
+            }
+            denominators[i] = denom;
+        }
+
+        lagrange_weights(0.5, &spacings, &denominators, &mut weights);
+        assert!((weights[0] - 0.0).abs() < 1e-10);
+        assert!((weights[1] - 1.0).abs() < 1e-10);
+        assert!((weights[2] - 0.0).abs() < 1e-10);
+
+        lagrange_weights(0.6, &spacings, &denominators, &mut weights);
+        let sum: f64 = weights.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_grid_box_assignment() {
+        let grid = FftGrid::<f64>::new(-10.0, 10.0, 4, 3);
+
+        let (by, bx) = grid.point_to_box(-10.0, -10.0);
+        assert_eq!((by, bx), (0, 0));
+
+        let (by, bx) = grid.point_to_box(9.9, 9.9);
+        assert_eq!((by, bx), (3, 3));
+
+        let (by, bx) = grid.point_to_box(0.0, 0.0);
+        assert_eq!((by, bx), (2, 2));
+    }
+
+    fn direct_repulsive_forces(embd: &[Vec<f64>]) -> (Vec<f64>, Vec<f64>, f64) {
+        let n = embd.len();
+        let mut sum_q = 0.0;
+
+        for i in 0..n {
+            for j in 0..n {
+                if i != j {
+                    let dx = embd[i][0] - embd[j][0];
+                    let dy = embd[i][1] - embd[j][1];
+                    let dist_sq = dx * dx + dy * dy;
+                    sum_q += 1.0 / (1.0 + dist_sq);
+                }
+            }
+        }
+
+        let mut forces_x = vec![0.0; n];
+        let mut forces_y = vec![0.0; n];
+
+        for i in 0..n {
+            for j in 0..n {
+                if i != j {
+                    let dx = embd[i][0] - embd[j][0];
+                    let dy = embd[i][1] - embd[j][1];
+                    let dist_sq = dx * dx + dy * dy;
+                    let q_ij = 1.0 / (1.0 + dist_sq);
+                    let weight = q_ij * q_ij / sum_q;
+                    forces_x[i] += weight * dx;
+                    forces_y[i] += weight * dy;
+                }
+            }
+        }
+
+        (forces_x, forces_y, sum_q)
+    }
+
+    #[test]
+    fn test_repulsive_forces_match_direct() {
+        let embd: Vec<Vec<f64>> = vec![
+            vec![-2.1, 0.3],
+            vec![-0.8, 1.2],
+            vec![0.2, -0.9],
+            vec![1.5, 0.4],
+            vec![2.3, -0.6],
+            vec![-1.2, -1.1],
+            vec![0.7, 1.8],
+            vec![1.9, -1.4],
+        ];
+        let n = embd.len();
+        let n_terms = 4;
+
+        let (direct_fx, direct_fy, direct_z) = direct_repulsive_forces(&embd);
+
+        let coord_min = -5.0;
+        let coord_max = 5.0;
+        let grid = FftGrid::<f64>::new(coord_min, coord_max, 20, 3);
+        let mut ws = FftWorkspace::new(grid.n_fft);
+
+        let xs: Vec<f64> = embd.iter().map(|p| p[0]).collect();
+        let ys: Vec<f64> = embd.iter().map(|p| p[1]).collect();
+
+        let mut charges = vec![0.0; n * n_terms];
+        for i in 0..n {
+            charges[i * n_terms] = 1.0;
+            charges[i * n_terms + 1] = xs[i];
+            charges[i * n_terms + 2] = ys[i];
+            charges[i * n_terms + 3] = xs[i] * xs[i] + ys[i] * ys[i];
+        }
+
+        let mut potentials = vec![0.0; n * n_terms];
+        n_body_fft_2d(&xs, &ys, &charges, n_terms, &grid, &mut ws, &mut potentials);
+
+        let mut fft_fx = vec![0.0; n];
+        let mut fft_fy = vec![0.0; n];
+
+        let mut fft_z = 0.0;
+        for i in 0..n {
+            let phi1 = potentials[i * n_terms];
+            let phi2 = potentials[i * n_terms + 1];
+            let phi3 = potentials[i * n_terms + 2];
+            let phi4 = potentials[i * n_terms + 3];
+            let r2 = xs[i] * xs[i] + ys[i] * ys[i];
+            fft_z += (1.0 + r2) * phi1 - 2.0 * (xs[i] * phi2 + ys[i] * phi3) + phi4;
+        }
+        fft_z -= n as f64;
+
+        let z_rel_err = (fft_z - direct_z).abs() / direct_z.abs();
+        assert!(
+            z_rel_err < 0.05,
+            "Z mismatch: FFT={:.6}, Direct={:.6}, RelErr={:.6}",
+            fft_z,
+            direct_z,
+            z_rel_err
+        );
+
+        for i in 0..n {
+            let phi1 = potentials[i * n_terms];
+            let phi2 = potentials[i * n_terms + 1];
+            let phi3 = potentials[i * n_terms + 2];
+            fft_fx[i] = (xs[i] * phi1 - phi2) / fft_z;
+            fft_fy[i] = (ys[i] * phi1 - phi3) / fft_z;
+        }
+
+        for i in 0..n {
+            let fx_err = (fft_fx[i] - direct_fx[i]).abs();
+            let fy_err = (fft_fy[i] - direct_fy[i]).abs();
+            let force_mag = (direct_fx[i].powi(2) + direct_fy[i].powi(2))
+                .sqrt()
+                .max(1e-10);
+
+            assert!(
+                fx_err / force_mag < 0.15 || fx_err < 1e-5,
+                "Point {} Fx mismatch. FFT={:.6}, Direct={:.6}",
+                i,
+                fft_fx[i],
+                direct_fx[i]
+            );
+            assert!(
+                fy_err / force_mag < 0.15 || fy_err < 1e-5,
+                "Point {} Fy mismatch. FFT={:.6}, Direct={:.6}",
+                i,
+                fft_fy[i],
+                direct_fy[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_grid_refinement_improves_accuracy() {
+        let embd: Vec<Vec<f64>> = vec![
+            vec![-1.0, 0.5],
+            vec![0.5, -0.8],
+            vec![1.2, 1.0],
+            vec![-0.3, -0.5],
+        ];
+        let n = embd.len();
+        let (direct_fx, direct_fy, _) = direct_repulsive_forces(&embd);
+
+        let xs: Vec<f64> = embd.iter().map(|p| p[0]).collect();
+        let ys: Vec<f64> = embd.iter().map(|p| p[1]).collect();
+
+        let mut charges = vec![0.0; n * 4];
+        for i in 0..n {
+            charges[i * 4] = 1.0;
+            charges[i * 4 + 1] = xs[i];
+            charges[i * 4 + 2] = ys[i];
+            charges[i * 4 + 3] = xs[i] * xs[i] + ys[i] * ys[i];
+        }
+
+        let run_fft_err = |n_boxes: usize| -> f64 {
+            let grid = FftGrid::new(-5.0, 5.0, n_boxes, 3);
+            let mut ws = FftWorkspace::new(grid.n_fft);
+            let mut pots = vec![0.0; n * 4];
+            n_body_fft_2d(&xs, &ys, &charges, 4, &grid, &mut ws, &mut pots);
+
+            let mut z = 0.0;
+            for i in 0..n {
+                let r2 = xs[i] * xs[i] + ys[i] * ys[i];
+                z += (1.0 + r2) * pots[i * 4]
+                    - 2.0 * (xs[i] * pots[i * 4 + 1] + ys[i] * pots[i * 4 + 2])
+                    + pots[i * 4 + 3];
+            }
+            z -= n as f64;
+
+            let mut tot_err = 0.0;
+            for i in 0..n {
+                let fx = (xs[i] * pots[i * 4] - pots[i * 4 + 1]) / z;
+                let fy = (ys[i] * pots[i * 4] - pots[i * 4 + 2]) / z;
+                tot_err += (fx - direct_fx[i]).abs() + (fy - direct_fy[i]).abs();
+            }
+            tot_err
+        };
+
+        let err_coarse = run_fft_err(8);
+        let err_fine = run_fft_err(32);
+
+        assert!(
+            err_fine < err_coarse,
+            "Finer grid should reduce error: Coarse={}, Fine={}",
+            err_coarse,
+            err_fine
+        );
+    }
+
+    #[test]
+    fn test_forces_sum_to_zero() {
+        let embd: Vec<Vec<f64>> = vec![
+            vec![-2.0, 1.0],
+            vec![1.0, -1.5],
+            vec![0.5, 2.0],
+            vec![-1.0, -0.5],
+            vec![2.5, 0.0],
+        ];
+        let n = embd.len();
+        let xs: Vec<f64> = embd.iter().map(|p| p[0]).collect();
+        let ys: Vec<f64> = embd.iter().map(|p| p[1]).collect();
+
+        let mut charges = vec![0.0; n * 4];
+        for i in 0..n {
+            charges[i * 4] = 1.0;
+            charges[i * 4 + 1] = xs[i];
+            charges[i * 4 + 2] = ys[i];
+            charges[i * 4 + 3] = xs[i] * xs[i] + ys[i] * ys[i];
+        }
+
+        let grid = FftGrid::new(-5.0, 5.0, 20, 3);
+        let mut ws = FftWorkspace::new(grid.n_fft);
+        let mut pots = vec![0.0; n * 4];
+        n_body_fft_2d(&xs, &ys, &charges, 4, &grid, &mut ws, &mut pots);
+
+        let mut z = 0.0;
+        for i in 0..n {
+            let r2 = xs[i] * xs[i] + ys[i] * ys[i];
+            z += (1.0 + r2) * pots[i * 4]
+                - 2.0 * (xs[i] * pots[i * 4 + 1] + ys[i] * pots[i * 4 + 2])
+                + pots[i * 4 + 3];
+        }
+        z -= n as f64;
+
+        let mut sum_fx = 0.0;
+        let mut sum_fy = 0.0;
+        for i in 0..n {
+            let fx = (xs[i] * pots[i * 4] - pots[i * 4 + 1]) / z;
+            let fy = (ys[i] * pots[i * 4] - pots[i * 4 + 2]) / z;
+            sum_fx += fx;
+            sum_fy += fy;
+        }
+
+        assert!(
+            sum_fx.abs() < 1e-4,
+            "Net Force X should be ~0, got {}",
+            sum_fx
+        );
+        assert!(
+            sum_fy.abs() < 1e-4,
+            "Net Force Y should be ~0, got {}",
+            sum_fy
+        );
+    }
+
+    /// Unit charges for a 4-term run: (1, x, y, x^2 + y^2) per point.
+    fn four_term_charges(xs: &[f64], ys: &[f64]) -> Vec<f64> {
+        let mut charges = vec![0.0; xs.len() * 4];
+        for i in 0..xs.len() {
+            charges[i * 4] = 1.0;
+            charges[i * 4 + 1] = xs[i];
+            charges[i * 4 + 2] = ys[i];
+            charges[i * 4 + 3] = xs[i] * xs[i] + ys[i] * ys[i];
+        }
+        charges
+    }
+
+    #[test]
+    fn test_3k_repulsion_matches_direct() {
+        let embd: Vec<Vec<f64>> = vec![
+            vec![-2.1, 0.3],
+            vec![-0.8, 1.2],
+            vec![0.2, -0.9],
+            vec![1.5, 0.4],
+            vec![2.3, -0.6],
+            vec![-1.2, -1.1],
+            vec![0.7, 1.8],
+            vec![1.9, -1.4],
+        ];
+        let n = embd.len();
+        let (direct_fx, direct_fy, direct_z) = direct_repulsive_forces(&embd);
+
+        let grid = FftGrid::<f64>::new(-5.0, 5.0, 20, 3);
+        let kernels = FftKernels3k::new(&grid);
+        let mut ws = FftWorkspace3k::new(grid.n_fft);
+        let xs: Vec<f64> = embd.iter().map(|p| p[0]).collect();
+        let ys: Vec<f64> = embd.iter().map(|p| p[1]).collect();
+        let mut out = vec![0.0; n * 3];
+        n_body_fft_2d_3k(&xs, &ys, &grid, &kernels, &mut ws, &mut out);
+
+        let z: f64 = (0..n).map(|i| out[i * 3]).sum::<f64>() - n as f64;
+        let z_rel_err = (z - direct_z).abs() / direct_z.abs();
+        assert!(
+            z_rel_err < 0.05,
+            "Z mismatch: FFT={z:.6}, Direct={direct_z:.6}"
+        );
+
+        for i in 0..n {
+            let fx = out[i * 3 + 1] / z;
+            let fy = out[i * 3 + 2] / z;
+            let force_mag = (direct_fx[i].powi(2) + direct_fy[i].powi(2))
+                .sqrt()
+                .max(1e-10);
+            let (ex, ey) = ((fx - direct_fx[i]).abs(), (fy - direct_fy[i]).abs());
+            assert!(
+                ex / force_mag < 0.15 || ex < 1e-5,
+                "Point {i} Fx: {fx} vs {}",
+                direct_fx[i]
+            );
+            assert!(
+                ey / force_mag < 0.15 || ey < 1e-5,
+                "Point {i} Fy: {fy} vs {}",
+                direct_fy[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_3k_agrees_with_4term() {
+        // pseudo-random layout from a fixed LCG, so no rng dependency
+        let n = 400;
+        let mut state = 12345u64;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((state >> 11) as f64 / (1u64 << 53) as f64) * 16.0 - 8.0
+        };
+        let xs: Vec<f64> = (0..n).map(|_| next()).collect();
+        let ys: Vec<f64> = (0..n).map(|_| next()).collect();
+
+        let grid = FftGrid::<f64>::new(-10.0, 10.0, 25, 3);
+
+        let charges = four_term_charges(&xs, &ys);
+        let mut ws4 = FftWorkspace::new(grid.n_fft);
+        let mut pot = vec![0.0; n * 4];
+        n_body_fft_2d(&xs, &ys, &charges, 4, &grid, &mut ws4, &mut pot);
+        let z4: f64 = (0..n)
+            .map(|i| {
+                let r2 = xs[i] * xs[i] + ys[i] * ys[i];
+                (1.0 + r2) * pot[i * 4] - 2.0 * (xs[i] * pot[i * 4 + 1] + ys[i] * pot[i * 4 + 2])
+                    + pot[i * 4 + 3]
+            })
+            .sum::<f64>()
+            - n as f64;
+
+        let kernels = FftKernels3k::new(&grid);
+        let mut ws3 = FftWorkspace3k::new(grid.n_fft);
+        let mut out = vec![0.0; n * 3];
+        n_body_fft_2d_3k(&xs, &ys, &grid, &kernels, &mut ws3, &mut out);
+        let z3: f64 = (0..n).map(|i| out[i * 3]).sum::<f64>() - n as f64;
+
+        assert!((z3 - z4).abs() / z4 < 1e-2, "Z: 3-kernel {z3}, 4-term {z4}");
+
+        let (mut num, mut den) = (0.0, 0.0);
+        for i in 0..n {
+            let f4x = xs[i] * pot[i * 4] - pot[i * 4 + 1];
+            let f4y = ys[i] * pot[i * 4] - pot[i * 4 + 2];
+            num += (out[i * 3 + 1] - f4x).powi(2) + (out[i * 3 + 2] - f4y).powi(2);
+            den += f4x * f4x + f4y * f4y;
+        }
+        let rel_rms = (num / den).sqrt();
+        assert!(
+            rel_rms < 0.05,
+            "Force relative RMS between formulations: {rel_rms}"
+        );
+    }
+
+    #[test]
+    fn test_grid_geometry_matches_new() {
+        let full = FftGrid::<f64>::new(-7.5, 7.5, 30, 3);
+        let geom = FftGrid::<f64>::new_geometry(-7.5, 7.5, 30, 3);
+        assert!(geom.fft_kernel.is_empty());
+        assert_eq!(geom.n_fft, full.n_fft);
+        assert_eq!(geom.n_boxes_per_dim, full.n_boxes_per_dim);
+        assert_eq!(geom.box_width, full.box_width);
+        assert_eq!(geom.global_x_coords, full.global_x_coords);
+        assert_eq!(geom.lagrange_denominators, full.lagrange_denominators);
+    }
+}

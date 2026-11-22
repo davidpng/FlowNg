@@ -1,0 +1,9 @@
+# Rust
+/target
+
+# Apple
+.DS_Store
+
+# Claude
+
+.claude/worktrees/*

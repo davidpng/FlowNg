@@ -1,0 +1,1305 @@
+//! Inverted file RaBitQ index. Compresses the vectors via RaBitQ and
+//! leverages Voronoi cells to reduce the search space.
+
+use bytemuck::Pod;
+use faer::RowRef;
+use faer_traits::ComplexField;
+use num_traits::{Float, FromPrimitive};
+use rayon::prelude::*;
+use std::iter::Sum;
+use std::path::Path;
+use thousands::*;
+
+use crate::binary::dist_binary::*;
+use crate::binary::rabitq::rotator::RotatorKind;
+use crate::binary::rabitq::*;
+use crate::binary::vec_store::*;
+use crate::prelude::*;
+use crate::utils::k_means_utils::*;
+use crate::utils::pack_knn_results;
+use crate::utils::verbosity::{BuildLog, QueryProgress};
+use crate::wtime::Instant;
+
+/// IVF index with RaBitQ quantisation
+///
+/// Two-stage search: IVF routing using float centroids, then RaBitQ
+/// distance estimation within probed clusters.
+// `bound` is pinned because the skipped `vector_store` field makes serde
+// infer a spurious `T: Default`
+#[cfg_attr(
+    feature = "serialise",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(bound = "T: AnnSearchFloat")
+)]
+pub struct IvfIndexRaBitQ<T> {
+    /// The RabitQ encoder
+    encoder: RaBitQEncoder<T>,
+    /// The RabitQ storage
+    storage: RaBitQStorage<T>,
+    /// Number of vectors in the structure
+    n: usize,
+    /// Optional vector store that is saved in binary on disk
+    #[cfg_attr(feature = "serialise", serde(skip))]
+    vector_store: Option<VectorStore<T>>,
+    /// Fingerprint of `vector_store`, checked when it is re-opened after a
+    /// load. Only
+    /// read by the `serialise` feature; the field is kept unconditionally so
+    /// the constructors stay free of `cfg`.
+    #[cfg_attr(not(feature = "serialise"), allow(dead_code))]
+    store_fingerprint: Option<u64>,
+}
+
+//////////////////////////
+// VectorDistanceRaBitQ //
+//////////////////////////
+
+/// Trait implementation for the distance calculations
+impl<T> VectorDistanceRaBitQ<T> for IvfIndexRaBitQ<T>
+where
+    T: Float + FromPrimitive,
+{
+    fn storage(&self) -> &RaBitQStorage<T> {
+        &self.storage
+    }
+
+    fn encoder(&self) -> &RaBitQEncoder<T> {
+        &self.encoder
+    }
+}
+
+//////////////////////////
+// VectorDistanceRaBitQ //
+//////////////////////////
+
+/// Trait implementation for the CentroidDistances
+impl<T> CentroidDistance<T> for IvfIndexRaBitQ<T>
+where
+    T: Float + FromPrimitive + Sum + SimdDistance,
+{
+    fn centroids(&self) -> &[T] {
+        &self.storage.centroids
+    }
+
+    fn dim(&self) -> usize {
+        self.storage.dim
+    }
+
+    fn nlist(&self) -> usize {
+        self.storage.nlist
+    }
+
+    fn metric(&self) -> Dist {
+        self.encoder.metric
+    }
+
+    fn centroids_norm(&self) -> &[T] {
+        &self.storage.centroids_norm
+    }
+}
+
+impl<T> IvfIndexRaBitQ<T>
+where
+    T: AnnSearchFloat + ComplexField + Pod,
+{
+    /// Build IVF-RaBitQ index
+    ///
+    /// ### Params
+    ///
+    /// * `data` - Data matrix (n × dim)
+    /// * `metric` - Distance metric
+    /// * `nlist` - Number of IVF cells (defaults to sqrt(n))
+    /// * `k_means_params` - Optional k-means trainings parameters, see
+    ///   [KMeansTrainingParams]. If not provided, will default to sensible
+    ///   defaults.
+    /// * `ex_bits` - Magnitude bits per coordinate on top of the sign,
+    ///   `0..=8`. Above zero, candidates the one-bit bound cannot rule out are
+    ///   re-scored on the wider code, see [`VectorDistanceRaBitQ::rabitq_scan`]
+    /// * `seed` - Random seed
+    /// * `verbosity` - Prints start, progress and end at `Normal`
+    ///
+    /// ### Returns
+    ///
+    /// Initialised self
+    pub fn build(
+        data: impl AnnMatrix<T>,
+        metric: Dist,
+        nlist: Option<usize>,
+        k_means_params: Option<KMeansTrainingParams>,
+        ex_bits: usize,
+        seed: usize,
+        verbosity: Verbosity,
+    ) -> Result<Self, AnnSearchErrors> {
+        Self::build_with_rotator_kind(
+            data,
+            metric,
+            nlist,
+            k_means_params,
+            None,
+            ex_bits,
+            seed,
+            verbosity,
+        )
+    }
+
+    /// Build IVF-RaBitQ index with an explicitly chosen rotation
+    ///
+    /// ### Params
+    ///
+    /// * `data` - Data matrix (n × dim)
+    /// * `metric` - Distance metric
+    /// * `nlist` - Number of IVF cells (defaults to sqrt(n))
+    /// * `k_means_params` - Optional k-means trainings parameters, see
+    ///   [KMeansTrainingParams]. If not provided, will default to sensible
+    ///   defaults.
+    /// * `rotator_kind` - Which rotation to encode with, or `None` to let the
+    ///   dimensionality decide
+    /// * `ex_bits` - Magnitude bits per coordinate on top of the sign,
+    ///   `0..=8`. Above zero, candidates the one-bit bound cannot rule out are
+    ///   re-scored on the wider code, see [`VectorDistanceRaBitQ::rabitq_scan`]
+    /// * `seed` - Random seed
+    /// * `verbosity` - Prints start, progress and end at `Normal`
+    ///
+    /// ### Returns
+    ///
+    /// Initialised self
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_with_rotator_kind(
+        data: impl AnnMatrix<T>,
+        metric: Dist,
+        nlist: Option<usize>,
+        k_means_params: Option<KMeansTrainingParams>,
+        rotator_kind: Option<RotatorKind>,
+        ex_bits: usize,
+        seed: usize,
+        verbosity: Verbosity,
+    ) -> Result<Self, AnnSearchErrors> {
+        let log = BuildLog::new("IVF-RaBitQ index", verbosity);
+        if metric == Dist::Manhattan {
+            return Err(AnnSearchErrors::DistanceNotSupported(metric));
+        }
+        let (vectors_flat, n, dim) = data.into_row_major();
+
+        // compute norms for Cosine distance
+        let norms = if metric == Dist::Cosine {
+            (0..n)
+                .map(|i| {
+                    let start = i * dim;
+                    let end = start + dim;
+                    vectors_flat[start..end]
+                        .iter()
+                        .map(|x| *x * *x)
+                        .fold(T::zero(), |a, b| a + b)
+                        .sqrt()
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        let nlist = nlist.unwrap_or((n as f32).sqrt() as usize).max(1);
+
+        let cluster_norms = if matches!(metric, Dist::Cosine) {
+            vec![T::one(); n]
+        } else {
+            // empty outside Cosine, so the clone is free
+            norms.clone()
+        };
+
+        // subsample for training if large
+        let n_train = (256 * nlist).min(250_000).min(n).max(1);
+        let (training_data, _) = sample_vectors(&vectors_flat, dim, n, n_train, seed);
+
+        // train centroids
+        let start = Instant::now();
+        let mut centroids_flat = train_centroids(
+            &training_data,
+            dim,
+            n_train,
+            nlist,
+            &metric,
+            k_means_params,
+            seed,
+            Verbosity::Quiet,
+        )?;
+        if verbosity.detailed_verbosity() {
+            println!(
+                " Trained k-means ({} centroids, {} samples) in {:.2?}",
+                nlist.separate_with_underscores(),
+                n_train.separate_with_underscores(),
+                start.elapsed()
+            );
+        }
+        drop(training_data);
+
+        // Cosine encodes unit rows. Done in place once nothing needs the raw
+        // rows any more, so the data is never held twice.
+        let mut vectors_for_storage = vectors_flat;
+        if metric == Dist::Cosine {
+            vectors_for_storage
+                .par_chunks_mut(dim)
+                .zip(norms.par_iter())
+                .for_each(|(v, &norm)| {
+                    if norm > T::epsilon() {
+                        v.iter_mut().for_each(|x| *x = *x / norm);
+                    }
+                });
+        }
+
+        // normalise centroids for Cosine
+        if metric == Dist::Cosine {
+            for c in 0..nlist {
+                let start = c * dim;
+                let end = start + dim;
+                let norm = centroids_flat[start..end]
+                    .iter()
+                    .map(|x| *x * *x)
+                    .fold(T::zero(), |a, b| a + b)
+                    .sqrt();
+                if norm > T::epsilon() {
+                    for i in start..end {
+                        centroids_flat[i] /= norm;
+                    }
+                }
+            }
+        }
+
+        let centroids_norm: Vec<T> = (0..nlist)
+            .map(|i| compute_l2_norm(&centroids_flat[i * dim..(i + 1) * dim]))
+            .collect();
+
+        // Assign all vectors
+        let assignments = assign_all_parallel(
+            &vectors_for_storage,
+            &cluster_norms,
+            dim,
+            n,
+            &centroids_flat,
+            &centroids_norm,
+            nlist,
+            &metric,
+        );
+
+        // create encoder with shared rotation
+        let encoder = match rotator_kind {
+            Some(kind) => RaBitQEncoder::with_rotator_kind(dim, metric, kind, seed as u64)?,
+            None => RaBitQEncoder::new(dim, metric, seed as u64),
+        };
+
+        // build CSR storage
+        let storage = build_rabitq_storage(
+            &vectors_for_storage,
+            dim,
+            n,
+            &centroids_flat,
+            nlist,
+            &assignments,
+            &encoder,
+            ex_bits,
+        )?;
+
+        log.finish();
+
+        Ok(Self {
+            encoder,
+            storage,
+            n,
+            vector_store: None,
+            store_fingerprint: None,
+        })
+    }
+
+    /// Build IVF-RaBitQ index with vector store
+    ///
+    /// This version also generates a vector store for re-ranking
+    ///
+    /// ### Params
+    ///
+    /// * `data` - Data matrix (n × dim)
+    /// * `metric` - Distance metric
+    /// * `nlist` - Number of IVF cells (defaults to sqrt(n))
+    /// * `k_means_params` - Optional k-means trainings parameters, see
+    ///   [KMeansTrainingParams]. If not provided, will default to sensible
+    ///   defaults.
+    /// * `ex_bits` - Magnitude bits per coordinate on top of the sign,
+    ///   `0..=8`. Above zero, candidates the one-bit bound cannot rule out are
+    ///   re-scored on the wider code, see [`VectorDistanceRaBitQ::rabitq_scan`]
+    /// * `seed` - Random seed
+    /// * `verbosity` - Prints start, progress and end at `Normal`
+    /// * `save_path` - Path to save vector store
+    /// * `store_encoding` - Precision the store keeps the rows at
+    ///
+    /// ### Returns
+    ///
+    /// Initialised self
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_with_vector_store(
+        data: impl AnnMatrix<T>,
+        metric: Dist,
+        nlist: Option<usize>,
+        k_means_params: Option<KMeansTrainingParams>,
+        ex_bits: usize,
+        seed: usize,
+        verbosity: Verbosity,
+        save_path: impl AsRef<Path>,
+        store_encoding: StoreEncoding,
+    ) -> Result<Self, AnnSearchErrors> {
+        Self::build_with_vector_store_and_rotator_kind(
+            data,
+            metric,
+            nlist,
+            k_means_params,
+            None,
+            ex_bits,
+            seed,
+            verbosity,
+            save_path,
+            store_encoding,
+        )
+    }
+
+    /// Build IVF-RaBitQ index with a vector store and an explicitly chosen rotation
+    ///
+    /// ### Params
+    ///
+    /// * `data` - Data matrix (n × dim)
+    /// * `metric` - Distance metric
+    /// * `nlist` - Number of IVF cells (defaults to sqrt(n))
+    /// * `k_means_params` - Optional k-means trainings parameters, see
+    ///   [KMeansTrainingParams]. If not provided, will default to sensible
+    ///   defaults.
+    /// * `rotator_kind` - Which rotation to encode with, or `None` to let the
+    ///   dimensionality decide
+    /// * `ex_bits` - Magnitude bits per coordinate on top of the sign,
+    ///   `0..=8`. Above zero, candidates the one-bit bound cannot rule out are
+    ///   re-scored on the wider code, see [`VectorDistanceRaBitQ::rabitq_scan`]
+    /// * `seed` - Random seed
+    /// * `verbosity` - Prints start, progress and end at `Normal`
+    /// * `save_path` - Path to save vector store
+    /// * `store_encoding` - Precision the store keeps the rows at
+    ///
+    /// ### Returns
+    ///
+    /// Initialised self
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_with_vector_store_and_rotator_kind(
+        data: impl AnnMatrix<T>,
+        metric: Dist,
+        nlist: Option<usize>,
+        k_means_params: Option<KMeansTrainingParams>,
+        rotator_kind: Option<RotatorKind>,
+        ex_bits: usize,
+        seed: usize,
+        verbosity: Verbosity,
+        save_path: impl AsRef<Path>,
+        store_encoding: StoreEncoding,
+    ) -> Result<Self, AnnSearchErrors> {
+        let log = BuildLog::new("IVF-RaBitQ index", verbosity);
+        if metric == Dist::Manhattan {
+            return Err(AnnSearchErrors::DistanceNotSupported(metric));
+        }
+        let (vectors_flat, n, dim) = data.into_row_major();
+
+        // compute norms for Cosine distance
+        let norms: Vec<T> = (0..n)
+            .map(|i| {
+                let start = i * dim;
+                let end = start + dim;
+                vectors_flat[start..end]
+                    .iter()
+                    .map(|x| *x * *x)
+                    .fold(T::zero(), |a, b| a + b)
+                    .sqrt()
+            })
+            .collect();
+
+        let nlist = nlist.unwrap_or((n as f32).sqrt() as usize).max(1);
+
+        let cluster_norms = if matches!(metric, Dist::Cosine) {
+            vec![T::one(); n]
+        } else {
+            norms.clone()
+        };
+
+        // The store keeps the raw rows, so it is written before Cosine
+        // normalises them in place below.
+        let vector_store =
+            VectorStore::create(&save_path, &vectors_flat, &norms, n, dim, store_encoding)?;
+        let store_fingerprint = Some(vector_store.fingerprint());
+
+        let sampled;
+        let (training_data, n_train): (&[T], usize) = if n > 500_000 {
+            sampled = sample_vectors(&vectors_flat, dim, n, 250_000, seed).0;
+            (&sampled, 250_000)
+        } else {
+            (&vectors_flat, n)
+        };
+
+        let start = Instant::now();
+        let mut centroids_flat = train_centroids(
+            training_data,
+            dim,
+            n_train,
+            nlist,
+            &metric,
+            k_means_params,
+            seed,
+            Verbosity::Quiet,
+        )?;
+        if verbosity.detailed_verbosity() {
+            println!(
+                " Trained k-means ({} centroids, {} samples) in {:.2?}",
+                nlist.separate_with_underscores(),
+                n_train.separate_with_underscores(),
+                start.elapsed()
+            );
+        }
+
+        // Cosine encodes unit rows. Done in place once nothing needs the raw
+        // rows any more, so the data is never held twice.
+        let mut vectors_for_storage = vectors_flat;
+        if metric == Dist::Cosine {
+            vectors_for_storage
+                .par_chunks_mut(dim)
+                .zip(norms.par_iter())
+                .for_each(|(v, &norm)| {
+                    if norm > T::epsilon() {
+                        v.iter_mut().for_each(|x| *x = *x / norm);
+                    }
+                });
+        }
+
+        // Normalise centroids for Cosine
+        if metric == Dist::Cosine {
+            for c in 0..nlist {
+                let start = c * dim;
+                let end = start + dim;
+                let norm = centroids_flat[start..end]
+                    .iter()
+                    .map(|x| *x * *x)
+                    .fold(T::zero(), |a, b| a + b)
+                    .sqrt();
+                if norm > T::epsilon() {
+                    for i in start..end {
+                        centroids_flat[i] /= norm;
+                    }
+                }
+            }
+        }
+
+        let centroids_norm: Vec<T> = (0..nlist)
+            .map(|i| compute_l2_norm(&centroids_flat[i * dim..(i + 1) * dim]))
+            .collect();
+
+        let assignments = assign_all_parallel(
+            &vectors_for_storage,
+            &cluster_norms,
+            dim,
+            n,
+            &centroids_flat,
+            &centroids_norm,
+            nlist,
+            &metric,
+        );
+
+        let encoder = match rotator_kind {
+            Some(kind) => RaBitQEncoder::with_rotator_kind(dim, metric, kind, seed as u64)?,
+            None => RaBitQEncoder::new(dim, metric, seed as u64),
+        };
+
+        let storage = build_rabitq_storage(
+            &vectors_for_storage,
+            dim,
+            n,
+            &centroids_flat,
+            nlist,
+            &assignments,
+            &encoder,
+            ex_bits,
+        )?;
+
+        log.finish();
+
+        Ok(Self {
+            encoder,
+            storage,
+            n,
+            vector_store: Some(vector_store),
+            store_fingerprint,
+        })
+    }
+
+    /// Query for k nearest neighbours
+    ///
+    /// ### Params
+    ///
+    /// * `query_vec` - Query vector
+    /// * `k` - Number of neighbours to return
+    /// * `nprobe` - Number of IVF cells to probe. If None, uses sqrt(nlist)
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of (indices, distances)
+    #[inline]
+    pub fn query(
+        &self,
+        query_vec: &[T],
+        k: usize,
+        nprobe: Option<usize>,
+    ) -> Result<(Vec<usize>, Vec<T>), AnnSearchErrors> {
+        let nprobe = nprobe
+            .unwrap_or_else(|| ((self.storage.nlist as f64).sqrt() as usize).max(1))
+            .min(self.storage.nlist);
+        let k = k.min(self.n);
+
+        let query_normalised = self.encoder.normalise_query(query_vec);
+
+        // Expand nprobe to cover >= k reachable vectors so the query never
+        // short-returns due to small/empty cells.
+        let mut cluster_dists = self.get_centroids_prenorm(&query_normalised, nprobe);
+        let probed = select_probed_clusters(&mut cluster_dists, &self.storage.offsets, nprobe, k);
+
+        let query = self
+            .encoder
+            .encode_query(&query_normalised, self.storage().ex_bits)?;
+
+        // The heap ranks on *squared* distance: the square root is monotone, so
+        // it only needs applying to the k survivors.
+        Ok(self
+            .rabitq_scan(
+                &query,
+                &probed,
+                k,
+                Refine::without_store(self.storage().ex_bits),
+            )
+            .into_iter()
+            .map(|(d, i)| (i, d.0.sqrt()))
+            .unzip())
+    }
+
+    /// Query using a row reference
+    ///
+    /// ### Params
+    ///
+    /// * `query_row` - Query row reference
+    /// * `k` - Number of neighbours to return
+    /// * `nprobe` - Number of IVF cells to probe. If None, uses sqrt(nlist)
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of (indices, distances)
+    #[inline]
+    pub fn query_row(
+        &self,
+        query_row: RowRef<T>,
+        k: usize,
+        nprobe: Option<usize>,
+    ) -> Result<(Vec<usize>, Vec<T>), AnnSearchErrors> {
+        if query_row.col_stride() == 1 {
+            let slice =
+                unsafe { std::slice::from_raw_parts(query_row.as_ptr(), query_row.ncols()) };
+            return self.query(slice, k, nprobe);
+        }
+        let query_vec: Vec<T> = query_row.iter().cloned().collect();
+        self.query(&query_vec, k, nprobe)
+    }
+
+    /// Query with exact distance reranking
+    ///
+    /// ### Params
+    ///
+    /// * `query_vec` - Query vector
+    /// * `k` - Number of neighbours to return
+    /// * `nprobe` - Number of IVF cells to probe. If None, uses sqrt(nlist)
+    /// * `rerank_factor` - `Some(f)` ranks the `f * k` best estimates exactly.
+    ///   `None` lets the estimate's error bound pick which candidates need an
+    ///   exact distance, see
+    ///   [`query_reranking_bounded`](Self::query_reranking_bounded).
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of (indices, distances)
+    #[inline]
+    pub fn query_reranking(
+        &self,
+        query_vec: &[T],
+        k: usize,
+        nprobe: Option<usize>,
+        rerank_factor: Option<usize>,
+    ) -> Result<(Vec<usize>, Vec<T>), AnnSearchErrors> {
+        let Some(rerank_factor) = rerank_factor else {
+            return self.query_reranking_bounded(query_vec, k, nprobe);
+        };
+        let vector_store = self
+            .vector_store
+            .as_ref()
+            .ok_or(AnnSearchErrors::VectorStoreNotAvailable)?;
+
+        let (candidates, _) = self.query(query_vec, k * rerank_factor, nprobe)?;
+
+        let query_norm = match self.encoder.metric {
+            Dist::Cosine => compute_l2_norm(query_vec),
+            Dist::SquaredEuclidean => T::one(),
+            Dist::Manhattan => unreachable!(),
+        };
+
+        let mut scored: Vec<_> = candidates
+            .iter()
+            .map(|&idx| {
+                let dist = match self.encoder.metric {
+                    Dist::Cosine => {
+                        vector_store.cosine_distance_to_query(idx, query_vec, query_norm)
+                    }
+                    Dist::SquaredEuclidean => {
+                        vector_store.euclidean_distance_to_query(idx, query_vec)
+                    }
+                    Dist::Manhattan => unreachable!(),
+                };
+                (dist, idx)
+            })
+            .collect();
+
+        scored.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        scored.truncate(k);
+
+        let mut indices: Vec<usize> = Vec::with_capacity(k);
+        let mut dists: Vec<T> = Vec::with_capacity(k);
+
+        for (dist, idx) in scored {
+            indices.push(idx);
+            dists.push(dist);
+        }
+
+        Ok((indices, dists))
+    }
+
+    /// Query with exact distances where the estimate's bound requires them
+    ///
+    /// One pass: every candidate whose lower bound beats the current `k`-th
+    /// exact distance is scored exactly from the vector store, see
+    /// [`VectorDistanceRaBitQ::rabitq_scan`]. No shortlist size to pick.
+    ///
+    /// ### Params
+    ///
+    /// * `query_vec` - Query vector
+    /// * `k` - Number of neighbours to return
+    /// * `nprobe` - Number of IVF cells to probe. If None, uses sqrt(nlist)
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of (indices, distances)
+    #[inline]
+    pub fn query_reranking_bounded(
+        &self,
+        query_vec: &[T],
+        k: usize,
+        nprobe: Option<usize>,
+    ) -> Result<(Vec<usize>, Vec<T>), AnnSearchErrors> {
+        let vector_store = self
+            .vector_store
+            .as_ref()
+            .ok_or(AnnSearchErrors::VectorStoreNotAvailable)?;
+
+        let nprobe = nprobe
+            .unwrap_or_else(|| ((self.storage.nlist as f64).sqrt() as usize).max(1))
+            .min(self.storage.nlist);
+        let k = k.min(self.n);
+
+        let query_normalised = self.encoder.normalise_query(query_vec);
+        let mut cluster_dists = self.get_centroids_prenorm(&query_normalised, nprobe);
+        let probed = select_probed_clusters(&mut cluster_dists, &self.storage.offsets, nprobe, k);
+        let query = self
+            .encoder
+            .encode_query(&query_normalised, self.storage().ex_bits)?;
+
+        // The estimate lives in the normalised space for cosine, where the
+        // squared distance is twice the cosine distance.
+        let metric = self.encoder.metric;
+        let query_norm = compute_l2_norm(query_vec);
+        let two = T::one() + T::one();
+        let exact = |idx: usize| match metric {
+            Dist::Cosine => two * vector_store.cosine_distance_to_query(idx, query_vec, query_norm),
+            Dist::SquaredEuclidean => vector_store.euclidean_distance_to_query(idx, query_vec),
+            Dist::Manhattan => unreachable!(),
+        };
+
+        Ok(self
+            .rabitq_scan(&query, &probed, k, Refine::Exact(exact))
+            .into_iter()
+            .map(|(d, i)| match metric {
+                Dist::Cosine => (i, d.0 / two),
+                _ => (i, d.0),
+            })
+            .unzip())
+    }
+
+    /// Query row with reranking using exact distances
+    ///
+    /// ### Params
+    ///
+    /// * `query_row` - Query row reference
+    /// * `k` - Number of neighbours to return
+    /// * `nprobe` - Number of IVF cells to probe. If None, uses sqrt(nlist)
+    /// * `rerank_factor` - `Some(f)` ranks the `f * k` best estimates exactly.
+    ///   `None` lets the estimate's error bound pick which candidates need an
+    ///   exact distance, see
+    ///   [`query_reranking_bounded`](Self::query_reranking_bounded).
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of (indices, distances)
+    #[inline]
+    pub fn query_row_reranking(
+        &self,
+        query_row: RowRef<T>,
+        k: usize,
+        nprobe: Option<usize>,
+        rerank_factor: Option<usize>,
+    ) -> Result<(Vec<usize>, Vec<T>), AnnSearchErrors> {
+        if query_row.col_stride() == 1 {
+            let slice =
+                unsafe { std::slice::from_raw_parts(query_row.as_ptr(), query_row.ncols()) };
+            return self.query_reranking(slice, k, nprobe, rerank_factor);
+        }
+        let query_vec: Vec<T> = query_row.iter().cloned().collect();
+        self.query_reranking(&query_vec, k, nprobe, rerank_factor)
+    }
+
+    /// Generate kNN graph
+    ///
+    /// ### Params
+    ///
+    /// * `k` - Number of neighbours per vector
+    /// * `nprobe` - Number of IVF cells to probe per query
+    /// * `rerank_factor` - Shortlist multiplier for exact distances, `None` for
+    ///   the bound-gated rerank
+    /// * `return_dist` - Whether to return distances
+    /// * `verbosity` - Prints start, progress and end at `Normal`
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of (knn_indices, optional distances)
+    pub fn generate_knn(
+        &self,
+        k: usize,
+        nprobe: Option<usize>,
+        rerank_factor: Option<usize>,
+        return_dist: bool,
+        verbosity: Verbosity,
+    ) -> KnnOptionResult<T> {
+        let vector_store = self
+            .vector_store
+            .as_ref()
+            .ok_or(AnnSearchErrors::VectorStoreNotAvailable)?;
+
+        let progress = QueryProgress::new("IVF-RaBitQ index", self.n, true, verbosity);
+
+        let results: Vec<(Vec<usize>, Vec<T>)> = (0..self.n)
+            .into_par_iter()
+            .map(|i| {
+                let vec = vector_store.row(i);
+
+                progress.tick();
+
+                self.query_reranking(&vec, k, nprobe, rerank_factor)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        progress.finish();
+
+        Ok(pack_knn_results(results, return_dist))
+    }
+
+    /// Returns the size of the index in bytes
+    ///
+    /// ### Returns
+    ///
+    /// The memory finger print in bytes
+    pub fn memory_usage_bytes(&self) -> usize {
+        std::mem::size_of_val(self)
+            + self.encoder.memory_usage_bytes()
+            + self.storage.memory_usage_bytes()
+    }
+}
+
+///////////
+// Tests //
+///////////
+
+/////////////
+// IndexIo //
+/////////////
+
+#[cfg(feature = "serialise")]
+use crate::utils::staging::StagedFiles;
+
+#[cfg(feature = "serialise")]
+impl<T> IndexIo for IvfIndexRaBitQ<T>
+where
+    T: AnnSearchFloat + Pod,
+{
+    type Elem = T;
+
+    const KIND: &'static str = "ivf_rabitq";
+
+    fn stage_aux(&self, dir: &Path, staged: &mut StagedFiles) -> Result<(), AnnSearchErrors> {
+        match &self.vector_store {
+            Some(store) => store.stage_copy_into(dir, staged),
+            None => Ok(()),
+        }
+    }
+
+    fn load_aux(&mut self, dir: &Path) -> Result<(), AnnSearchErrors> {
+        self.vector_store =
+            VectorStore::open_for(dir, self.store_fingerprint, self.n, self.storage.dim)?;
+        self.storage.reblock_for_this_arch();
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use faer::Mat;
+    use tempfile::TempDir;
+
+    fn create_test_data<T: Float + FromPrimitive + ComplexField>(n: usize, dim: usize) -> Mat<T> {
+        let mut data = Mat::zeros(n, dim);
+        for i in 0..n {
+            for j in 0..dim {
+                data[(i, j)] = T::from_f64((i * dim + j) as f64 * 0.1).unwrap();
+            }
+        }
+        data
+    }
+
+    fn get_default_k_means() -> Option<KMeansTrainingParams> {
+        Some(KMeansTrainingParams::new(10, None, None))
+    }
+
+    #[test]
+    fn test_ivf_rabitq_construction() {
+        let data = create_test_data::<f32>(100, 32);
+        let index = IvfIndexRaBitQ::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(10),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        assert_eq!(index.n, 100);
+        assert_eq!(index.storage.nlist, 10);
+        assert_eq!(index.storage.n_vectors(), 100);
+    }
+
+    #[test]
+    fn test_ivf_rabitq_expands_nprobe_when_probed_cells_underfill_k() {
+        // 100 vectors across 25 cells -> avg 4 per cell. nprobe=1 alone cannot
+        // reach k=20; expansion must probe more cells.
+        let data = create_test_data::<f32>(100, 32);
+        let index = IvfIndexRaBitQ::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(25),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let (indices, distances) = index.query(&query, 20, Some(1)).unwrap();
+
+        assert_eq!(indices.len(), 20);
+        assert_eq!(distances.len(), 20);
+    }
+
+    #[test]
+    fn test_ivf_rabitq_query_returns_k_results() {
+        let data = create_test_data::<f32>(100, 32);
+        let index = IvfIndexRaBitQ::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(10),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let (indices, distances) = index.query(&query, 10, Some(10)).unwrap();
+
+        assert_eq!(indices.len(), 10);
+        assert_eq!(distances.len(), 10);
+    }
+
+    #[test]
+    fn test_ivf_rabitq_query_sorted() {
+        let data = create_test_data::<f32>(100, 32);
+        let index = IvfIndexRaBitQ::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(10),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let (_, distances) = index.query(&query, 10, Some(10)).unwrap();
+
+        for i in 1..distances.len() {
+            assert!(distances[i] >= distances[i - 1]);
+        }
+    }
+
+    #[test]
+    fn test_ivf_rabitq_query_k_exceeds_n() {
+        let data = create_test_data::<f32>(50, 32);
+        let index = IvfIndexRaBitQ::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(5),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let (indices, _) = index.query(&query, 100, Some(5)).unwrap();
+
+        assert_eq!(indices.len(), 50);
+    }
+
+    #[test]
+    fn test_ivf_rabitq_query_row() {
+        let data = create_test_data::<f32>(100, 32);
+        let index = IvfIndexRaBitQ::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(10),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let (indices, distances) = index.query_row(data.as_ref().row(0), 10, Some(10)).unwrap();
+
+        assert_eq!(indices.len(), 10);
+        assert_eq!(distances.len(), 10);
+    }
+
+    #[test]
+    fn test_ivf_rabitq_cosine() {
+        let data = create_test_data::<f32>(100, 32);
+        let index = IvfIndexRaBitQ::build(
+            data.as_ref(),
+            Dist::Cosine,
+            Some(10),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let (indices, distances) = index.query(&query, 10, Some(10)).unwrap();
+
+        assert_eq!(indices.len(), 10);
+        assert_eq!(distances.len(), 10);
+    }
+
+    #[test]
+    fn test_ivf_rabitq_default_nprobe() {
+        let data = create_test_data::<f32>(100, 32);
+        let index = IvfIndexRaBitQ::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(10),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let (indices, _) = index.query(&query, 5, None).unwrap();
+
+        assert!(indices.len() <= 5);
+    }
+
+    #[test]
+    fn test_build_with_vector_store() {
+        let data = create_test_data::<f32>(50, 32);
+        let temp_dir = TempDir::new().unwrap();
+
+        let index = IvfIndexRaBitQ::build_with_vector_store(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(5),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+            temp_dir.path(),
+            StoreEncoding::Full,
+        )
+        .unwrap();
+
+        assert_eq!(index.n, 50);
+        assert!(index.vector_store.is_some());
+    }
+
+    #[test]
+    fn test_query_reranking() {
+        let data = create_test_data::<f32>(100, 32);
+        let temp_dir = TempDir::new().unwrap();
+
+        let index = IvfIndexRaBitQ::build_with_vector_store(
+            data.as_ref(),
+            Dist::Cosine,
+            Some(10),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+            temp_dir.path(),
+            StoreEncoding::Full,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let (indices, distances) = index
+            .query_reranking(&query, 10, Some(10), Some(5))
+            .unwrap();
+
+        assert_eq!(indices.len(), 10);
+        assert_eq!(distances.len(), 10);
+
+        for i in 1..distances.len() {
+            assert!(distances[i] >= distances[i - 1]);
+        }
+    }
+
+    #[test]
+    fn test_query_row_reranking() {
+        let data = create_test_data::<f32>(100, 32);
+        let temp_dir = TempDir::new().unwrap();
+
+        let index = IvfIndexRaBitQ::build_with_vector_store(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(10),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+            temp_dir.path(),
+            StoreEncoding::Full,
+        )
+        .unwrap();
+
+        let (indices, distances) = index
+            .query_row_reranking(data.as_ref().row(0), 10, Some(10), Some(5))
+            .unwrap();
+
+        assert_eq!(indices.len(), 10);
+        assert_eq!(distances.len(), 10);
+    }
+
+    #[test]
+    fn test_knn_graph_with_vector_store() {
+        let data = create_test_data::<f32>(50, 32);
+        let temp_dir = TempDir::new().unwrap();
+
+        let index = IvfIndexRaBitQ::build_with_vector_store(
+            data.as_ref(),
+            Dist::Cosine,
+            Some(5),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+            temp_dir.path(),
+            StoreEncoding::Full,
+        )
+        .unwrap();
+
+        let (knn_indices, knn_distances) = index
+            .generate_knn(5, Some(5), Some(10), true, Verbosity::Quiet)
+            .unwrap();
+
+        assert_eq!(knn_indices.len(), 50);
+        assert!(knn_distances.is_some());
+        assert_eq!(knn_distances.as_ref().unwrap().len(), 50);
+
+        for neighbours in knn_indices.iter() {
+            assert_eq!(neighbours.len(), 5);
+        }
+    }
+
+    #[test]
+    fn test_knn_without_vector_store() {
+        let data = create_test_data::<f32>(50, 32);
+        let index = IvfIndexRaBitQ::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(5),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+        let result = index.generate_knn(5, Some(5), Some(10), false, Verbosity::Quiet);
+        assert!(matches!(
+            result,
+            Err(AnnSearchErrors::VectorStoreNotAvailable)
+        ));
+    }
+
+    #[test]
+    fn test_query_reranking_without_vector_store() {
+        let data = create_test_data::<f32>(50, 32);
+        let index = IvfIndexRaBitQ::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(5),
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let result = index.query_reranking(&query, 10, Some(5), Some(5));
+        assert!(matches!(
+            result,
+            Err(AnnSearchErrors::VectorStoreNotAvailable)
+        ));
+    }
+
+    #[test]
+    fn test_default_nlist() {
+        let data = create_test_data::<f32>(100, 32);
+        let index = IvfIndexRaBitQ::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            None,
+            get_default_k_means(),
+            0,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        assert_eq!(index.storage.nlist, 10);
+    }
+    #[test]
+    fn test_bounded_reranking_matches_a_full_rerank() {
+        // Probing every cluster, a shortlist covering the whole dataset is the
+        // exact answer. The bound is probabilistic, so allow a near-tie or two
+        // to differ, but the distances must agree almost everywhere.
+        let (n, dim, k) = (400usize, 64usize, 10usize);
+        let data = Mat::from_fn(n, dim, |i, j| {
+            let x = ((i * 7919 + j * 104_729) % 1009) as f32 / 1009.0;
+            x + (i % 5) as f32 * 0.5
+        });
+
+        for metric in [Dist::SquaredEuclidean, Dist::Cosine] {
+            let temp_dir = TempDir::new().unwrap();
+            let index = IvfIndexRaBitQ::build_with_vector_store(
+                data.as_ref(),
+                metric,
+                Some(8),
+                get_default_k_means(),
+                0,
+                42,
+                Verbosity::Quiet,
+                temp_dir.path(),
+                StoreEncoding::Full,
+            )
+            .unwrap();
+
+            let mut agree = 0;
+            for qi in 0..20 {
+                let query: Vec<f32> = data.row(qi * 13).iter().map(|x| x + 0.01).collect();
+                let (_, full) = index
+                    .query_reranking(&query, k, Some(8), Some(n / k))
+                    .unwrap();
+                let (_, bounded) = index.query_reranking_bounded(&query, k, Some(8)).unwrap();
+
+                assert_eq!(bounded.len(), k);
+                assert!(bounded.windows(2).all(|w| w[0] <= w[1]));
+                agree += full
+                    .iter()
+                    .zip(&bounded)
+                    .filter(|(a, b)| (*a - *b).abs() <= 1e-4 * a.abs().max(1.0))
+                    .count();
+            }
+            assert!(
+                agree >= 20 * k * 95 / 100,
+                "{metric:?}: {agree} / {}",
+                20 * k
+            );
+        }
+    }
+
+    #[test]
+    fn test_ex_bits_lift_recall_over_one_bit() {
+        // Store-free queries: the wider code must find more of the true
+        // neighbours than the sign bits alone, for both metrics.
+        let (n, dim, k) = (600usize, 64usize, 10usize);
+        let data = Mat::from_fn(n, dim, |i, j| {
+            let x = ((i * 7919 + j * 104_729) % 1009) as f32 / 1009.0;
+            x + (i % 5) as f32 * 0.5
+        });
+
+        for metric in [Dist::SquaredEuclidean, Dist::Cosine] {
+            let recall = |ex_bits: usize| {
+                let temp_dir = TempDir::new().unwrap();
+                let index = IvfIndexRaBitQ::build_with_vector_store(
+                    data.as_ref(),
+                    metric,
+                    Some(6),
+                    get_default_k_means(),
+                    ex_bits,
+                    42,
+                    Verbosity::Quiet,
+                    temp_dir.path(),
+                    StoreEncoding::Full,
+                )
+                .unwrap();
+
+                let mut hits = 0;
+                for qi in 0..30 {
+                    let query: Vec<f32> = data.row(qi * 17).iter().map(|x| x + 0.01).collect();
+                    let (truth, _) = index
+                        .query_reranking(&query, k, Some(6), Some(n / k))
+                        .unwrap();
+                    let (got, _) = index.query(&query, k, Some(6)).unwrap();
+                    hits += got.iter().filter(|i| truth.contains(i)).count();
+                }
+                hits as f64 / (30 * k) as f64
+            };
+
+            let (one_bit, wide) = (recall(0), recall(6));
+            assert!(wide > one_bit, "{metric:?}: {wide} vs {one_bit}");
+            assert!(wide >= 0.95, "{metric:?}: {wide}");
+        }
+    }
+}

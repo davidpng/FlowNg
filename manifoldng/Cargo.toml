@@ -1,0 +1,30 @@
+[package]
+name = "manifoldng"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "ManifoldNG: UMAP, t-SNE, PaCMAP, PHATE, Phenograph and FlowSOM for FlowNG, compiled to wasm32-unknown-unknown and embedded in FlowNG.html."
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+manifolds-rs = { version = "0.10", default-features = false, features = ["fft_tsne"] }
+ann-search-rs = { version = "0.13", default-features = false }
+getrandom = "0.3"
+faer = { version = "0.24", default-features = false, features = ["std"] }
+rand = "0.9"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Vendored copies patched for wasm32-unknown-unknown (see vendor/PATCHES.md).
+[patch.crates-io]
+manifolds-rs = { path = "vendor/manifolds-rs" }
+ann-search-rs = { path = "vendor/ann-search-rs" }
+atomic-wait = { path = "vendor/atomic-wait" }

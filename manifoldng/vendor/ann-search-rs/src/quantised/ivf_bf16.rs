@@ -1,0 +1,794 @@
+//! Inverted file index with bf16 quantisation: quantises the original data to
+//! bf16 (keeps the norms) and uses Voronoi cells to identify the most
+//! interesting candidates.
+
+use faer::RowRef;
+use half::*;
+use rayon::prelude::*;
+use thousands::Separable;
+
+use crate::prelude::*;
+use crate::quantised::quantisers::*;
+use crate::utils::k_means_utils::*;
+use crate::utils::permute_rows_in_place;
+use crate::utils::verbosity::{BuildLog, QueryProgress};
+use crate::wtime::Instant;
+
+/// IVF index with bf16 quantisation
+///
+/// Uses k-means clustering to partition vectors into nlist clusters. Each
+/// cluster maintains an inverted list of vector indices assigned to it.
+/// Queries search only the nprobe nearest clusters, trading perfect recall
+/// for speed. This version leverages `bf16` quantisation under the hood,
+/// reducing memory fingerprint and query speed at cost of precision.
+#[cfg_attr(feature = "serialise", derive(serde::Serialize, serde::Deserialize))]
+pub struct IvfIndexBf16<T> {
+    /// Original vector data, flattened for cache locality and quantised
+    /// to bf16
+    pub vectors_flat: Vec<bf16>,
+    /// Embedding dimensions
+    pub dim: usize,
+    /// Number of vectors
+    pub n: usize,
+    /// Pre-computed norms for Cosine distance (empty for Euclidean). Keep
+    /// `T` here to avoid massive precision loss for Cosine.
+    pub norms: Vec<T>,
+    /// Distance metric (Euclidean or Cosine)
+    metric: Dist,
+    /// Cluster centroids (nlist * dim elements)
+    centroids: Vec<T>,
+    /// Cluster centroids norms for Cosine distance
+    centroids_norm: Vec<T>,
+    /// Vector indices for each cluster (in a flat structure)
+    all_indices: Vec<u32>,
+    /// Offsets of the elements of each inverted list
+    offsets: Vec<u32>,
+    /// Number of clusters in the index
+    nlist: usize,
+    /// Original ids
+    original_ids: Vec<u32>,
+}
+
+///////////////////////
+// VectorDistanceB16 //
+///////////////////////
+
+impl<T> VectorDistanceBf16<T> for IvfIndexBf16<T>
+where
+    T: AnnSearchFloat + Bf16Compatible,
+{
+    fn vectors_flat(&self) -> &[bf16] {
+        &self.vectors_flat
+    }
+
+    fn dim(&self) -> usize {
+        self.dim
+    }
+
+    fn norms(&self) -> &[T] {
+        &self.norms
+    }
+}
+
+//////////////////////
+// CentroidDistance //
+//////////////////////
+
+impl<T> CentroidDistance<T> for IvfIndexBf16<T>
+where
+    T: AnnSearchFloat,
+{
+    fn centroids(&self) -> &[T] {
+        &self.centroids
+    }
+
+    fn dim(&self) -> usize {
+        self.dim
+    }
+
+    fn metric(&self) -> Dist {
+        self.metric
+    }
+
+    fn nlist(&self) -> usize {
+        self.nlist
+    }
+
+    fn centroids_norm(&self) -> &[T] {
+        &self.centroids_norm
+    }
+}
+
+/////////////////////////
+// DimensionValidation //
+/////////////////////////
+
+impl<T> DimensionValidation for IvfIndexBf16<T> {
+    fn dim(&self) -> usize {
+        self.dim
+    }
+}
+
+///////////
+// Shape //
+///////////
+
+impl<T> IvfIndexBf16<T> {
+    /// Number of indexed samples.
+    ///
+    /// ### Returns
+    ///
+    /// The row count the index was built from. Pairs with
+    /// [`DimensionValidation::dim`] so every index exposes its shape the same
+    /// way, which is what the Python bindings' handle macro reads.
+    pub fn n(&self) -> usize {
+        self.n
+    }
+}
+
+////////////////
+// Main index //
+////////////////
+
+impl<T> IvfIndexBf16<T>
+where
+    T: AnnSearchFloat + Bf16Compatible,
+{
+    //////////////////////
+    // Index generation //
+    //////////////////////
+
+    /// Build an IVF index with optimised memory layout and parallel training.
+    ///
+    /// Constructs an inverted file index by clustering vectors with k-means,
+    /// then assigns each vector to its nearest centroid. Uses a CSR (Compressed
+    /// Sparse Row) layout for cache-efficient cluster traversal during search.
+    ///
+    /// ### Workflow
+    ///
+    /// 1. Subsamples 250k vectors for training if dataset exceeds 500k
+    /// 2. Runs k-means clustering to find nlist centroids
+    /// 3. Assigns all vectors to their nearest centroid in parallel
+    /// 4. Builds CSR layout grouping vectors by cluster for locality
+    ///
+    /// ### Params
+    ///
+    /// * `data` - Matrix reference with vectors as rows (n × dim)
+    /// * `metric` - Distance metric (Euclidean or Cosine)
+    /// * `nlist` - Optional number of clusters. Defaults to `sqrt(n)`.
+    /// * `k_means_params` - Optional k-means trainings parameters, see
+    ///   [KMeansTrainingParams]. If not provided, will default to sensible
+    ///   defaults.
+    /// * `seed` - Random seed for reproducibility
+    /// * `verbosity` - Prints start, progress and end at `Normal`
+    ///
+    /// ### Returns
+    ///
+    /// Constructed index ready for querying
+    pub fn build(
+        data: impl AnnMatrix<T>,
+        metric: Dist,
+        nlist: Option<usize>,
+        k_means_params: Option<KMeansTrainingParams>,
+        seed: usize,
+        verbosity: Verbosity,
+    ) -> Result<Self, AnnSearchErrors> {
+        let log = BuildLog::new("IVF-BF16 index", verbosity);
+        if metric == Dist::Manhattan {
+            return Err(AnnSearchErrors::DistanceNotSupported(metric));
+        }
+
+        let (vectors_flat, n, dim) = data.into_row_major();
+
+        // Compute norms for Cosine distance
+        let norms = if metric == Dist::Cosine {
+            (0..n)
+                .map(|i| {
+                    let start = i * dim;
+                    let end = start + dim;
+                    T::calculate_l2_norm(&vectors_flat[start..end])
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        let nlist = nlist.unwrap_or((n as f32).sqrt() as usize).max(1);
+
+        // 1. subsample training data
+        let n_train = (256 * nlist).min(250_000).min(n).max(1);
+        let (training_data, _) = sample_vectors(&vectors_flat, dim, n, n_train, seed);
+
+        // 2. train the centroids
+        let start = Instant::now();
+        let centroids = train_centroids(
+            &training_data,
+            dim,
+            n_train,
+            nlist,
+            &metric,
+            k_means_params,
+            seed,
+            Verbosity::Quiet,
+        )?;
+        drop(training_data);
+        if verbosity.detailed_verbosity() {
+            println!(
+                " Trained k-means ({} centroids, {} samples) in {:.2?}",
+                nlist.separate_with_underscores(),
+                n_train.separate_with_underscores(),
+                start.elapsed()
+            );
+        }
+
+        let centroids_norm = if metric == Dist::Cosine {
+            (0..nlist)
+                .map(|i| {
+                    let start = i * dim;
+                    let end = start + dim;
+                    centroids[start..end]
+                        .iter()
+                        .map(|x| *x * *x)
+                        .fold(T::zero(), |a, b| a + b)
+                        .sqrt()
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // 3. assign the Rest
+        let data_norms_for_assignment = if metric == Dist::Cosine {
+            norms.clone()
+        } else {
+            vec![T::one(); n]
+        };
+
+        let assignments = assign_all_parallel(
+            &vectors_flat,
+            &data_norms_for_assignment,
+            dim,
+            n,
+            &centroids,
+            &centroids_norm,
+            nlist,
+            &metric,
+        );
+
+        // 4. generate a flat version for better cache locality
+        let (all_indices, offsets) = build_csr_layout(assignments, n, nlist);
+
+        let encoded = encode_bf16_quantisation(&vectors_flat);
+        drop(vectors_flat);
+
+        let mut idx = Self {
+            vectors_flat: encoded,
+            dim,
+            n,
+            norms,
+            metric,
+            centroids,
+            centroids_norm,
+            all_indices,
+            offsets,
+            nlist,
+            original_ids: Vec::new(),
+        };
+
+        let new_to_old = idx.optimise_memory_layout();
+        idx.original_ids = new_to_old;
+
+        log.finish();
+
+        Ok(idx)
+    }
+
+    ///////////
+    // Query //
+    ///////////
+
+    /// Query the index for approximate nearest neighbours
+    ///
+    /// Performs two-stage search: first finds nprobe nearest centroids to the
+    /// query, then exhaustively searches all vectors in those clusters. Uses
+    /// a max-heap to track top-k candidates.
+    ///
+    /// ### Params
+    ///
+    /// * `query_vec` - Query vector (must match index dimensionality)
+    /// * `k` - Number of neighbours to return
+    /// * `nprobe` - Number of clusters to search. A good default here is
+    ///   `sqrt(nlist)`.
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of `(indices, distances)` sorted by distance (nearest first)
+    #[inline]
+    pub fn query(
+        &self,
+        query_vec: &[T],
+        k: usize,
+        nprobe: Option<usize>,
+    ) -> Result<(Vec<usize>, Vec<T>), AnnSearchErrors> {
+        self.check_dim(query_vec.len())?;
+
+        let nprobe = nprobe
+            .unwrap_or_else(|| ((self.nlist as f64).sqrt() as usize).max(1))
+            .min(self.nlist);
+        let k: usize = k.min(self.n);
+        let query_norm = if matches!(self.metric, Dist::Cosine) {
+            query_vec
+                .iter()
+                .map(|&v| v * v)
+                .fold(T::zero(), |a, b| a + b)
+                .sqrt()
+        } else {
+            T::one()
+        };
+
+        // 1. find the top `nprobe` centroids, expanding to cover >= k reachable.
+        let mut cluster_dists: Vec<(T, usize)> =
+            self.get_centroids_dist(query_vec, query_norm, nprobe);
+        let probed = select_probed_clusters(&mut cluster_dists, &self.offsets, nprobe, k);
+
+        // 2. search only those clusters in the CSR layout
+        let mut buffer = SortedBuffer::with_capacity(k);
+
+        for cluster_idx in probed {
+            let start = self.offsets[cluster_idx] as usize;
+            let end = self.offsets[cluster_idx + 1] as usize;
+
+            for vec_idx in start..end {
+                let dist = match self.metric {
+                    Dist::SquaredEuclidean => {
+                        self.euclidean_distance_to_query_bf16(vec_idx, query_vec)
+                    }
+                    Dist::Cosine => {
+                        self.cosine_distance_to_query_bf16(vec_idx, query_vec, query_norm)
+                    }
+                    Dist::Manhattan => unreachable!(),
+                };
+                buffer.insert((OrderedFloat(dist), vec_idx), k);
+            }
+        }
+
+        let (distances, indices) = buffer
+            .data()
+            .iter()
+            .map(|(d, i)| (d.0, self.original_ids[*i] as usize))
+            .unzip();
+
+        Ok((indices, distances))
+    }
+
+    /// Query the index for approximate nearest neighbours
+    ///
+    /// Optimised path for contiguous memory (stride == 1), otherwise copies
+    /// to a temporary vector. Uses `self.query()` under the hood.
+    ///
+    /// ### Params
+    ///
+    /// * `query_vec` - Query vector (must match index dimensionality)
+    /// * `k` - Number of neighbours to return
+    /// * `nprobe` - Number of clusters to search. A good default here is
+    ///   `sqrt(nlist)`.
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of `(indices, distances)` sorted by distance (nearest first)
+    #[inline]
+    pub fn query_row(
+        &self,
+        query_row: RowRef<T>,
+        k: usize,
+        nprobe: Option<usize>,
+    ) -> Result<(Vec<usize>, Vec<T>), AnnSearchErrors> {
+        if query_row.col_stride() == 1 {
+            let slice =
+                unsafe { std::slice::from_raw_parts(query_row.as_ptr(), query_row.ncols()) };
+            return self.query(slice, k, nprobe);
+        }
+
+        // fallback
+        let query_vec: Vec<T> = query_row.iter().cloned().collect();
+        self.query(&query_vec, k, nprobe)
+    }
+
+    /// Generate kNN graph from vectors stored in the index
+    ///
+    /// Queries each vector in the index against itself to build a complete
+    /// kNN graph.
+    ///
+    /// ### Params
+    ///
+    /// * `k` - Number of neighbours per vector
+    /// * `nprobe` - Number of clusters to search (defaults to sqrt(nlist) if None)
+    /// * `return_dist` - Whether to return distances
+    /// * `verbosity` - Prints start, progress and end at `Normal`
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of `(knn_indices, optional distances)` where each row corresponds
+    /// to a vector in the index
+    pub fn generate_knn(
+        &self,
+        k: usize,
+        nprobe: Option<usize>,
+        return_dist: bool,
+        verbosity: Verbosity,
+    ) -> (Vec<Vec<usize>>, Option<Vec<Vec<T>>>) {
+        let progress = QueryProgress::new("IVF-BF16 index", self.n, true, verbosity);
+
+        let unordered_results: Vec<(usize, Vec<usize>, Vec<T>)> = (0..self.n)
+            .into_par_iter()
+            .map(|i| {
+                let start = i * self.dim;
+                let end = start + self.dim;
+                let vec = &self.vectors_flat[start..end];
+                let orig_id = self.original_ids[i] as usize;
+
+                progress.tick();
+
+                let (indices, dists) = self.query_bf16(vec, k, nprobe);
+                (orig_id, indices, dists)
+            })
+            .collect();
+        progress.finish();
+
+        let mut final_indices = vec![Vec::new(); self.n];
+        let mut final_dists = if return_dist {
+            Some(vec![Vec::new(); self.n])
+        } else {
+            None
+        };
+
+        for (orig_id, indices, dists) in unordered_results {
+            final_indices[orig_id] = indices;
+            if let Some(ref mut fd) = final_dists {
+                fd[orig_id] = dists;
+            }
+        }
+
+        fix_neg_dist(&mut final_dists);
+        (final_indices, final_dists)
+    }
+
+    /// Query the index for approximate nearest neighbours
+    ///
+    /// Performs two-stage search: first finds nprobe nearest centroids to the
+    /// query, then exhaustively searches all vectors in those clusters. Uses
+    /// a max-heap to track top-k candidates.
+    ///
+    /// ### Params
+    ///
+    /// * `query_vec` - Query vector (must match index dimensionality)
+    /// * `k` - Number of neighbours to return
+    /// * `nprobe` - Number of clusters to search. A good default here is
+    ///   `sqrt(nlist)`.
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of `(indices, distances)` sorted by distance (nearest first)
+    #[inline]
+    pub fn query_bf16(
+        &self,
+        query_vec: &[bf16],
+        k: usize,
+        nprobe: Option<usize>,
+    ) -> (Vec<usize>, Vec<T>) {
+        let query_vec_t: Vec<T> = decode_bf16_quantisation(query_vec);
+        let nprobe = nprobe
+            .unwrap_or_else(|| ((self.nlist as f64).sqrt() as usize).max(1))
+            .min(self.nlist);
+        let k: usize = k.min(self.n);
+        let query_norm: T = if matches!(self.metric, Dist::Cosine) {
+            bf16_norm(query_vec)
+        } else {
+            T::from_f32(1.0).unwrap()
+        };
+
+        // 1. find the top `nprobe` centroids, expanding to cover >= k reachable.
+        let mut cluster_dists: Vec<(_, usize)> =
+            self.get_centroids_dist(&query_vec_t, query_norm, nprobe);
+        let probed = select_probed_clusters(&mut cluster_dists, &self.offsets, nprobe, k);
+
+        // 2. search only those clusters in the CSR layout
+        let mut buffer = SortedBuffer::with_capacity(k);
+
+        for cluster_idx in probed {
+            let start = self.offsets[cluster_idx] as usize;
+            let end = self.offsets[cluster_idx + 1] as usize;
+
+            for vec_idx in start..end {
+                let dist = match self.metric {
+                    Dist::SquaredEuclidean => {
+                        self.euclidean_distance_to_query_dual_bf16(vec_idx, query_vec)
+                    }
+                    Dist::Cosine => self.cosine_distance_to_query_dual_bf16(
+                        vec_idx,
+                        query_vec,
+                        bf16::from_f32(query_norm.to_f32().unwrap()),
+                    ),
+                    Dist::Manhattan => unreachable!(),
+                };
+                buffer.insert((OrderedFloat(dist), vec_idx), k);
+            }
+        }
+
+        let (distances, indices) = buffer
+            .data()
+            .iter()
+            .map(|(d, i)| (d.0, self.original_ids[*i] as usize))
+            .unzip();
+        (indices, distances)
+    }
+
+    /// Function will optimise memory layout and put vectors sorted by cluster
+    /// id
+    ///
+    /// ### Returns
+    ///
+    /// New to old mapping
+    fn optimise_memory_layout(&mut self) -> Vec<u32> {
+        let mut new_to_old = Vec::with_capacity(self.n);
+
+        for cluster in 0..self.nlist {
+            let start = self.offsets[cluster] as usize;
+            let end = self.offsets[cluster + 1] as usize;
+            new_to_old.extend_from_slice(&self.all_indices[start..end]);
+        }
+
+        permute_rows_in_place(&mut self.vectors_flat, self.dim, &new_to_old);
+        if !self.norms.is_empty() {
+            permute_rows_in_place(&mut self.norms, 1, &new_to_old);
+        }
+        self.all_indices.clear();
+        self.all_indices.shrink_to_fit();
+
+        new_to_old
+    }
+
+    /// Returns the size of the index in bytes
+    ///
+    /// ### Returns
+    ///
+    /// Number of bytes used by the index
+    pub fn memory_usage_bytes(&self) -> usize {
+        std::mem::size_of_val(self)
+            + self.vectors_flat.capacity() * std::mem::size_of::<bf16>()
+            + self.norms.capacity() * std::mem::size_of::<bf16>()
+            + self.centroids.capacity() * std::mem::size_of::<T>()
+            + self.centroids_norm.capacity() * std::mem::size_of::<T>()
+            + self.all_indices.capacity() * std::mem::size_of::<u32>()
+            + self.offsets.capacity() * std::mem::size_of::<u32>()
+    }
+}
+
+///////////
+// Tests //
+///////////
+
+/////////////
+// IndexIo //
+/////////////
+
+#[cfg(feature = "serialise")]
+impl<T> IndexIo for IvfIndexBf16<T>
+where
+    T: AnnSearchFloat,
+{
+    type Elem = T;
+
+    const KIND: &'static str = "ivf_bf16";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use faer::Mat;
+    use faer_traits::ComplexField;
+    use num_traits::{Float, FromPrimitive};
+
+    fn get_default_k_means() -> Option<KMeansTrainingParams> {
+        Some(KMeansTrainingParams::new(10, None, None))
+    }
+
+    fn create_test_data<T: Float + FromPrimitive + ComplexField>(n: usize, dim: usize) -> Mat<T> {
+        let mut data = Mat::zeros(n, dim);
+        for i in 0..n {
+            for j in 0..dim {
+                data[(i, j)] = T::from_f64((i * dim + j) as f64 * 0.1).unwrap();
+            }
+        }
+        data
+    }
+
+    #[test]
+    fn test_ivf_bf16_construction_euclidean() {
+        let data = create_test_data::<f32>(200, 32);
+        let index = IvfIndexBf16::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(10),
+            get_default_k_means(),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        assert_eq!(index.n, 200);
+        assert_eq!(index.dim, 32);
+        assert_eq!(index.nlist, 10);
+        assert_eq!(index.vectors_flat.len(), 200 * 32);
+        assert!(index.norms.is_empty());
+    }
+
+    #[test]
+    fn test_ivf_bf16_construction_cosine() {
+        let data = create_test_data::<f32>(200, 32);
+        let index = IvfIndexBf16::build(
+            data.as_ref(),
+            Dist::Cosine,
+            Some(10),
+            get_default_k_means(),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        assert_eq!(index.n, 200);
+        assert_eq!(index.dim, 32);
+        assert_eq!(index.nlist, 10);
+        assert_eq!(index.norms.len(), 200);
+    }
+
+    #[test]
+    fn test_ivf_bf16_query_returns_k_results() {
+        let data = create_test_data::<f32>(200, 32);
+        let index = IvfIndexBf16::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(10),
+            get_default_k_means(),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let (indices, distances) = index.query(&query, 10, Some(10)).unwrap();
+
+        assert_eq!(indices.len(), 10);
+        assert_eq!(distances.len(), 10);
+    }
+
+    #[test]
+    fn test_ivf_bf16_query_sorted() {
+        let data = create_test_data::<f32>(200, 32);
+        let index = IvfIndexBf16::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(10),
+            get_default_k_means(),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let (_, distances) = index.query(&query, 10, Some(10)).unwrap();
+
+        for i in 1..distances.len() {
+            assert!(distances[i] >= distances[i - 1]);
+        }
+    }
+
+    #[test]
+    fn test_ivf_bf16_query_row() {
+        let data = create_test_data::<f32>(200, 32);
+        let index = IvfIndexBf16::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(10),
+            get_default_k_means(),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let (indices, distances) = index.query_row(data.as_ref().row(0), 10, Some(10)).unwrap();
+
+        assert!(indices.len() <= 10);
+        assert!(distances.len() <= 10);
+        assert_eq!(indices.len(), distances.len());
+    }
+
+    #[test]
+    fn test_ivf_bf16_query_cosine() {
+        let data = create_test_data::<f32>(200, 32);
+        let index = IvfIndexBf16::build(
+            data.as_ref(),
+            Dist::Cosine,
+            Some(10),
+            get_default_k_means(),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let (indices, distances) = index.query(&query, 10, Some(10)).unwrap();
+
+        assert_eq!(indices.len(), 10);
+        assert_eq!(distances.len(), 10);
+        for i in 1..distances.len() {
+            assert!(distances[i] >= distances[i - 1]);
+        }
+    }
+
+    #[test]
+    fn test_ivf_bf16_knn_graph() {
+        let data = create_test_data::<f32>(100, 32);
+        let index = IvfIndexBf16::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(10),
+            get_default_k_means(),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let (knn_indices, knn_distances) = index.generate_knn(5, Some(10), true, Verbosity::Quiet);
+
+        assert_eq!(knn_indices.len(), 100);
+        assert!(knn_distances.is_some());
+
+        for neighbours in knn_indices.iter() {
+            assert!(neighbours.len() <= 5);
+        }
+    }
+
+    #[test]
+    fn test_ivf_bf16_nprobe_variation() {
+        let data = create_test_data::<f32>(500, 32);
+        let index = IvfIndexBf16::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(20),
+            get_default_k_means(),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let (indices1, _) = index.query(&query, 10, Some(2)).unwrap();
+        let (indices2, _) = index.query(&query, 10, Some(10)).unwrap();
+
+        assert!(indices1.len() <= 10);
+        assert!(indices2.len() <= 10);
+    }
+
+    #[test]
+    fn test_ivf_bf16_expands_nprobe_when_probed_cells_underfill_k() {
+        // 500 vectors across 100 cells - avg 5 per cell. nprobe=1 cannot
+        // reach k=25; auto-expansion must walk more cells.
+        let data = create_test_data::<f32>(500, 32);
+        let index = IvfIndexBf16::build(
+            data.as_ref(),
+            Dist::SquaredEuclidean,
+            Some(100),
+            get_default_k_means(),
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query: Vec<f32> = (0..32).map(|i| i as f32 * 0.1).collect();
+        let (indices, distances) = index.query(&query, 25, Some(1)).unwrap();
+
+        assert_eq!(indices.len(), 25);
+        assert_eq!(distances.len(), 25);
+    }
+}

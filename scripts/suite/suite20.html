@@ -1,0 +1,173 @@
+<!doctype html><meta charset="utf-8"><body><script src="lib.js"></script>
+<script>
+// Section 20: ManifoldNG (embedded WebAssembly module: UMAP, t-SNE, Phenograph, FlowSOM, ...).
+(async () => {
+  let L;
+  try {
+    L = await fresh({ fixtures: 1 });
+    const E = s => L.E(s), w = L.w;
+    E('generateStarterWorkspace()'); await sleep(2500);
+    E(`window.T = {
+      sl: ms => new Promise(r => setTimeout(r, ms)),
+      f: () => fcsFiles[0],
+      root: () => fcsFiles[0].populations.find(p => p._isAll),
+      pi: name => fcsFiles[0].params.findIndex(p => p.name === name),
+      col: name => { const f = fcsFiles[0], c = T.pi(name), a = new Float32Array(f.nEvents); for (let e = 0; e < f.nEvents; e++) a[e] = f.data[e * f.nPar + c]; return a; },
+      nan: name => T.col(name).filter(Number.isNaN).length,
+      wait: async (ms = 120000) => { const t = Date.now(); while (_mng.job && Date.now() - t < ms) await T.sl(200); return !_mng.job; },
+      byName: n => fcsFiles[0].populations.find(p => p.name === n),
+    }`);
+    const N = E('T.f().nEvents'), P0 = E('T.f().nPar'), rootId = E('T.root().id');
+    E('addPlot(0, 1)'); await sleep(800);
+    const oldPlot = E('plots[plots.length - 1].id');   // a plot made before any run
+
+    R('20.1', 'The module is embedded (gzip + base64 with a SHA-256) and the worker source is present',
+      E(`mngAvailable() && /^[0-9a-f]{64}$/.test(_mngWasmBlock().dataset.sha256) && !!document.getElementById('manifoldng-worker-src')`), E('_mngWasmBlock().dataset.sha256'));
+    const speed = await E('mngSpeed()');
+    R('20.2', 'Calibration runs and gives a speed factor (this computer vs the benchmark machine)', speed > 0.2 && speed < 20, speed);
+    const caps = E(`({ umap: mngCap('umap', 12), tsne_bh: mngCap('tsne_bh', 12), phate: mngCap('phate', 12), flowsom: mngCap('flowsom', 12), flowsom40: mngCap('flowsom', 40),
+      at: mngPredict('umap', mngCap('umap', 12), 12).secs })`);
+    R('20.3', 'Per-method caps: t-SNE BH < UMAP < FlowSOM; more channels lower FlowSOM\'s cap; predicted time at the cap is about 60 s',
+      caps.tsne_bh < caps.umap && caps.umap < caps.flowsom && caps.flowsom40 < caps.flowsom && caps.at > 45 && caps.at <= 61, caps);
+
+    // ── the dialog ──
+    E(`showManifoldDialog(${rootId})`); await sleep(400);
+    const dlg = E(`(() => { const m = document.getElementById('mng-modal'); return m && { method: m.querySelector('#mng-method').value, n: +m.querySelector('#mng-n').value,
+      max: +m.querySelector('#mng-n').max, chans: m.querySelectorAll('#mng-chans input').length, checked: m.querySelectorAll('#mng-chans input:checked').length,
+      runOk: !m.querySelector('#mng-run').disabled, predict: m.querySelector('#mng-predict').textContent }; })()`);
+    R('20.4', 'Dialog opens on a population with UMAP, the event count at min(events, default), the input limit at the memory limit, fluorescence ticked, a time prediction, Run enabled',
+      dlg && dlg.method === 'umap' && dlg.n === Math.min(N, E(`mngCap('umap', ${dlg.checked})`)) && dlg.max === Math.min(N, E(`mngMemCap('umap', ${dlg.checked})`)) && dlg.checked > 1 && dlg.checked <= dlg.chans && /About .* on this computer/.test(dlg.predict) && dlg.runOk, dlg);
+    const setN = v => E(`(() => { const i = document.querySelector('#mng-n'); i.value = ${v}; i.dispatchEvent(new Event('input')); })()`);
+    const dlgState = () => E(`({ run: document.querySelector('#mng-run').textContent, disabled: document.querySelector('#mng-run').disabled, text: document.querySelector('#mng-predict').textContent })`);
+    E('window.__sp = _mng.speed; _mng.speed = 500'); setN(N);
+    const slow = dlgState();
+    R('20.5', 'Above the default (a slow computer): a warning with the predicted time and memory, and Run becomes "Run anyway" (still allowed)',
+      !slow.disabled && slow.run === 'Run anyway' && /Above the default: predicted .* and [\d,]+ MB/.test(slow.text) && /4 GB/.test(slow.text), slow);
+    E('window.__mk = MNG_METHODS.umap.memK; MNG_METHODS.umap.memK = 400'); setN(N);
+    const big = dlgState();
+    R('20.5b', 'Above the memory limit: "Too many events" with the largest count that fits, and Run is disabled',
+      big.disabled && /Too many events/.test(big.text) && /At most [\d,]+ events/.test(big.text), big);
+    E('MNG_METHODS.umap.memK = __mk; _mng.speed = __sp'); setN(N);
+    R('20.5c', 'Back at normal speed with all events (under the default): no warning, plain Run', (s => !s.disabled && s.run === 'Run' && !/Above the default|Too many/.test(s.text))(dlgState()), dlgState());
+    E(`(() => { const m = document.getElementById('mng-modal'); const i = m.querySelector('#mng-n'); i.value = 3000; i.dispatchEvent(new Event('input')); })()`);
+    E(`(() => { const m = document.getElementById('mng-modal'); m.querySelector('#mng-method').value = 'tsne_bh'; m.querySelector('#mng-method').dispatchEvent(new Event('change')); m.querySelector('#mng-method').value = 'umap'; m.querySelector('#mng-method').dispatchEvent(new Event('change')); const i = m.querySelector('#mng-n'); i.value = 3000; i.dispatchEvent(new Event('input')); })()`);
+    const statusSeen = [];
+    E(`document.querySelector('#mng-run').click()`);
+    for (let i = 0; i < 600 && E('!!_mng.job'); i++) {
+      statusSeen.push(E(`[document.getElementById('mng-status').style.display, document.getElementById('mng-status-text').textContent, document.getElementById('mng-status-bar').style.width]`));
+      await sleep(50);
+    }
+    const shown = statusSeen.filter(s => s[0] === 'flex');
+    R('20.6', 'The status bar shows the run (method, stage, time left) with a growing bar, and hides when done',
+      shown.length > 0 && /^UMAP on ".*" \(3,000 events, \d+ channels\)/.test(shown[0][1]) && shown.some(s => /Optimising \d+\/500 .* left/.test(s[1]) && parseFloat(s[2]) > 0) && E(`document.getElementById('mng-status').style.display`) === 'none',
+      { first: shown[0], last: shown[shown.length - 1], n: shown.length });
+
+    const u = E(`(() => { const f = T.f(), i1 = T.pi('UMAP_All events_1'), i2 = T.pi('UMAP_All events_2');
+      return { nPar: f.nPar, i1, i2, d1: f.params[i1] && f.params[i1].derived, nan1: T.nan('UMAP_All events_1'), nan2: T.nan('UMAP_All events_2'),
+        spec: f.manifolds && f.manifolds[0], sample: T.byName('UMAP_All events sample') && T.byName('UMAP_All events sample').indices.length,
+        plot: (() => { const p = plots[plots.length - 1]; return { x: p.xParam, y: p.yParam, pop: populations.find(q => q.id === p.inputPop).name, xs: plotScale(p, 'x'), ys: plotScale(p, 'y') }; })() }; })()`);
+    R('20.7', 'UMAP adds UMAP_All events_1 and _2 (derived, linear), NaN for the events not in the 3,000 sample, and records the run',
+      u.nPar === P0 + 2 && u.i1 === P0 && u.d1 && u.d1.kind === 'embed' && u.nan1 === N - 3000 && u.nan2 === N - 3000 &&
+      u.spec && u.spec.method === 'umap' && u.spec.events === 3000 && u.spec.seed === 42 && u.spec.columns.join() === 'UMAP_All events_1,UMAP_All events_2', u);
+    const sc = E(`(() => { const r = [T.col('UMAP_All events_1'), T.col('UMAP_All events_2')].map(a => { let lo = Infinity, hi = -Infinity; for (const v of a) { if (v < lo) lo = v; if (v > hi) hi = v; } return [lo, hi]; });
+      return { r, raw: T.f().manifolds[0].rawRange, to: T.f().manifolds[0].scaledTo }; })()`);
+    const fileName = E('T.f().filename');
+    R('20.7a', 'Columns are named after the method and the population run; a whole-file run says "All events", never the file name',
+      E(`T.f().params.slice(${P0}).map(p => p.name).join('|')`) === 'UMAP_All events_1|UMAP_All events_2' && !E(`T.f().params.some(p => p.name.includes(${JSON.stringify(fileName)}) || (p.longName || '').includes(${JSON.stringify(fileName)}))`),
+      E(`T.f().params.slice(${P0}).map(p => [p.name, p.longName])`));
+    R('20.7b', 'Each embedding axis is scaled to 0-10 over the events that were run; the raw range is kept in the record',
+      sc.r.every(([lo, hi]) => Math.abs(lo) < 1e-5 && Math.abs(hi - 10) < 1e-4) && sc.raw.length === 2 && sc.raw.every(([lo, hi]) => hi > lo) && sc.to.join() === '0,10', sc);
+    const om = E(`[...document.querySelectorAll('#x-sel-${oldPlot} option, #y-sel-${oldPlot} option')].map(o => +o.value).filter(v => v === T.pi('UMAP_All events_1') || v === T.pi('UMAP_All events_2')).length`);
+    R('20.7c', 'A plot made before the run offers the new UMAP columns in its X and Y menus', om === 4, om);
+    R('20.8', 'A "UMAP_All events sample" population holds exactly the 3,000 events, and a plot of the two UMAP columns on it opens with linear axes',
+      u.sample === 3000 && u.plot.x === u.i1 && u.plot.y === u.i2 && u.plot.pop === 'UMAP_All events sample' && u.plot.xs === 'lin' && u.plot.ys === 'lin', u.plot);
+    const ev = E(`(() => { const g = T.byName('UMAP_All events sample'), before = g.indices.length; evalGate(g); return [before, g.indices.length]; })()`);
+    R('20.9', 'The sample population re-evaluates to the same events from its range gate (it saves and templates like any gate)', ev[0] === ev[1], ev);
+
+    // ── same seed, same result ──
+    E(`runManifold({ popId: ${rootId}, key: 'umap', channels: T.f().manifolds[0].channels.map(T.pi), n: 3000, params: [15, 0.1], seed: 42, zscore: false })`);
+    await E('T.wait()');
+    const same = E(`(() => { const a = T.col('UMAP_All events_1'), b = T.col('UMAP_All events-2_1'); let diff = 0, n = 0; for (let e = 0; e < a.length; e++) { if (Number.isNaN(a[e]) !== Number.isNaN(b[e])) diff++; else if (!Number.isNaN(a[e])) { n++; if (a[e] !== b[e]) diff++; } } return { n, diff }; })()`);
+    R('20.10', 'A second run with the same seed and events is named UMAP_All events-2_1 and -2_2 and gives identical values', same.n === 3000 && same.diff === 0, same);
+
+    // ── clustering ──
+    const sampleId = E(`T.byName('UMAP_All events sample').id`);
+    E(`runManifold({ popId: ${sampleId}, key: 'phenograph', channels: T.f().manifolds[0].channels.map(T.pi), n: 3000, params: [30, 1, 10], seed: 7, zscore: false })`);
+    await E('T.wait()');
+    const ph = E(`(() => { const f = T.f(), c = T.pi('Phenograph_UMAP_All events sample'), lab = T.col('Phenograph_UMAP_All events sample');
+      const kids = f.populations.filter(p => p.gateInfo && p.gateInfo.xParam === c && /^Phenograph_UMAP_All events sample \\d+$/.test(p.name));
+      const sum = kids.reduce((s, p) => s + p.indices.length, 0); const unassigned = lab.filter(v => v === -1).length;
+      const evalSame = kids.every(p => { const n0 = p.indices.length; evalGate(p); return p.indices.length === n0; });
+      return { c, k: kids.length, sum, unassigned, labelled: lab.filter(v => v >= 1).length, parent: kids.every(p => p.parentId === ${sampleId}),
+        derived: f.params[c].derived, evalSame, coloured: kids.filter(p => !p.noColor).length,
+        plot: (() => { const p = plots[plots.length - 1]; return [f.params[p.xParam].name, f.params[p.yParam].name]; })() }; })()`);
+    R('20.11', 'Phenograph adds a label parameter and one child population per cluster; cluster sizes plus unassigned = 3,000; gates re-evaluate to the same events',
+      ph.c > 0 && ph.k >= 2 && ph.sum === ph.labelled && ph.sum + ph.unassigned === 3000 && ph.parent && ph.derived && ph.derived.kind === 'cluster' && ph.evalSame, ph);
+    R('20.12', 'The cluster plot uses the newest embedding of the file', ph.plot.join() === 'UMAP_All events-2_1,UMAP_All events-2_2', ph.plot);
+
+    E(`runManifold({ popId: ${rootId}, key: 'flowsom', channels: T.f().manifolds[0].channels.map(T.pi), n: ${N}, params: [6, 6, 5, 8], seed: 1, zscore: false })`);
+    await E('T.wait()');
+    const fs = E(`(() => { const c = T.pi('FlowSOM_All events'), lab = T.col('FlowSOM_All events'); return { c, nan: lab.filter(Number.isNaN).length, k: new Set(lab).size,
+      pops: T.f().populations.filter(p => /^FlowSOM_All events \\d+$/.test(p.name)).length, sample: !!T.byName('FlowSOM_All events sample') }; })()`);
+    R('20.13', 'FlowSOM on every event: 8 metaclusters, no NaN, no sample population (all events used)', fs.c > 0 && fs.nan === 0 && fs.k === 8 && fs.pops === 8 && !fs.sample, fs);
+
+    // ── cancel ──
+    const nParBefore = E('T.f().nPar');
+    E(`runManifold({ popId: ${rootId}, key: 'tsne_bh', channels: T.f().manifolds[0].channels.map(T.pi), n: 6000, params: [30], seed: 3, zscore: false })`);
+    await sleep(2500);
+    const running = E('!!_mng.job && !!_mng.job.worker');
+    E('cancelManifold()'); await sleep(600);
+    R('20.14', 'Cancel stops a run: nothing is added and the status bar hides', running && !E('_mng.job') && E('T.f().nPar') === nParBefore && E(`document.getElementById('mng-status').style.display`) === 'none',
+      { running, nPar: E('T.f().nPar'), nParBefore });
+
+    // ── compensation keeps the derived columns ──
+    const comp = E(`(() => { const f = T.f(); if (!f.spillMatrix) return 'no spill'; const a = T.col('UMAP_All events_1'); recomputeCompensation(f.spillMatrix.map(r => [...r]), f.fileId);
+      const b = T.col('UMAP_All events_1'); let d = 0; for (let e = 0; e < a.length; e++) if (!(a[e] === b[e] || (Number.isNaN(a[e]) && Number.isNaN(b[e])))) d++; return d; })()`);
+    R('20.15', 'Recomputing compensation keeps the ManifoldNG columns', comp === 0 || comp === 'no spill', comp);
+
+    // ── undo removes the populations; columns stay ──
+    const kBefore = E(`T.f().populations.filter(p => /^FlowSOM_All events \\d+$/.test(p.name)).length`);
+    E('undo()'); await sleep(500);
+    R('20.16', 'Undo removes the last run\'s populations (its columns stay)', kBefore === 8 && E(`T.f().populations.filter(p => /^FlowSOM_All events \\d+$/.test(p.name)).length`) === 0 && E(`T.pi('FlowSOM_All events')`) > 0, '');
+    E('redo()'); await sleep(500);
+
+    // ── FCS export round trip ──
+    const fcs = E(`(() => { let got; const o = _downloadBytes; _downloadBytes = b => { got = b; }; exportPopulationFCS(T.root().id); _downloadBytes = o;
+      const txt = new TextDecoder('latin1').decode(got.slice(0, 20000)); window.__fcs = got.buffer; return { len: got.length, kw: /FLOWNG_MANIFOLDS/.test(txt) }; })()`);
+    const poolBefore = E('poolFiles.length');
+    E(`loadFCS(__fcs.slice(0), 'roundtrip.fcs')`); await sleep(6000);
+    const rt = E(`(() => { const f = poolFiles[poolFiles.length - 1]; const i = f.params.findIndex(p => p.name === 'UMAP_All events_1');
+      return { pool: poolFiles.length, nPar: f.nPar, derived: i >= 0 && f.params[i].derived, specs: (f.manifolds || []).length }; })()`);
+    R('20.17', 'Exported FCS carries FLOWNG_MANIFOLDS; reopened, its ManifoldNG columns are marked as such again',
+      fcs.kw && rt.pool === poolBefore + 1 && rt.nPar === E('T.f().nPar') && rt.derived && rt.derived.kind === 'embed' && rt.specs >= 4, { fcs, rt });
+
+    // ── shared HTML ──
+    E(`window.cap=null; const oc=URL.createObjectURL; URL.createObjectURL=b=>{cap=b;return oc(b)};`);
+    const share = async sterile => {
+      E('showShareDialog()'); await sleep(300);
+      E(`document.getElementById('share-maxev').value=''; document.getElementById('share-sterile').checked=${sterile}`);
+      await sleep(600);
+      E('window.__done=false; doExportShareable().then(()=>{__done=true})'); for (let i = 0; i < 120 && !E('__done'); i++) await sleep(500);
+      E(`document.getElementById('share-done')&&document.getElementById('share-done').remove()`);
+      return await w.cap.text();
+    };
+    const locked = await share(true);
+    const lb = JSON.parse(locked.match(/<script id="flowng-bundle" type="application\/json">([^<]*)<\/script>/)[1]);
+    const lf = lb.files[0];
+    R('20.18', 'A locked shared file has no ManifoldNG module or code, but keeps the ManifoldNG columns and run records',
+      !/manifoldng-wasm|manifoldng-worker-src|function showManifoldDialog|function runManifold|MNG_METHODS|mng-status/.test(locked) && lf.params.some(p => p.name === 'UMAP_All events_1' && p.derived) && Array.isArray(lf.manifolds) && lf.manifolds.length >= 4,
+      { size: locked.length, manifolds: lf.manifolds && lf.manifolds.length, hits: ['manifoldng-wasm', 'showManifoldDialog', 'mng-status', 'manifoldng-worker-src'].map(k => [k, locked.split(k).length - 1]),
+        ctx: (locked.match(/.{60}showManifoldDialog.{40}/g) || []).slice(0, 3) });
+    await fetch('/s20_locked.html', { method: 'POST', body: locked });
+    const L2 = await newFrame('s20_locked.html'); await sleep(4000);
+    const re = L2.E(`(() => { const f = fcsFiles[0]; const i = f.params.findIndex(p => p.name === 'UMAP_All events_1'); let nan = 0; for (let e = 0; e < f.nEvents; e++) if (Number.isNaN(f.data[e * f.nPar + i])) nan++;
+      return { i, derived: f.params[i] && f.params[i].derived, nan, n: f.nEvents, clusters: f.populations.filter(p => /^Phenograph_UMAP_All events sample \\d+$/.test(p.name)).length, specs: (f.manifolds || []).length,
+        mng: typeof showManifoldDialog }; })()`);
+    R('20.19', 'The locked file reopens with the columns (same NaN count), cluster populations and run records; no ManifoldNG code in it',
+      re.i >= 0 && re.derived && re.nan === N - 3000 && re.clusters === ph.k && re.specs >= 4 && re.mng === 'undefined', re);
+
+    R('20.err', 'console errors', REPORT.errors.length === 0, REPORT.errors);
+  } catch (e) { REPORT.errors.push('HARNESS ' + e + ' ' + e.stack); }
+  await finish('s20');
+})();
+</script>

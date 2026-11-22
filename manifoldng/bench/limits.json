@@ -1,0 +1,153 @@
+{
+ "umap": {
+  "method": 1,
+  "cap": 180000,
+  "limitedBy": "time",
+  "pre": 0.1,
+  "time": {
+   "a": 0.00004756,
+   "b": 1.16,
+   "beta": 0.09,
+   "refChannels": 20
+  },
+  "mem": {
+   "c": 32.2,
+   "mPerK": 0.8496
+  }
+ },
+ "tsne_bh": {
+  "method": 2,
+  "cap": 31000,
+  "limitedBy": "time",
+  "pre": 0.03,
+  "time": {
+   "a": 0.0004554,
+   "b": 1.138,
+   "beta": 0.05,
+   "refChannels": 20
+  },
+  "mem": {
+   "c": 1.3,
+   "mPerK": 3.7639
+  }
+ },
+ "tsne_fft": {
+  "method": 3,
+  "cap": 98000,
+  "limitedBy": "time",
+  "pre": 0.04,
+  "time": {
+   "a": 0.001585,
+   "b": 0.917,
+   "beta": 0,
+   "refChannels": 20
+  },
+  "mem": {
+   "c": 8,
+   "mPerK": 3.7846
+  }
+ },
+ "pacmap": {
+  "method": 4,
+  "cap": 340000,
+  "limitedBy": "time",
+  "pre": 0.4,
+  "time": {
+   "a": 0.000002105,
+   "b": 1.347,
+   "beta": 0.16,
+   "refChannels": 20
+  },
+  "mem": {
+   "c": 1.9,
+   "mPerK": 2.0637
+  }
+ },
+ "phate": {
+  "method": 5,
+  "cap": 140000,
+  "limitedBy": "time",
+  "pre": 0.95,
+  "time": {
+   "a": 0.01363,
+   "b": 0.704,
+   "beta": 0.02,
+   "refChannels": 20
+  },
+  "mem": {
+   "c": 14.7,
+   "mPerK": 11.2936
+  }
+ },
+ "densmap": {
+  "method": 6,
+  "cap": 150000,
+  "limitedBy": "time",
+  "pre": 0.07,
+  "time": {
+   "a": 0.00005199,
+   "b": 1.167,
+   "beta": 0.09,
+   "refChannels": 20
+  },
+  "mem": {
+   "c": 32.2,
+   "mPerK": 0.8496
+  }
+ },
+ "diffusion_maps": {
+  "method": 7,
+  "cap": 160000,
+  "limitedBy": "time",
+  "pre": 1,
+  "time": {
+   "a": 0.000452,
+   "b": 0.983,
+   "beta": 0.07,
+   "refChannels": 20
+  },
+  "mem": {
+   "c": 10.8,
+   "mPerK": 11.184
+  }
+ },
+ "phenograph": {
+  "method": 10,
+  "cap": 440000,
+  "limitedBy": "time",
+  "pre": 0.6,
+  "time": {
+   "a": 0.00001189,
+   "b": 1.187,
+   "beta": 0.27,
+   "refChannels": 20
+  },
+  "mem": {
+   "c": 140.6,
+   "mPerK": 1.2833
+  }
+ },
+ "flowsom": {
+  "method": 11,
+  "cap": 1600000,
+  "limitedBy": "time",
+  "pre": 0,
+  "time": {
+   "a": 0.00003822,
+   "b": 0.996,
+   "beta": 0.99,
+   "refChannels": 20
+  },
+  "mem": {
+   "c": 1.6,
+   "mPerK": 0.084
+  }
+ },
+ "_reference": {
+  "machine": "Apple M4 Pro, 24 GB",
+  "browser": "Chrome 157",
+  "calibrateSecs": 0.1834,
+  "capSecs": 60,
+  "memCapMB": 3500
+ }
+}

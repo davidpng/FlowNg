@@ -1,0 +1,317 @@
+[package]
+name = "ann-search-rs"
+version = "0.13.1"
+edition = "2021"
+# Exposes `DEP_MLXC_AVAILABLE` to dependants' build scripts, see build.rs.
+links = "mlxc"
+# benches/ also holds bench and profiling examples; only the GPU kernel
+# benches below are real bench targets.
+autobenches = false
+authors = ["Gregor Lueg <gregorlueg@me.com>"]
+license = "MIT"
+repository = "https://github.com/GregorLueg/ann-search-rs"
+description = "Various vector search algorithms in Rust. Designed specifically for single cell & computational biology applications."
+keywords = ["vector-search", "nearest-neighbor", "knn", "hnsw", "similarity-search"]
+categories = [
+    "algorithms",
+    "data-structures",
+    "science::bioinformatics",
+    "science::computational-biology",
+]
+exclude = ["docs/", "benchmarks/", ".github/", "CLAUDE.md"]
+
+[lib]
+name = "ann_search_rs"
+path = "src/lib.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+############
+# Features #
+############
+
+[features]
+default = ["accelerate"]
+## Enables binary index support with optional memory-mapped files for on-disk vector storage
+binary = ["memmap2", "bytemuck", "statrs", "half"]
+## Enables GPU-accelerated indices via the CubeCL backend
+gpu = ["cubecl", "cubecl-utils-rs", "half"]
+## Enables GPU integration tests (requires 'wgpu' and a GPU on the machine). This is for CI/CD
+gpu-tests = ["gpu"]
+## Enables quantised indices with different quantisations (BF16, SQ8, PQ, OPQ)
+quantised = ["half"]
+## Enables mimalloc as the global allocator for improved performance
+mimalloc = ["dep:mimalloc"]
+## Routes the GEMM through Apple Accelerate on macOS (no effect elsewhere), well
+# ahead of faer there. On by default; Accelerate ships with every macOS, so
+# there is nothing to install.
+accelerate = []
+## Accept `ndarray` 2-D arrays wherever a faer matrix is accepted.
+ndarray = ["dep:ndarray"]
+## Enables saving indices to disk and loading them back in
+serialise = ["dep:serde", "dep:bincode", "half?/serde"]
+## Experimental, Apple Silicon only: MLX backend via mlx-c (exhaustive, IVF,
+## NN-Descent/CAGRA). Needs `brew install mlx-c` (or MLX_C_PREFIX pointing at
+## an install). Without the library the build warns and the MLX code is left
+## out; check `MLX_AVAILABLE`. f32 only.
+mlx = []
+## Synthetic dataset generators with realistic single-cell structure, used by
+## the gridsearch examples and the published benchmark tables.
+synthetic = []
+
+# Dependecies
+[dependencies]
+bincode = {
+    version = "2.0.1",
+    features = ["serde", "std"],
+    optional = true
+}
+bytemuck = {
+    version = "1.24.0",
+    features = ["derive"],
+    optional = true
+}
+cubecl = {
+    version = "0.11.0",
+    # branch = "main",
+    features = ["wgpu"],
+    optional = true
+}
+cubecl-utils-rs = {
+    version = "0.2.0",
+    optional = true
+}
+document-features = "0.2.12"
+faer = { version = "0.24.4", default-features = false, features = ["std", "rayon", "sparse-linalg", "rand"] }
+faer-traits = "0.24.0"
+fixedbitset = "0.5.7"
+half = {
+    version = "2.7.1",
+    optional = true
+}
+memmap2 = {
+    version = "0.9.9",
+    optional = true
+}
+mimalloc = {
+    version = "0.1.48",
+    optional = true
+}
+ndarray = {
+    version = ">=0.16, <0.18",
+    optional = true
+}
+num-traits = "0.2.19"
+rand = "0.9.2"
+rand_distr = "0.5.1"
+rayon = "1.11.0"
+rdst = "0.20.14"
+rustc-hash = "2.1.1"
+serde = {
+    version = "1.0.228",
+    features = ["derive"],
+    optional = true
+}
+statrs = {
+    version = "0.18.0",
+    optional = true
+}
+thiserror = "2.0.18"
+thousands = "0.2.0"
+wide = "1.6.0"
+
+
+[dev-dependencies]
+approx = "0.5.1"
+clap = {
+    version = "4.5.53",
+    features = ["derive"]
+}
+tempfile = "3.24.0"
+ann-search-rs = { path = ".", default-features = false, features = ["synthetic"] }
+
+[package.metadata.docs.rs]
+features = ["binary", "quantised", "mimalloc", "ndarray", "serialise", "synthetic"]
+
+################
+# Gridsearches #
+################
+
+[[example]]
+name = "gridsearch_gpu"
+required-features = ["gpu"]
+
+[[example]]
+name = "bench_mlx_annb"
+path = "benches/bench_mlx_annb.rs"
+required-features = ["gpu", "mlx"]
+
+[[example]]
+name = "bench_mlx_exhaustive"
+path = "benches/bench_mlx_exhaustive.rs"
+required-features = ["gpu", "mlx", "synthetic"]
+
+[[example]]
+name = "bench_mlx_ivf"
+path = "benches/bench_mlx_ivf.rs"
+required-features = ["gpu", "mlx", "synthetic"]
+
+[[example]]
+name = "bench_mlx_cagra"
+path = "benches/bench_mlx_cagra.rs"
+required-features = ["gpu", "mlx", "synthetic"]
+
+[[example]]
+name = "bench_mlx_nndescent"
+path = "benches/bench_mlx_nndescent.rs"
+required-features = ["gpu", "mlx", "synthetic"]
+
+[[example]]
+name = "bench_mlx_nndescent_index"
+path = "benches/bench_mlx_nndescent_index.rs"
+required-features = ["gpu", "mlx", "synthetic"]
+
+[[example]]
+name = "gridsearch_cagra"
+required-features = ["gpu"]
+
+[[example]]
+name = "gridsearch_nsg_gpu"
+required-features = ["gpu"]
+
+[[example]]
+name = "gridsearch_clustered_nndescent"
+required-features = ["gpu"]
+
+[[example]]
+name = "gridsearch_sq8"
+required-features = ["quantised"]
+
+[[example]]
+name = "gridsearch_hnsw_quantised"
+required-features = ["quantised"]
+
+[[example]]
+name = "gridsearch_bf16"
+required-features = ["quantised"]
+
+[[example]]
+name = "gridsearch_opq"
+required-features = ["quantised"]
+
+[[example]]
+name = "gridsearch_pq"
+required-features = ["quantised"]
+
+[[example]]
+name = "bench_pq_codebooks"
+path = "benches/bench_pq_codebooks.rs"
+required-features = ["quantised"]
+
+[[example]]
+name = "gridsearch_soar_pq"
+required-features = ["quantised"]
+
+[[example]]
+name = "gridsearch_soar_opq"
+required-features = ["quantised"]
+
+[[example]]
+name = "gridsearch_binary"
+required-features = ["binary"]
+
+[[example]]
+name = "gridsearch_rabitq"
+required-features = ["binary"]
+
+[[example]]
+name = "gridsearch_store_encoding"
+required-features = ["binary"]
+
+[[example]]
+name = "bench_store_kernels"
+path = "benches/bench_store_kernels.rs"
+required-features = ["binary"]
+
+[[example]]
+name = "gridsearch_tq"
+required-features = ["binary"]
+
+[[example]]
+name = "profile_graph_rabitq"
+path = "benches/profile_graph_rabitq.rs"
+required-features = ["binary", "quantised"]
+
+[[example]]
+name = "gridsearch_rabitq_graphs"
+required-features = ["binary", "quantised"]
+
+#######################
+# Bench and profiling #
+#######################
+
+[[example]]
+name = "bench_dist_kernels"
+path = "benches/bench_dist_kernels.rs"
+
+[[example]]
+name = "bench_ivf_batch"
+path = "benches/bench_ivf_batch.rs"
+
+[[example]]
+name = "bench_kmeans_algos"
+path = "benches/bench_kmeans_algos.rs"
+
+[[example]]
+name = "profile_hnsw"
+path = "benches/profile_hnsw.rs"
+
+[[example]]
+name = "profile_kmeans"
+path = "benches/profile_kmeans.rs"
+
+[[example]]
+name = "profile_vamana"
+path = "benches/profile_vamana.rs"
+
+[[example]]
+name = "profile_pq_query"
+path = "benches/profile_pq_query.rs"
+required-features = ["quantised"]
+
+##################
+# Other examples #
+##################
+
+[[example]]
+name = "knn_comparison_gpu"
+required-features = ["gpu"]
+
+###########
+# Benches #
+###########
+
+[[bench]]
+name = "gpu_exhaustive_kernels"
+harness = false
+required-features = ["gpu"]
+
+[[bench]]
+name = "gpu_ivf_kernels"
+harness = false
+required-features = ["gpu"]
+
+[[bench]]
+name = "gpu_nndescent_kernels"
+harness = false
+required-features = ["gpu"]
+
+[[example]]
+name = "gridsearch_mlx"
+required-features = ["mlx"]
+
+[[example]]
+name = "gridsearch_cagra_mlx"
+required-features = ["mlx"]
