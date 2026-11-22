@@ -734,6 +734,7 @@
       </div>
       <div class="tb-row">
         <button class="tool-btn"        id="gbtn-autocomp" onclick="setGlobalMode('autocomp')" title="Autocomp: outline a population that should sit flat in this pair of axes (at least 100 events). The spillover coefficient between the two axes is fitted automatically. Undoable. Shortcut: A."><i>◎</i><span><b>A</b>utocomp</span></button>
+        <button class="tool-btn"        id="gbtn-range"    onclick="setGlobalMode('range')"    title="1D range: drag across a plot (2D or histogram) to gate every event between two X values. Drag a bar to change an end, or the translucent band to move the whole gate and set its height. Shortcut: D."><i>⟛</i><span><b>D</b> 1D range</span></button>
         <button class="tool-btn" id="undo-btn" onclick="undo()" title="Undo the last gate, colour, order, compensation or cofactor change (Ctrl/Cmd+Z)" disabled><i>↶</i>Undo</button>
         <button class="tool-btn" id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)" disabled><i>↷</i>Redo</button>
         <button class="tool-btn" onclick="showHistory()" id="history-btn" style="display:none" title="History: what has been done to this analysis, with times (no user names). Shared files keep the history when you save.">🕘 History</button>
@@ -805,7 +806,7 @@
       <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Click</kbd> — toggle selection<br>
       <kbd>Del</kbd>/<kbd>⌫</kbd> — remove selected plot(s)<br>
       <kbd>Esc</kbd> — cancel gate / deselect all<br>
-      <kbd>S</kbd> Select · <kbd>G</kbd> Polygon · <kbd>R</kbd> Rect · <kbd>Q</kbd> Quadrant · <kbd>E</kbd> Edit · <kbd>C</kbd> Comp · <kbd>A</kbd> Autocomp · <kbd>Delete</kbd> Delete mode (when no plot is selected; otherwise it removes the selected plots)<br>
+      <kbd>S</kbd> Select · <kbd>G</kbd> Polygon · <kbd>R</kbd> Rect · <kbd>Q</kbd> Quadrant · <kbd>E</kbd> Edit · <kbd>C</kbd> Comp · <kbd>A</kbd> Autocomp · <kbd>D</kbd> 1D range · <kbd>Delete</kbd> Delete mode (when no plot is selected; otherwise it removes the selected plots)<br>
       <kbd>Drag</kbd> ⠿ — reorder plots; drop on a tab to move it<br>
       <kbd>Right-click</kbd> canvas — axis range / cofactor<br>
       <kbd>Right-click</kbd> header — switch source file<br>
@@ -3411,10 +3412,15 @@ function buildAxisControls(plot) {
 
   const yDiv = document.getElementById(`yaxis-ctrl-${pid}`);
   yDiv.innerHTML = `<div style="transform:rotate(-90deg);white-space:nowrap;display:flex;gap:3px;align-items:center">
-    <select id="y-sel-${pid}" title="Y axis parameter" onchange="changeAxis(${pid},'y',this.value)"
-      style="font-size:10px;padding:2px 4px;background:#fff;color:#222;border:1px solid #ccc;border-radius:4px;max-width:140px">${pOpts(plot.yParam)}</select>
-    <button id="btn-ylog-${pid}" onclick="toggleAxisScale(${pid},'y')" title="Cycle: LOG → LIN → ASINH(300)"
-      style="font-size:9px;padding:2px 5px;border-radius:3px;cursor:pointer;${scaleBtnStyle(yScaleLabel)}">${yScaleLabel}</button>
+    <select id="y-sel-${pid}" title="Y axis parameter (Count / Percent draw a 1D histogram of the X axis)" onchange="changeAxis(${pid},'y',this.value)"
+      style="font-size:10px;padding:2px 4px;background:#fff;color:#222;border:1px solid #ccc;border-radius:4px;max-width:140px">
+      <option value="hist:count"${plot.hist==='count'?' selected':''}>Count</option>
+      <option value="hist:percent"${plot.hist==='percent'?' selected':''}>Percent</option>
+      ${pOpts(plot.hist ? -1 : plot.yParam)}</select>
+    ${plot.hist
+      ? `<button id="btn-ylog-${pid}" disabled title="Histogram Y axis is linear" style="font-size:9px;padding:2px 5px;border-radius:3px;${scaleBtnStyle('LIN')}">LIN</button>`
+      : `<button id="btn-ylog-${pid}" onclick="toggleAxisScale(${pid},'y')" title="Cycle: LOG → LIN → ASINH(300)"
+      style="font-size:9px;padding:2px 5px;border-radius:3px;cursor:pointer;${scaleBtnStyle(yScaleLabel)}">${yScaleLabel}</button>`}
   </div>`;
 }
 
@@ -3436,6 +3442,7 @@ function setMode(id, mode) {
   const txt =
     mode==='gate'   ? 'Click to add gate points' :
     mode==='autocomp' ? 'Click points around a population that should be flat in this pair; click the first point to fit spillover' :
+    mode==='range'  ? 'Drag across the plot to gate everything between two X values' :
     mode==='quad'   ? 'Click to place the quadrant crosshair; drag it afterwards with Select or Edit' :
     mode==='rectgate' ? 'Drag to draw a rectangle' :
     mode==='edit'   ? 'Click a gate to select; drag to move' :
@@ -3449,7 +3456,7 @@ function setMode(id, mode) {
 function setGlobalMode(mode) {
   globalMode = mode;
   // Update global toolbar button highlights
-  ['pan','gate','rectgate','quad','edit','delete','spill','autocomp'].forEach(m => {
+  ['pan','gate','rectgate','quad','edit','delete','spill','autocomp','range'].forEach(m => {
     const btn = document.getElementById(`gbtn-${m}`);
     if (btn) btn.classList.toggle('active', m === mode);
   });
@@ -3469,7 +3476,7 @@ function updateGlobalModeFromSelection() {
   if (sel.length === 1) {
     const m = sel[0].mode;
     globalMode = m;
-    ['pan','gate','rectgate','quad','edit','delete','spill','autocomp'].forEach(mode => {
+    ['pan','gate','rectgate','quad','edit','delete','spill','autocomp','range'].forEach(mode => {
       const btn = document.getElementById(`gbtn-${mode}`);
       if (btn) btn.classList.toggle('active', mode === m);
     });
@@ -3483,7 +3490,7 @@ function getSelectedPlots() {
   });
 }
 
-const _MODE_KEYS = { s: 'pan', g: 'gate', r: 'rectgate', q: 'quad', e: 'edit', c: 'spill', a: 'autocomp' };
+const _MODE_KEYS = { s: 'pan', g: 'gate', r: 'rectgate', q: 'quad', e: 'edit', c: 'spill', a: 'autocomp', d: 'range' };
 // Shortcuts only work while the toolbar is showing and no dialog is open
 function _modeKeysActive() {
   const tb = document.getElementById('global-toolbar');
@@ -3531,6 +3538,16 @@ document.addEventListener('keydown', e => {
 
 function changeAxis(id, axis, val, propagate=true) {
   const plot = plots.find(p=>p.id===id); if(!plot) return;
+  if (axis==='y' && String(val).startsWith('hist:')) {
+    plot.hist = String(val).slice(5);          // 'count' | 'percent'; yParam is kept for when the user leaves histogram mode
+    plot.mode = plot.mode === 'zoom' ? 'zoom' : 'pan';
+    plot.gatePoints = []; plot._editGate = null; plot._zoomRect = null; plot.zoomY = null;
+    plot._lodLevel = 2;
+    buildAxisControls(plot); renderPlot(plot);
+    if (propagate) { const sel = getSelectedPlots(); if (sel.length >= 2) sel.filter(pl=>pl.id!==id).forEach(pl => changeAxis(pl.id, axis, val, false)); }
+    return;
+  }
+  if (axis==='y') plot.hist = null;
   const paramIdx = parseInt(val);
   const sc = defaultScale(paramIdx);
   if (axis==='x') {
@@ -3653,6 +3670,7 @@ function renderPlot(plot) {
   const pop = populations.find(p => p.id === plot.inputPop); if (!pop) return;
   const tf = makeTransforms(plot, pad, pw, ph, W, H);
   plot._tf = tf; plot._pad = pad; plot._pw = pw; plot._ph = ph;
+  if (plot.hist) { renderHistogram(plot, ctx, fcsFile, pop, tf, pad, pw, ph, W, H); return; }
 
   // ── Progressive LOD (Fix 6) ───────────────────────────────────────────────
   // For large populations (> LOD_TARGET) we render at increasing resolution levels
@@ -3745,7 +3763,7 @@ function renderPlot(plot) {
   populations.forEach(pop2 => {
     if (!pop2.gateInfo || pop2.parentId !== plot.inputPop) return;
     if (pop2.gateInfo.xParam !== plot.xParam || pop2.gateInfo.yParam !== plot.yParam) return;
-    if (pop2.gateInfo.quad) return;   // quadrants are drawn as one crosshair below
+    if (pop2.gateInfo.quad || pop2.gateInfo.range) return;   // quadrants and 1D ranges have their own drawing
     const isDragging = plot._dragGate === pop2.id;
     const pts = isDragging ? plot._dragPts : pop2.gateInfo.rawPts;
     const isEditing = plot._editGate === pop2.id;
@@ -3770,6 +3788,8 @@ function renderPlot(plot) {
     ctx.font = 'bold 11px monospace';
     ctx.fillText(pop2.name, tf.dataToCanvasX(p0.rx)+4, tf.dataToCanvasY(p0.ry)-4);
   });
+
+  drawRangeGates(ctx, plot, tf, pad, pw, ph);
 
   // Quadrant crosshairs: one per group, with each quadrant's name and % of parent in its corner
   {
@@ -3916,6 +3936,99 @@ function renderPlot(plot) {
   }
 }
 
+// ─── 1D HISTOGRAM (Y axis = Count or Percent) ────────────────────────────────
+// One line for the plot's population plus one per gate beneath it, each in its gate's colour.
+// The bins slider sets the number of bins across the X range. Percent is each line's share of its
+// own population per bin, so lines of different size compare by shape; Count is raw events per bin.
+function renderHistogram(plot, ctx, fcsFile, pop, tf, pad, pw, ph, W, H) {
+  plot._lodLevel = 2;
+  const { data, nPar } = fcsFile;
+  const nb = Math.max(16, Math.min(1024, plot.bins || 256));
+  const xr = tf.xRange, xSpan = xr.max - xr.min, xp = plot.xParam, xs = tf.xls;
+  const isPct = plot.hist === 'percent';
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#1a1d27'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(pad.left, pad.top, pw, ph);
+
+  // Lines: the population itself, then its gates (same colour rules as the density plot)
+  const allGates = getColorGates(plot.inputPop);
+  const anc = new Set();
+  { let c = pop; while (c) { const par = populations.find(p => p.id === c.parentId); if (!par || par._isAll) break; anc.add(par.id); c = par; } }
+  const prec = fcsFile.colorPrecedence;
+  // Only true children of this population (its own gates, and theirs), not back-gated look-alikes
+  const isBelow = g => { let c = g, d = 0; while (c && d++ < 64) { if (c.parentId === pop.id) return true; c = populations.find(q => q.id === c.parentId); } return false; };
+  const gates = allGates.filter(g => !anc.has(g.id) && g.id !== pop.id && g.indices && (isBelow(g) || (pop._isAll && g.boolInfo)))
+    .sort((a, b) => { const ai = prec.indexOf(a.id), bi = prec.indexOf(b.id); return (bi === -1 ? 9999 : bi) - (ai === -1 ? 9999 : ai); })
+    .map(_withEffColor).slice(-NG2_MAX_CLASSES);
+  const baseCol = (pop.id !== 0 && !pop._isAll) ? _primoColor(pop) : null;
+  const lines = [{ idx: null, n: popCount(pop), color: baseCol || '#555555', w: 2, gid: pop.id }];
+  gates.forEach(g => lines.push({ gid: g.id, idx: g.indices, n: g.indices.length, color: (g.noColor || !g.color) ? (_siblingColor(g) || '#888888') : g.color, w: 1.5 }));
+
+  const inPop = new Uint8Array(fcsFile.nEvents);
+  const n = popCount(pop);
+  for (let i = 0; i < n; i++) inPop[popGetIndex(pop, i)] = 1;
+  const k = xSpan > 0 ? nb / xSpan : 0;
+  const binOf = e => Math.floor((toDisplay(data[e * nPar + xp], xp, xs) - xr.min) * k);
+
+  let ymax = 0;
+  for (const L of lines) {
+    const h = new Float64Array(nb);
+    if (k > 0) {
+      if (L.idx === null) { for (let i = 0; i < n; i++) { const b = binOf(popGetIndex(pop, i)); if (b >= 0 && b < nb) h[b]++; } }
+      else { for (let i = 0; i < L.idx.length; i++) { const e = L.idx[i]; if (!inPop[e]) continue; const b = binOf(e); if (b >= 0 && b < nb) h[b]++; } }
+    }
+    if (isPct) { const t = L.n || 1; for (let b = 0; b < nb; b++) h[b] = 100 * h[b] / t; }
+    L.h = h;
+    for (let b = 0; b < nb; b++) if (h[b] > ymax) ymax = h[b];
+  }
+  if (!(ymax > 0)) ymax = 1;
+  const yTop = ymax * 1.05;
+  const yTicks = _axisTicks('lin', 0, 0, yTop, ph, 26);
+  const xTicks = _axisTicks(tf.xls, xp, xr.min, xr.max, pw, 52);
+  plot._histMax = yTop;
+  plot._histInfo = { bins: nb, mode: plot.hist, lines: lines.map(L => ({ n: L.n, color: L.color, total: L.h.reduce((a, b) => a + b, 0), gate: L.gid })) };
+
+  if (document.getElementById('showgrid').checked) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1;
+    xTicks.forEach(t => { const x = Math.round(pad.left + t.t * pw) + 0.5; ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + ph); ctx.stroke(); });
+    yTicks.forEach(t => { const y = Math.round(pad.top + ph - t.t * ph) + 0.5; ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + pw, y); ctx.stroke(); });
+  }
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(pad.left, pad.top, pw, ph); ctx.clip();
+  ctx.lineJoin = 'round';
+  // Biggest population first so gate lines stay visible on top
+  [...lines].reverse().forEach(L => {
+    ctx.strokeStyle = L.color; ctx.lineWidth = L.w;
+    ctx.beginPath();
+    for (let b = 0; b < nb; b++) {
+      const x = pad.left + (b + 0.5) / nb * pw, y = pad.top + ph - L.h[b] / yTop * ph;
+      b === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  });
+  drawRangeGates(ctx, plot, tf, pad, pw, ph);
+  ctx.restore();
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
+  ctx.strokeRect(pad.left, pad.top, pw, ph);
+  ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  xTicks.forEach(t => {
+    const cx = pad.left + t.t * pw;
+    ctx.beginPath(); ctx.moveTo(cx, pad.top + ph); ctx.lineTo(cx, pad.top + ph + 4); ctx.stroke();
+    _drawTickLabel(ctx, t, cx, pad.top + ph + 16, 'center');
+  });
+  yTicks.forEach(t => {
+    const cy = pad.top + ph - t.t * ph;
+    ctx.beginPath(); ctx.moveTo(pad.left, cy); ctx.lineTo(pad.left - 4, cy); ctx.stroke();
+    _drawTickLabel(ctx, t, pad.left - 7, cy + 3, 'right');
+  });
+  ctx.textAlign = 'left';
+  document.getElementById(`event-count-${plot.id}`).textContent = `${popCount(pop).toLocaleString()} events`;
+  updateCofactorHandles(plot);
+}
+
 // ─── FlowNg2-style axis ticks ────────────────────────────────────────────────
 // Log/asinh axes label a gridline at each power of ten (asinh also labels zero and the negative
 // decades); linear axes use 1/2/5 x 10^k steps. Labels print as mantissa x 10^k with a raised exponent.
@@ -4049,6 +4162,19 @@ function _ng2Anchor(hex) {
 }
 const _ng2GrayAnchor = g => { const c = _ng2ToLin(g); return [c, c, c]; };
 
+// The painting classes of a plot, in paint order (the last one containing an event owns it): the
+// farthest-descendant gate wins (depth, then colour precedence), so back-gated children show. A class's
+// colour is its own, else the nearest coloured ancestor's (already applied by _withEffColor), else its
+// highest-ranked coloured sibling's, else null (drawn gray).
+function _ng2ClassItems(orderedGates, renderPop) {
+  const depthOf = g => { let d = 0, c = g; while (c && c.parentId != null && d < 64) { c = populations.find(q => q.id === c.parentId); d++; } return d; };
+  return orderedGates
+    .filter(g => g.id !== renderPop.id)
+    .map((g, i) => ({ g, i, d: depthOf(g), col: (g.noColor || !g.color) ? _siblingColor(g) : g.color }))
+    .sort((a, b) => a.d - b.d || a.i - b.i)
+    .slice(-NG2_MAX_CLASSES);
+}
+
 function drawDensityNg2(ctx, plot, tf, pad, pw, ph, pop, renderPop, fcsFile, orderedGates) {
   const { data, nPar, nEvents } = fcsFile;
   const nb = Math.max(16, Math.min(1024, plot.bins || 256));
@@ -4060,20 +4186,14 @@ function drawDensityNg2(ctx, plot, tf, pad, pw, ph, pop, renderPop, fcsFile, ord
   ctx.fillRect(pad.left, pad.top, pw, ph);
   if (!(xSpan > 0) || !(ySpan > 0)) return true;
 
-  // Owning class per event: later (higher-precedence) gates overwrite earlier ones.
-  // Deepest gate wins; among equal depth the existing colour-precedence order decides.
-  const depthOf = g => { let d = 0, c = g; while (c && c.parentId != null && d < 64) { c = populations.find(q => q.id === c.parentId); d++; } return d; };
-  const classes = orderedGates
-    .filter(g => g.id !== renderPop.id)
-    .map((g, i) => ({ g, i, d: depthOf(g) }))
-    .sort((a, b) => a.d - b.d || a.i - b.i)
-    .map(o => o.g)
-    .slice(-NG2_MAX_CLASSES);
+  // Owning class per event: later items overwrite earlier ones (see _ng2ClassItems).
+  const classItems = _ng2ClassItems(orderedGates, renderPop);
+  const classes = classItems.map(o => o.g);
   const owner = new Int8Array(nEvents).fill(-1);
   classes.forEach((g, k) => { const ix = g.indices; for (let i = 0; i < ix.length; i++) owner[ix[i]] = k; });
-  const viewBaseColor = (renderPop.id !== 0 && !renderPop._isAll) ? _effColor(renderPop) : null;
+  const viewBaseColor = (renderPop.id !== 0 && !renderPop._isAll) ? _primoColor(renderPop) : null;
   const viewBase = viewBaseColor ? _ng2Anchor(viewBaseColor) : _ng2GrayAnchor(NG2_UNGATED_BASE);
-  const anchors = classes.map(g => (g.noColor || !g.color) ? _ng2GrayAnchor(NG2_NO_COLOR) : _ng2Anchor(g.color));
+  const anchors = classItems.map(o => o.col ? _ng2Anchor(o.col) : _ng2GrayAnchor(NG2_NO_COLOR));
   anchors.push(viewBase);                 // plane K = ungated remainder
   const planes = anchors.length;
 
@@ -4129,7 +4249,7 @@ function drawDensityNg2(ctx, plot, tf, pad, pw, ph, pop, renderPop, fcsFile, ord
   dotPops.forEach(g => {
     const boost = (g.dotBoost || 0);
     const rad = (ds + boost) / 2;
-    ctx.fillStyle = (g.noColor || !g.color || g._isAll) ? 'rgba(90,90,90,0.9)' : g.color;
+    ctx.fillStyle = g._isAll ? 'rgba(90,90,90,0.9)' : ((g.noColor || !g.color) ? (_siblingColor(g) || 'rgba(90,90,90,0.9)') : g.color);
     const ix = popIndicesArray(g), step = Math.max(1, Math.ceil(ix.length / 30000));
     ctx.beginPath();
     for (let i = 0; i < ix.length; i += step) {
@@ -4379,6 +4499,8 @@ function hitTestGate(cx, cy, gate, tf, plot) {
 }
 
 function onCanvasMouseDown(e, canvas, plot) {
+  if (rangeMouseDown(e, canvas, plot)) return;
+  if (plot.hist) { plot._emptyDown = (e.button === 0); return; }   // histogram plots take only 1D range gates
   plot._lodActive = true; // switch to subsample while interacting
   plot._lodLevel = 0;     // reset to fast level so interaction is instant
 
@@ -4428,7 +4550,7 @@ function onCanvasMouseDown(e, canvas, plot) {
   // Find which gate (if any) was hit, checking in precedence order (highest first)
   const childGates = populations.filter(p =>
     p.gateInfo && p.parentId === plot.inputPop &&
-    p.gateInfo.xParam === plot.xParam && p.gateInfo.yParam === plot.yParam
+    p.gateInfo.xParam === plot.xParam && p.gateInfo.yParam === plot.yParam && !p.gateInfo.range
   );
   // Sort by precedence descending so highest-precedence gate gets hit first
   childGates.sort((a,b) => {
@@ -4465,6 +4587,8 @@ function onCanvasMouseDown(e, canvas, plot) {
 }
 
 function onCanvasMouseMove(e, canvas, plot) {
+  if (rangeMouseMove(e, canvas, plot)) return;
+  if (plot.hist) return;
   // ── Spill drag: update coefficient in real-time ───────────────────────────
   if (plot._spillDragging) {
     const { cx, cy } = canvasCoords(e, canvas);
@@ -4584,6 +4708,8 @@ function onCanvasMouseMove(e, canvas, plot) {
 }
 
 function onCanvasHover(e, canvas, plot) {
+  if (rangeHover(e, canvas, plot)) return;
+  if (plot.hist) { canvas.style.cursor = 'default'; return; }
   // Spill mode: show resize cursor over interactive edge zones
   if (plot.mode === 'spill') {
     const { cx, cy } = canvasCoords(e, canvas);
@@ -4601,7 +4727,7 @@ function onCanvasHover(e, canvas, plot) {
   const tf = plot._tf; if (!tf) return;
   const childGates = populations.filter(p =>
     p.gateInfo && p.parentId === plot.inputPop &&
-    p.gateInfo.xParam === plot.xParam && p.gateInfo.yParam === plot.yParam
+    p.gateInfo.xParam === plot.xParam && p.gateInfo.yParam === plot.yParam && !p.gateInfo.range
   );
   for (const gate of childGates) {
     const hit = hitTestGate(cx, cy, gate, tf, plot);
@@ -4613,6 +4739,7 @@ function onCanvasHover(e, canvas, plot) {
 }
 
 function onCanvasMouseUp(e, canvas, plot) {
+  if (rangeMouseUp(e, canvas, plot)) return;
   // Always restore full-resolution render on mouse release
   if (plot._lodActive) {
     plot._lodActive = false;
@@ -4730,12 +4857,14 @@ function onCanvasMouseUp(e, canvas, plot) {
 }
 
 function onCanvasClick(e, canvas, plot) {
+  if (rangeClick(e, canvas, plot)) return;
+  if (plot.hist) return;
   if (plot.mode === 'delete') {
     const { cx, cy } = canvasCoords(e, canvas);
     const tf = plot._tf; if (!tf) return;
     const childGates = populations.filter(p =>
       p.gateInfo && p.parentId === plot.inputPop &&
-      p.gateInfo.xParam === plot.xParam && p.gateInfo.yParam === plot.yParam
+      p.gateInfo.xParam === plot.xParam && p.gateInfo.yParam === plot.yParam && !p.gateInfo.range
     );
     for (const gate of childGates) {
       const hit = hitTestGate(cx, cy, gate, tf, plot);
@@ -4855,6 +4984,181 @@ function createQuadrant(plot, rx, ry) {
   rebuildPopulationsView();
   refreshAfterGateChange();
   made.forEach(g => evalGateAsync(g));
+}
+
+// ─── 1D RANGE GATE ───────────────────────────────────────────────────────────
+// Two vertical bars with a translucent band between them; it gates every event whose X value lies
+// between the bars, on a 2D plot or a histogram. Stored as a tall rectangle (so evaluation, undo,
+// templates and the worker all work unchanged) plus gateInfo.range = { x1, x2, yf }, where yf is
+// the band's height as a fraction of the plot (0 bottom, 1 top). Shown on every plot of the same
+// population and X parameter, whatever its Y axis.
+const _RANGE_BIG = 1e12, _RANGE_BAND = 22;
+function _rangePts(x1, x2) { const B = _RANGE_BIG; return [{rx:x1,ry:-B},{rx:x2,ry:-B},{rx:x2,ry:B},{rx:x1,ry:B}]; }
+function _rangeGatesOn(plot) {
+  return populations.filter(p => p.gateInfo && p.gateInfo.range && p.parentId === plot.inputPop && p.gateInfo.xParam === plot.xParam);
+}
+function _rangeSet(gate, x1, x2, yf) {
+  const r = gate.gateInfo.range;
+  r.x1 = Math.min(x1, x2); r.x2 = Math.max(x1, x2); r.yf = Math.min(1, Math.max(0, yf));
+  gate.gateInfo.rawPts = _rangePts(r.x1, r.x2);
+}
+function _rangeGeom(gate, tf, pad, pw, ph) {
+  const r = gate.gateInfo.range;
+  return { xa: tf.dataToCanvasX(r.x1), xb: tf.dataToCanvasX(r.x2), y: pad.top + ph - r.yf * ph };
+}
+
+function drawRangeGates(ctx, plot, tf, pad, pw, ph) {
+  const items = _rangeGatesOn(plot).map(g => ({ g, geo: _rangeGeom(g, tf, pad, pw, ph), col: g.noColor ? (_effColor(g) || '#888') : (g.color || '#888') }));
+  const pv = plot._rangePreview;
+  if (pv) items.push({ g: { name: '' }, col: '#f5a623', geo: { xa: pv.xa, xb: pv.xb, y: pv.y } });
+  items.forEach(({ g, geo, col }) => {
+    const xa = Math.min(geo.xa, geo.xb), xb = Math.max(geo.xa, geo.xb), y = geo.y, hot = plot._editGate === g.id || (plot._rdrag && plot._rdrag.gate === g);
+    ctx.save();
+    ctx.globalAlpha = 0.38; ctx.fillStyle = col;
+    ctx.fillRect(xa, y - _RANGE_BAND / 2, xb - xa, _RANGE_BAND);
+    ctx.globalAlpha = 1; ctx.strokeStyle = col; ctx.lineWidth = hot ? 3 : 2;
+    ctx.beginPath(); ctx.moveTo(xa, pad.top); ctx.lineTo(xa, pad.top + ph); ctx.moveTo(xb, pad.top); ctx.lineTo(xb, pad.top + ph); ctx.stroke();
+    if (g.name) {
+      ctx.beginPath(); ctx.rect(xa, y - _RANGE_BAND / 2, xb - xa, _RANGE_BAND); ctx.clip();
+      ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#111'; ctx.fillText(g.name, (xa + xb) / 2, y + 1);
+    }
+    ctx.restore();
+  });
+}
+
+// Which part of a range gate is under the pointer: 'x1' | 'x2' | 'move' | null
+function _rangeHit(cx, cy, plot) {
+  const tf = plot._tf; if (!tf) return null;
+  const items = _rangeGatesOn(plot);
+  for (const g of items) {   // bars first (they span the whole height), across every gate
+    const geo = _rangeGeom(g, tf, plot._pad, plot._pw, plot._ph);
+    if (cy < plot._pad.top || cy > plot._pad.top + plot._ph) continue;
+    if (Math.abs(cx - geo.xa) <= 5) return { gate: g, part: 'x1' };
+    if (Math.abs(cx - geo.xb) <= 5) return { gate: g, part: 'x2' };
+  }
+  for (const g of items) {
+    const geo = _rangeGeom(g, tf, plot._pad, plot._pw, plot._ph);
+    if (cx > Math.min(geo.xa, geo.xb) && cx < Math.max(geo.xa, geo.xb) && Math.abs(cy - geo.y) <= _RANGE_BAND / 2) return { gate: g, part: 'move' };
+  }
+  return null;
+}
+
+function rangeMouseDown(e, canvas, plot) {
+  if (e.button !== 0) return false;
+  const { cx, cy } = canvasCoords(e, canvas);
+  if (plot.mode === 'range') {
+    if (!plot._pad) return true;
+    plot._rangeStart = { cx, cy };
+    plot._rangePreview = { xa: cx, xb: cx, y: cy };
+    return true;
+  }
+  if (plot.mode !== 'pan' && plot.mode !== 'edit') return false;
+  const hit = _rangeHit(cx, cy, plot);
+  if (!hit) return false;
+  const r = hit.gate.gateInfo.range, tf = plot._tf;
+  pushUndo(`Moved 1D range "${hit.gate.name}" (${_plotPair(plot)})`);
+  plot._editGate = hit.gate.id;
+  plot._rdrag = { gate: hit.gate, part: hit.part, cx, cy, r0: { ...r }, moved: false,
+    d1: toDisplay(r.x1, plot.xParam, tf.xls), d2: toDisplay(r.x2, plot.xParam, tf.xls) };
+  e.preventDefault();
+  renderPlot(plot);
+  return true;
+}
+
+function rangeMouseMove(e, canvas, plot) {
+  if (plot._rangeStart) {
+    const { cx } = canvasCoords(e, canvas);
+    plot._rangePreview = { xa: plot._rangeStart.cx, xb: cx, y: plot._rangeStart.cy };
+    renderPlot(plot);
+    return true;
+  }
+  const d = plot._rdrag; if (!d) return false;
+  const { cx, cy } = canvasCoords(e, canvas);
+  const tf = plot._tf, k = (tf.xRange.max - tf.xRange.min) / plot._pw, dd = (cx - d.cx) * k;
+  const toRaw = v => fromDisplay(v, plot.xParam, tf.xls);
+  let a = d.d1, b = d.d2, yf = d.r0.yf;
+  if (d.part === 'x1') a += dd; else if (d.part === 'x2') b += dd;
+  else { a += dd; b += dd; yf = d.r0.yf - (cy - d.cy) / plot._ph; }
+  _rangeSet(d.gate, toRaw(a), toRaw(b), yf);
+  d.moved = true;
+  renderPlot(plot);
+  return true;
+}
+
+function rangeMouseUp(e, canvas, plot) {
+  if (plot._rangeStart) {
+    const st = plot._rangeStart, pv = plot._rangePreview;
+    plot._rangeStart = null; plot._rangePreview = null;
+    const tf = plot._tf;
+    if (tf && pv && Math.abs(pv.xb - pv.xa) > 3) {
+      const yf = Math.min(1, Math.max(0, (plot._pad.top + plot._ph - st.cy) / plot._ph));
+      const raw = c => fromDisplay(tf.canvasToDispX(c), plot.xParam, tf.xls);
+      createRangeGate(plot, raw(Math.min(pv.xa, pv.xb)), raw(Math.max(pv.xa, pv.xb)), yf);
+    } else renderPlot(plot);
+    return true;
+  }
+  const d = plot._rdrag; if (!d) return false;
+  plot._rdrag = null;
+  if (!d.moved) { if (_undoStack.length) cancelUndo(); renderPlot(plot); return true; }
+  evalGateAsync(d.gate);
+  getDescendantGates(d.gate.id).forEach(g => evalGateAsync(g));
+  refreshAfterGateChange();
+  return true;
+}
+
+function rangeClick(e, canvas, plot) {
+  if (plot.mode !== 'delete') return false;
+  const { cx, cy } = canvasCoords(e, canvas);
+  const hit = _rangeHit(cx, cy, plot); if (!hit) return false;
+  const gate = hit.gate;
+  if (!confirm(`Delete gate "${gate.name}" and all its children?`)) return true;
+  pushUndo(`Deleted gate "${gate.name}" and its children`);
+  deleteGateAndDescendants(gate.id);
+  refreshAfterGateChange();
+  showToast(`Deleted "${gate.name}"`);
+  return true;
+}
+
+function rangeHover(e, canvas, plot) {
+  if (plot._rdrag || plot._rangeStart) return true;
+  if (plot.mode === 'range') { canvas.style.cursor = 'col-resize'; return true; }
+  if (plot.mode !== 'pan' && plot.mode !== 'edit' && plot.mode !== 'delete') return false;
+  const { cx, cy } = canvasCoords(e, canvas);
+  const hit = _rangeHit(cx, cy, plot);
+  if (!hit) return false;
+  canvas.style.cursor = hit.part === 'move' ? 'move' : 'ew-resize';
+  return true;
+}
+
+function createRangeGate(plot, x1, x2, yf) {
+  const fcsFile = getFileForPlot(plot); if (!fcsFile) return;
+  _contextFileId = fcsFile.fileId; _paramRanges = fcsFile.paramRanges;
+  const xName = fcsFile.params[plot.xParam].name;
+  const drawEntry = pushUndo(`Drew 1D range on ${xName}`);
+  const color = GATE_COLORS[fcsFile.populations.filter(p => !p._isAll).length % GATE_COLORS.length];
+  const defaultName = `Gate ${popIdCounter}`;
+  const newPop = {
+    id: popIdCounter++, name: defaultName, color, indices: new Int32Array(0),
+    parentId: plot.inputPop, fileId: fcsFile.fileId,
+    gateInfo: { rawPts: _rangePts(x1, x2), xParam: plot.xParam, yParam: plot.yParam,
+                xScale: plotScale(plot, 'x'), yScale: 'lin', range: { x1, x2, yf } }
+  };
+  fcsFile.populations.push(newPop);
+  if (!fcsFile.colorPrecedence.includes(newPop.id)) fcsFile.colorPrecedence.unshift(newPop.id);
+  rebuildPopulationsView();
+  refreshAfterGateChange();
+  setStatusBar('Computing gate…');
+  fcsFile._pendingGateCallbacks.set(newPop.id, () => {
+    const count = newPop.indices.length;
+    const gateName = prompt(`Name this gate (${count.toLocaleString()} events inside):`, defaultName) || defaultName;
+    newPop.name = gateName;
+    refineEntry(drawEntry, `Drew 1D range "${gateName}" on ${xName} (${count.toLocaleString()} events)`);
+    setStatusBar(`✓ ${gateName}: ${count.toLocaleString()} events`);
+    refreshAfterGateChange();
+    showToast(`"${gateName}": ${count.toLocaleString()} events`);
+  });
+  evalGateAsync(newPop);
 }
 
 // ─── ARCSINH COFACTOR HANDLES ────────────────────────────────────────────────
@@ -5130,6 +5434,18 @@ function _effColor(g) {
   }
   return null;
 }
+// Colour by primogeniture: a population with no colour of its own takes its nearest coloured ancestor's
+// (_effColor); with none up the chain it takes the colour of its highest-ranked coloured sibling.
+// Returns null when neither exists.
+function _siblingColor(g) {
+  const f = getFileById(g.fileId); if (!f) return null;
+  const rank = id => { const i = f.colorPrecedence.indexOf(id); return i === -1 ? 9999 : i; };
+  const sibs = f.populations.filter(q => q.id !== g.id && q.parentId === g.parentId && !q._isAll && !q.noColor && q.color)
+    .sort((a, b) => rank(a.id) - rank(b.id));
+  return sibs.length ? sibs[0].color : null;
+}
+function _primoColor(g) { return _effColor(g) || _siblingColor(g); }
+
 function _withEffColor(g) {
   if (!g.noColor) return g;
   const col = _effColor(g);
@@ -5506,6 +5822,7 @@ function copyGate(popId, cut) {
     name: pop.name, color: pop.color, noColor: !!pop.noColor,
     xName: f.params[gi.xParam].name, yName: f.params[gi.yParam].name,
     xScale: gi.xScale, yScale: gi.yScale, rawPts: gi.rawPts.map(q => ({ ...q })),
+    range: gi.range ? { ...gi.range } : undefined,
   };
   if (cut) deleteGateFromTree(popId, true);
   showToast(`${cut ? 'Cut' : 'Copied'} "${pop.name}" — right-click a population and choose Paste`);
@@ -5524,7 +5841,8 @@ function pasteGate(targetId) {
   const pop = {
     id: popIdCounter++, name, color: clip.color, noColor: clip.noColor, indices: new Int32Array(0),
     parentId: target.id, fileId: f.fileId,
-    gateInfo: { rawPts: clip.rawPts.map(q => ({ ...q })), xParam: xi, yParam: yi, xScale: clip.xScale, yScale: clip.yScale },
+    gateInfo: { rawPts: clip.rawPts.map(q => ({ ...q })), xParam: xi, yParam: yi, xScale: clip.xScale, yScale: clip.yScale,
+      ...(clip.range ? { range: { ...clip.range } } : {}) },
   };
   f.populations.push(pop);
   rebuildPopulationsView();
@@ -5614,6 +5932,7 @@ function _clonePop(p) {
   if (p.gateInfo) {
     c.gateInfo = { ...p.gateInfo, rawPts: p.gateInfo.rawPts.map(q => ({ ...q })) };
     if (p.gateInfo.quad) c.gateInfo.quad = { ...p.gateInfo.quad };
+    if (p.gateInfo.range) c.gateInfo.range = { ...p.gateInfo.range };
   }
   if (p.boolInfo) c.boolInfo = { expr: JSON.parse(JSON.stringify(p.boolInfo.expr)) };
   return c;
@@ -5671,7 +5990,7 @@ function updateSaveButton() {
 }
 function _plotPair(plot) {
   const f = getFileForPlot(plot);
-  return f ? `${f.params[plot.xParam].name} vs ${f.params[plot.yParam].name}` : '';
+  return f ? (plot.hist ? `${f.params[plot.xParam].name} histogram` : `${f.params[plot.xParam].name} vs ${f.params[plot.yParam].name}`) : '';
 }
 
 // pushUndo(desc) is called just BEFORE a change; desc is what the change is (shown in History).
@@ -5969,6 +6288,7 @@ function renderAllPlots() {
 function swapAxes(id) {
   const plot = plots.find(p => p.id === id); if (!plot) return;
 
+  if (plot.hist) { showToast('Switch the Y axis to a parameter to swap axes'); return; }
   const oldX = plot.xParam, oldY = plot.yParam;
 
   // Swap parameters, scales, zoom
@@ -5982,7 +6302,7 @@ function swapAxes(id) {
   // A gate "belongs" to this swap if it was drawn on (oldX, oldY) or (oldY, oldX)
   getDescendantGates(plot.inputPop).forEach(gate => {
     const gi = gate.gateInfo;
-    if (!gi) return;
+    if (!gi || gi.range) return;
     // Gate drawn on the exact axes we just swapped?
     if ((gi.xParam === oldX && gi.yParam === oldY) ||
         (gi.xParam === oldY && gi.yParam === oldX)) {
@@ -6260,10 +6580,8 @@ function showAxisRangeModal(plot, clientX, clientY) {
   _contextFileId = fcsFile.fileId;
   _paramRanges = fcsFile.paramRanges;
 
-  const axes = [
-    { axis: 'x', paramIdx: plot.xParam },
-    { axis: 'y', paramIdx: plot.yParam }
-  ];
+  const axes = [{ axis: 'x', paramIdx: plot.xParam }];
+  if (!plot.hist) axes.push({ axis: 'y', paramIdx: plot.yParam });   // a histogram's Y is Count/Percent: nothing to range
 
   // Helper: get current raw min/max for a param (custom or column min/max default)
   function getRawRange(paramIdx, scale) {
@@ -6334,29 +6652,41 @@ function showAxisRangeModal(plot, clientX, clientY) {
     const cfSearchMax = Math.round(rawMax * 0.01);
     const cfClamped = Math.max(10, Math.min(cfSearchMax, asinhCofactor));
 
+    const dMin = fcsFile.colMins[paramIdx], dMax = fcsFile.colMaxs[paramIdx], fullMax = fcsFile.params[paramIdx].range || dMax;
     rowsHTML += `
-      <div class="range-axis-head">${axis.toUpperCase()}: ${label}</div>
+      <div class="range-axis-head" title="${axis.toUpperCase()} axis of this plot: ${label}">${axis.toUpperCase()}: ${label}</div>
       <div class="range-modal-row">
-        <label>Min (raw):</label>
-        <input class="range-modal-input${isCustomMin?' modified':''}" id="rm-${axis}-min" type="number" value="${fmtN(rawMin)}" step="any">
-        <label>Max (raw):</label>
-        <input class="range-modal-input${isCustomMax?' modified':''}" id="rm-${axis}-max" type="number" value="${fmtN(rawMax)}" step="any">
+        <label title="Lowest raw value drawn on this axis. Events below it are off the plot (but still gated).">Min (raw):</label>
+        <input class="range-modal-input${isCustomMin?' modified':''}" id="rm-${axis}-min" type="number" value="${fmtN(rawMin)}" step="any"
+          title="Lowest raw value drawn on this axis. Orange border = a custom value is set.">
+        <label title="Highest raw value drawn on this axis. Events above it are off the plot (but still gated).">Max (raw):</label>
+        <input class="range-modal-input${isCustomMax?' modified':''}" id="rm-${axis}-max" type="number" value="${fmtN(rawMax)}" step="any"
+          title="Highest raw value drawn on this axis. Orange border = a custom value is set.">
+      </div>
+      <div class="range-modal-row" style="grid-template-columns:auto 1fr auto auto;gap:4px">
+        <span style="font-size:10px;color:var(--text2)" title="The lowest and highest values actually present in this file for this parameter, and the instrument's full-scale maximum ($PnR).">Data: min ${fmtN(dMin)} · max ${fmtN(dMax)} · full scale ${fmtN(fullMax)}</span>
+        <span></span>
+        <button class="axis-minmax-btn" data-axis="${axis}" data-min="${dMin}" data-max="${dMax}" style="padding:4px 8px;font-size:10px"
+          title="Fill Min and Max with the lowest and highest values actually in the data (tightest fit). Press Apply to use them.">Set to data min/max</button>
+        <button class="axis-full-btn" data-axis="${axis}" data-min="${scale === 'log' ? 1 : Math.min(0, dMin)}" data-max="${fullMax}" style="padding:4px 8px;font-size:10px"
+          title="Fill Min and Max with the instrument's full scale: 0 (1 on a log axis; the data minimum if it is negative) up to the file's $PnR maximum. Press Apply to use them.">Set to full scale</button>
       </div>
       <div class="range-modal-row" style="display:${showCF?'grid':'none'};grid-template-columns:auto 1fr auto auto">
-        <label>ASINH cofactor:</label>
+        <label title="Arcsinh cofactor: sets how strongly values near zero are spread out. Larger = more linear around zero.">ASINH cofactor:</label>
         <input class="range-modal-input${isCustomCF?' modified':''}" id="rm-${axis}-cf" type="number" value="${cfClamped}" min="10" max="${cfSearchMax}" step="any"
           title="Controls compression around zero. Search space: 10 to ${cfSearchMax} (1% of max raw value).">
       </div>
       <div class="range-modal-row" style="grid-template-columns:auto 1fr auto;gap:4px">
-        <label style="grid-column:1">Min Percentile (%):</label>
+        <label style="grid-column:1" title="Set Min to this percentile of the data, which trims extreme low outliers.">Min Percentile (%):</label>
         <input class="range-modal-input${minPercentile != null?' modified':''}" id="rm-${axis}-perc" type="number" min="0" max="100" step="0.01"
-          value="${minPercentile != null ? minPercentile : ''}" placeholder="(use global)" title="Override with percentile-based min for this axis">
-        <button class="axis-calc-btn" data-axis="${axis}" style="padding:4px 8px;font-size:10px">Calculate</button>
-        <button class="axis-reset-btn" data-axis="${axis}" style="padding:4px 8px;font-size:10px" title="Reset to global setting">Reset</button>
+          value="${minPercentile != null ? minPercentile : ''}" placeholder="(use global)" title="Override with percentile-based min for this axis. Empty = use the global setting.">
+        <button class="axis-calc-btn" data-axis="${axis}" style="padding:4px 8px;font-size:10px" title="Work out the Min that this percentile gives and put it in the Min field.">Calculate</button>
+        <button class="axis-reset-btn" data-axis="${axis}" style="padding:4px 8px;font-size:10px" title="Clear this axis's percentile override and use the global setting.">Reset</button>
       </div>
       <div id="rm-${axis}-perc-result" style="font-size:10px;color:var(--text2);grid-column:1/-1"></div>
       <div style="height:4px"></div>`;
   });
+  if (plot.hist) rowsHTML += `<div style="font-size:10px;color:var(--text2)" title="A histogram's Y axis is ${plot.hist === 'percent' ? 'percent of each population per bin' : 'events per bin'}, linear, and scales to the tallest line automatically.">Y: ${plot.hist === 'percent' ? 'Percent' : 'Count'} (linear, automatic range)</div>`;
 
   overlay.innerHTML = `
     <div class="modal-box" style="width:500px;gap:10px">
@@ -6369,9 +6699,9 @@ function showAxisRangeModal(plot, clientX, clientY) {
       </div>
       <div style="display:flex;flex-direction:column;gap:6px" id="rm-rows">${rowsHTML}</div>
       <div class="modal-actions">
-        <button onclick="applyAxisRangeModal(${plot.id})" class="primary">Apply</button>
-        <button onclick="resetAxisRangeModal(${plot.id})">Reset to Defaults</button>
-        <button onclick="document.getElementById('axis-range-modal').remove()">Cancel</button>
+        <button onclick="applyAxisRangeModal(${plot.id})" class="primary" title="Use the values above on every plot of this parameter.">Apply</button>
+        <button onclick="resetAxisRangeModal(${plot.id})" title="Throw away every custom range, cofactor and percentile for ${plot.hist ? 'this X axis' : 'both axes'} and go back to the data-driven defaults.">Reset to Defaults</button>
+        <button onclick="document.getElementById('axis-range-modal').remove()" title="Close without changing anything.">Cancel</button>
       </div>
     </div>`;
 
@@ -6406,6 +6736,16 @@ function showAxisRangeModal(plot, clientX, clientY) {
     });
   });
 
+  const _fill = (btn) => {
+    const axis = btn.dataset.axis;
+    [['min', btn.dataset.min], ['max', btn.dataset.max]].forEach(([k, v]) => {
+      const el = overlay.querySelector(`#rm-${axis}-${k}`); if (!el) return;
+      el.value = fmtN(parseFloat(v)); el.classList.add('modified');
+    });
+    const pe = overlay.querySelector(`#rm-${axis}-perc`); if (pe) { pe.value = ''; pe.classList.remove('modified'); }
+  };
+  overlay.querySelectorAll('.axis-minmax-btn, .axis-full-btn').forEach(btn => btn.addEventListener('click', () => _fill(btn)));
+
   overlay.querySelectorAll('.axis-reset-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const axis = btn.dataset.axis;
@@ -6427,10 +6767,8 @@ function applyAxisRangeModal(plotId) {
   const overlay = document.getElementById('axis-range-modal'); if (!overlay) return;
   pushUndo(`Changed axis range or cofactor (${_plotPair(plot)})`);
 
-  const axes = [
-    { axis: 'x', paramIdx: plot.xParam },
-    { axis: 'y', paramIdx: plot.yParam }
-  ];
+  const axes = [{ axis: 'x', paramIdx: plot.xParam }];
+  if (!plot.hist) axes.push({ axis: 'y', paramIdx: plot.yParam });
 
   axes.forEach(({ axis, paramIdx }) => {
     const scale = axis === 'x'
@@ -6493,7 +6831,7 @@ function resetAxisRangeModal(plotId) {
   pushUndo(`Reset axis ranges (${_plotPair(plot)})`);
 
   // Clear custom ranges for both axes
-  [plot.xParam, plot.yParam].forEach(paramIdx => _paramRanges.delete(paramIdx));
+  (plot.hist ? [plot.xParam] : [plot.xParam, plot.yParam]).forEach(paramIdx => _paramRanges.delete(paramIdx));
 
   // Close modal and re-open to show reset defaults
   overlay.remove();
@@ -6945,6 +7283,7 @@ function _buildTemplateV3(tmplName, ws) {
         yScale:     p.gateInfo.yScale || 'lin',
         rawPts:     p.gateInfo.rawPts,
         quad:       p.gateInfo.quad || undefined,
+        range:      p.gateInfo.range || undefined,
         dots:       (p.dotBoost > 0) || undefined,
         children:   buildGateTree(fileObj, p.id, p.name)
       }));
@@ -7010,6 +7349,7 @@ function _buildTemplateV3(tmplName, ws) {
       yAsinh:       pl.yAsinh || false,
       dotSize:      pl.dotSize,
       bins:         pl.bins || 256,
+      ...(pl.hist ? { hist: pl.hist } : {}),
       tabName:      tabNameById[pl.tabId] || 'Tab 1'
     };
   }).filter(Boolean);
@@ -7857,7 +8197,7 @@ function _applyTemplateV3(tmpl, fileMap) {
       const newPop = {
         id: popIdCounter++, name: node.name, color: node.color,
         noColor: node.noColor || false, indices: new Int32Array(0), dotBoost: node.dots ? _DOT_BOOST_ON : 0,
-        parentId, gateInfo: { rawPts: node.rawPts, xParam: xi, yParam: yi, xScale, yScale, ...(node.quad ? { quad: { ...node.quad } } : {}) },
+        parentId, gateInfo: { rawPts: node.rawPts, xParam: xi, yParam: yi, xScale, yScale, ...(node.quad ? { quad: { ...node.quad } } : {}), ...(node.range ? { range: { ...node.range } } : {}) },
         fileId: fileObj.fileId
       };
       fileObj.populations.push(newPop);
@@ -7949,6 +8289,7 @@ function _applyTemplateV3(tmpl, fileMap) {
     const id = plotIdCounter++;
     const plot = {
       id, xParam: xi, yParam: yi, dotSize: ps.dotSize || 1.5, bins: ps.bins || 256,
+      hist: ps.hist === 'count' || ps.hist === 'percent' ? ps.hist : null,
       inputPop: inputPopId, mode: 'pan', gatePoints: [],
       xLog: ps.xLog === true, yLog: ps.yLog === true,
       xAsinh: ps.xAsinh === true, yAsinh: ps.yAsinh === true,

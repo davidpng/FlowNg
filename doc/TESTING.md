@@ -14,13 +14,14 @@ The app keeps loaded files in a **Pool** and each loaded template in its own **w
 | Rendering, evaluation, loading | + 11 (performance) |
 | Toolbar or layout | + 3, 10 |
 | Cofactors, Global Settings | + 5, 18 |
+| Histograms, 1D range gates, plot colours, axis range dialog | + 4, 19 |
 | Export FCS, SpikeNG | + 15 |
 | Share dialog options, hostile text from files | + 8, 16, 17 |
 | Check page, manifest, publisher check, offline copy, repository rules | + 17 (and `doc/SECURITY.md`) |
 
 ## Automated run
 
-`scripts/run_suite.py` runs the browser tests of sections 3 to 13 and 15 to 18 in headless Chrome (Google Chrome or Chromium required) and prints a pass/fail list using this file's row numbers; the test pages are in `scripts/suite/` (one per section, sharing `lib.js`).
+`scripts/run_suite.py` runs the browser tests of sections 3 to 13 and 15 to 19 in headless Chrome (Google Chrome or Chromium required) and prints a pass/fail list using this file's row numbers; the test pages are in `scripts/suite/` (one per section, sharing `lib.js`).
 
 ```bash
 /usr/bin/python3 scripts/run_suite.py                 # everything, about 20 minutes, exit code 0 when all pass
@@ -368,4 +369,30 @@ Run: `/usr/bin/python3 scripts/test_check.py shared_full.html shared_locked.html
 | 18.4 | Global Settings, **Suggest cofactors with OT-flow** with an FCS file and an LMD file open | One OT-flow job per fluorescent channel of the FCS file only; the toast says how many were set; the LMD file is unchanged; plots and gates update |
 | 18.5 | Undo after 18.4 | The FCS file's cofactors return to 300 |
 | 18.6 | Shared locked file | Global Settings has no OT-flow button |
+
+## 19. Histogram, 1D range gate, colours, axis dialog
+
+Automated by `scripts/suite/suite19.html` (`run_suite.py --only 19`). Rows 19.1-19.9 use synthetic mouse events on a 2D plot, 19.10-19.17 a histogram, 19.18-19.22 the axis dialog, 19.23-19.26 the colour rules, 19.27 a template round trip.
+
+| # | Check | Expected |
+|---|---|---|
+| 19.1 | Draw 1D range gates (parent, child, overlapping sibling) | Each selects exactly the events with X between its bars |
+| 19.2 | Inspect a range gate | `gateInfo.range` = `{x1, x2, yf}` with `yf` in 0 to 1, a four-point tall rectangle, `yScale` `lin` |
+| 19.3 | Another 2D plot, same population and X, different Y | The same range gates are listed for it |
+| 19.4 | Hit test | Left bar, right bar, band found; empty plot gives nothing |
+| 19.5-19.6 | Drag the right bar; drag the band | Only x2 moves and the gate is re-evaluated; the band drag moves both ends together and changes the height |
+| 19.7 | After a parent range moves | The child gate's events are still inside the parent |
+| 19.8 | Undo after a drag | The band returns to where it was |
+| 19.9 | Drag with the 1D range tool | A new range gate is made with the band at the drag's height, with its events counted |
+| 19.10 | Set the Y axis to Count | Count and Percent are the first two choices; the plot is a histogram; the Y scale button is disabled (LIN) |
+| 19.11-19.12 | Histogram lines | One for the population plus one per gate below it, in each gate's colour; a gate wholly inside the range totals its event count |
+| 19.13 | Bins slider | 32 to 1024 bins, as set |
+| 19.14 | Percent | Each line is its share of its own population (a gate inside the range totals 100) |
+| 19.15 | Histogram of gate A | A and its true children only; an overlapping sibling (back-gating) is not drawn |
+| 19.16-19.17 | Polygon tool on a histogram; 1D range tool on a histogram | The polygon does nothing; the range gate is made under the plotted population |
+| 19.18-19.19 | Right-click a histogram | Axis dialog shows the X axis and a "Y: Count" note only; every control has a hover explanation |
+| 19.20-19.21 | **Set to data min/max**; **Set to full scale** | Min and Max take the data extremes; the file's full scale (0, or 1 on log, up to `$PnR`) |
+| 19.22 | **Reset to Defaults** on a histogram | Clears X only; the hidden Y parameter's range is kept |
+| 19.23-19.26 | Colour: no colour of its own | Nearest coloured ancestor, else highest-ranked coloured sibling (colour precedence decides), else gray; the farthest-descendant gate owns an event |
+| 19.27 | Build a template and re-apply it | Range gates and their events come back |
 
