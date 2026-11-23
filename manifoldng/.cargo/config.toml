@@ -1,0 +1,6 @@
+# All randomness in ManifoldNG is seeded (StdRng::seed_from_u64), so no OS entropy is needed.
+# getrandom 0.3 refuses to build for wasm32-unknown-unknown without a backend; the "custom"
+# backend is satisfied by `__getrandom_v03_custom` in src/lib.rs, which always fails, so any
+# accidental unseeded use is a loud error rather than silent nondeterminism.
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="custom"']

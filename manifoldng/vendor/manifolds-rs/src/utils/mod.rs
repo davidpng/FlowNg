@@ -1,0 +1,22 @@
+//! Contains key utility functions, like BH trees, FFT for tSNE, diffusion and
+//! potentials for PHATE, sparse operations across different functions and also
+//! macros
+
+pub mod bh_tree;
+pub mod density;
+pub mod diffusions;
+pub mod dreams;
+pub mod input;
+pub mod macros;
+pub mod math;
+pub mod potentials;
+pub(crate) mod prefetch;
+pub mod sparse_ops;
+pub mod traits;
+
+#[cfg(feature = "fft_tsne")]
+pub mod fft;
+#[cfg(feature = "gpu")]
+pub mod fft2d_gpu;
+#[cfg(feature = "gpu")]
+pub mod sparse_svd_gpu;

@@ -1,0 +1,483 @@
+//! Model parameters for the neural network that is being trained during
+//! parametric UMAP.
+
+use bincode::{config, serde::decode_from_slice, serde::encode_to_vec};
+use burn::store::ModuleRecord;
+use burn::tensor::{Bytes, Element};
+use burn::{nn::LeakyReluConfig, prelude::*};
+use nn::{LeakyRelu, Linear, LinearConfig};
+use num_traits::{Float, FromPrimitive};
+use serde::{Deserialize, Serialize};
+use std::marker::PhantomData;
+
+use crate::prelude::*;
+
+//////////////////
+// Model config //
+//////////////////
+
+/// Configuration structure for creating a `UmapMlp`.
+#[derive(Config, Debug)]
+pub struct UmapMlpConfig {
+    /// Number of input features
+    pub input_size: usize,
+    /// Vector of sizes for the hidden layers.
+    pub hidden_sizes: Vec<usize>,
+    /// Number of output features.
+    pub output_size: usize,
+}
+
+/// MLP model that can have several layers
+///
+/// ### Fields
+///
+/// * `layers` - Vector of linear layers
+/// * `activation` - Activation function
+#[derive(Module, Debug)]
+pub struct UmapMlp {
+    layers: Vec<Linear>,
+    activation: LeakyRelu,
+}
+
+///////////
+// Model //
+///////////
+
+impl UmapMlp {
+    /// Generate a new model based on a UmapMlpConfig
+    ///
+    /// ### Params
+    ///
+    /// * `config` - The configuration with the model specifications
+    /// * `device` - The device on which to put the model
+    ///
+    /// ### Return
+    ///
+    /// Initialised UmapMlp model.
+    pub fn new(config: &UmapMlpConfig, device: &Device) -> UmapMlp {
+        let mut layer_vec = Vec::with_capacity(config.hidden_sizes.len());
+        let mut input_size = config.input_size;
+
+        for &hidden_size in &config.hidden_sizes {
+            let layer: Linear = LinearConfig::new(input_size, hidden_size)
+                .with_bias(true)
+                .init(device);
+            layer_vec.push(layer);
+            input_size = hidden_size;
+        }
+
+        // last layer
+        layer_vec.push(
+            LinearConfig::new(input_size, config.output_size)
+                .with_bias(true)
+                .init(device),
+        );
+
+        let activation = LeakyReluConfig::init(&LeakyReluConfig {
+            negative_slope: 0.1,
+        });
+
+        Self {
+            layers: layer_vec,
+            activation,
+        }
+    }
+
+    /// Forward pass of the model
+    ///
+    /// ### Params
+    ///
+    /// * `input` - Tensor of [batch_size, features]
+    ///
+    /// ### Returns
+    ///
+    /// Tensor of [batch_size, embedding]
+    pub fn forward(&self, input: Tensor<2>) -> Tensor<2> {
+        let mut x = input;
+
+        // iterate through the layers
+        for layer in &self.layers[..self.layers.len() - 1] {
+            x = layer.forward(x);
+            x = self.activation.forward(x);
+        }
+
+        // the last layer has no activation
+        self.layers.last().unwrap().forward(x)
+    }
+}
+
+/////////////
+// Builder //
+/////////////
+
+impl UmapMlpConfig {
+    /// Initialise the model
+    ///
+    /// ### Params
+    ///
+    /// * `device` - The device on which to run the model
+    ///
+    /// ### Returns
+    ///
+    /// Initialised model
+    pub fn init(&self, device: &Device) -> UmapMlp {
+        UmapMlp::new(self, device)
+    }
+
+    /// Generate a new configuration based on parameters
+    ///
+    /// ### Params
+    ///
+    /// * `input_size` - Number of input features.
+    /// * `hidden_sizes` - Vector of sizes for the hidden layers.
+    /// * `output_size` - Number of output features.
+    ///
+    /// ### Returns
+    ///
+    /// Initialised UmapMlpConfig
+    pub fn from_params(input_size: usize, hidden_sizes: Vec<usize>, output_size: usize) -> Self {
+        Self {
+            input_size,
+            hidden_sizes,
+            output_size,
+        }
+    }
+}
+
+///////////////////
+// Trained model //
+///////////////////
+
+/// TrainedUmapModel
+pub struct TrainedUmapModel<T> {
+    /// The trained model
+    pub model: UmapMlp,
+    /// Device on which the tensor reside
+    device: Device,
+    /// Original config
+    config: UmapMlpConfig,
+    /// Marker for the float type
+    _phantom: PhantomData<T>,
+}
+
+impl<T> TrainedUmapModel<T>
+where
+    T: Element + Float + FromPrimitive,
+{
+    /// Returns an initialised TrainedUmapModel
+    ///
+    /// ### Params
+    ///
+    /// * `model` - The trained model
+    ///
+    /// ### Returns
+    ///
+    /// Initialised self
+    pub fn new(model: UmapMlp, config: UmapMlpConfig, device: Device) -> Self {
+        Self {
+            model,
+            config,
+            device,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Predict on new data
+    ///
+    /// ### Params
+    ///
+    /// * `data` - Data which to use for the predictions, as samples x features.
+    ///   Accepts a faer matrix, an ndarray 2-D array (with the `ndarray`
+    ///   feature) or a row-major `(&[T], n_samples, n_features)` tuple. See
+    ///   [`ManifoldsMatrix`].
+    ///
+    /// ### Returns
+    ///
+    /// The embeddings generated by the trained model, as
+    /// `[n_components][n_samples]`.
+    pub fn predict(&self, data: impl ManifoldsMatrix<T>) -> Vec<Vec<T>> {
+        let data_input = data.to_mat_input();
+        let data = data_input.as_mat_ref();
+
+        let n_samples = data.nrows();
+        let n_features = data.ncols();
+
+        let data_flat: Vec<T> = (0..n_samples)
+            .flat_map(|i| (0..n_features).map(move |j| data[(i, j)]))
+            .collect();
+
+        let input = Tensor::<2>::from_data(
+            TensorData::new(data_flat, [n_samples, n_features]),
+            &self.device,
+        );
+
+        let embeddings = self.model.forward(input);
+
+        let n_components = embeddings.dims()[1];
+        let embedding_data: Vec<T> = embeddings.into_data().try_to_vec().unwrap();
+
+        let mut result = vec![vec![T::zero(); n_samples]; n_components];
+        for i in 0..n_samples {
+            for j in 0..n_components {
+                result[j][i] = embedding_data[i * n_components + j];
+            }
+        }
+
+        result
+    }
+}
+
+/// Serialised representation of a `TrainedUmapModel`.
+///
+/// Combines the architecture configuration with the recorded model weights so
+/// the full model can be reconstructed without external metadata. Designed to
+/// be round-tripped through `bincode`.
+///
+/// ### Fields
+///
+/// * `version` - Schema version of the serialised payload. Incremented on any
+///   breaking change to the on-disk layout.
+/// * `config` - Architecture configuration required to rebuild the `UmapMlp`
+///   skeleton before loading weights.
+/// * `record_bytes` - Burnpack bytes of the trained weights.
+#[derive(Serialize, Deserialize)]
+struct SerialisedTrainedUmap {
+    /// Schema version of the serialised payload
+    version: u32,
+    /// Architecture configuration of the trained model
+    config: UmapMlpConfig,
+    /// Burn record bytes containing the trained weights
+    record_bytes: Vec<u8>,
+}
+
+/// Current schema version for serialised parametric UMAP models. Bump it when the
+/// record format changes, so an older file fails with a clear error.
+const SERIALISED_MODEL_VERSION: u32 = 2;
+
+impl<T> TrainedUmapModel<T>
+where
+    T: Element + Float + FromPrimitive,
+{
+    /// Serialise the trained model to a self-contained byte buffer.
+    ///
+    /// The resulting bytes carry both the architecture configuration and the
+    /// model weights, so the buffer alone is sufficient to reconstruct the
+    /// model via [`TrainedUmapModel::from_bytes`].
+    ///
+    /// ### Returns
+    ///
+    /// A `Vec<u8>` containing the serialised model, or a
+    /// [`ManifoldsError::ModelSerialisation`] if either the burnpack writer or
+    /// `bincode` fails.
+    pub fn to_bytes(&self) -> Result<Vec<u8>, ManifoldsError> {
+        let record_bytes = self
+            .model
+            .clone()
+            .into_record()
+            .into_bytes()
+            .map_err(|e| ManifoldsError::ModelSerialisation(e.to_string()))?
+            .to_vec();
+
+        let payload = SerialisedTrainedUmap {
+            version: SERIALISED_MODEL_VERSION,
+            config: self.config.clone(),
+            record_bytes,
+        };
+
+        encode_to_vec(&payload, config::standard())
+            .map_err(|e| ManifoldsError::ModelSerialisation(e.to_string()))
+    }
+
+    /// Reconstruct a trained model from bytes produced by
+    /// [`TrainedUmapModel::to_bytes`].
+    ///
+    /// Rebuilds the `UmapMlp` skeleton from the embedded configuration on the
+    /// supplied device, then loads the recorded weights into it.
+    ///
+    /// ### Params
+    ///
+    /// * `bytes` - Serialised payload as produced by `to_bytes`.
+    /// * `device` - Device on which to materialise the reconstructed model.
+    ///
+    /// ### Returns
+    ///
+    /// The reconstructed `TrainedUmapModel`, or a `ManifoldsError` if the
+    /// payload is malformed, has an unsupported version, or the weights do not
+    /// load into the model.
+    pub fn from_bytes(bytes: &[u8], device: Device) -> Result<Self, ManifoldsError> {
+        let (payload, _): (SerialisedTrainedUmap, usize) =
+            decode_from_slice(bytes, config::standard())
+                .map_err(|e| ManifoldsError::ModelDeserialisation(e.to_string()))?;
+
+        if payload.version != SERIALISED_MODEL_VERSION {
+            return Err(ManifoldsError::UnsupportedModelVersion {
+                version: payload.version,
+                expected: SERIALISED_MODEL_VERSION,
+            });
+        }
+
+        let model = UmapMlp::new(&payload.config, &device);
+        let record = ModuleRecord::from_bytes(Bytes::from_bytes_vec(payload.record_bytes))
+            .map_err(|e| ManifoldsError::ModelDeserialisation(e.to_string()))?;
+        let model = model
+            .try_load_record(record)
+            .map_err(|e| ManifoldsError::ModelDeserialisation(e.to_string()))?;
+
+        Ok(Self {
+            model,
+            config: payload.config,
+            device,
+            _phantom: PhantomData,
+        })
+    }
+}
+
+///////////
+// Tests //
+///////////
+
+#[cfg(test)]
+mod model_tests {
+    use super::*;
+    #[test]
+    fn test_model_forward_shape() {
+        let device = Device::flex();
+        let config = UmapMlpConfig::from_params(10, vec![64, 32], 2);
+        let model: UmapMlp = config.init(&device);
+
+        let batch_size = 16;
+        let input = Tensor::<2>::random(
+            [batch_size, 10],
+            burn::tensor::Distribution::Uniform(-1.0, 1.0),
+            &device,
+        );
+
+        let output = model.forward(input);
+
+        assert_eq!(output.dims()[0], batch_size);
+        assert_eq!(output.dims()[1], 2);
+    }
+
+    #[test]
+    fn test_model_no_hidden_layers() {
+        let device = Device::flex();
+        let config = UmapMlpConfig::from_params(10, vec![], 2);
+        let model: UmapMlp = config.init(&device);
+
+        let input = Tensor::<2>::random(
+            [5, 10],
+            burn::tensor::Distribution::Uniform(-1.0, 1.0),
+            &device,
+        );
+        let output = model.forward(input);
+
+        assert_eq!(output.dims()[0], 5);
+        assert_eq!(output.dims()[1], 2);
+    }
+
+    #[test]
+    fn test_model_single_hidden_layer() {
+        let device = Device::flex();
+        let config = UmapMlpConfig::from_params(10, vec![64], 2);
+        let model: UmapMlp = config.init(&device);
+
+        let input = Tensor::<2>::random(
+            [8, 10],
+            burn::tensor::Distribution::Uniform(-1.0, 1.0),
+            &device,
+        );
+        let output = model.forward(input);
+
+        assert_eq!(output.dims()[0], 8);
+        assert_eq!(output.dims()[1], 2);
+    }
+
+    #[test]
+    fn test_model_output_is_finite() {
+        let device = Device::flex();
+        let config = UmapMlpConfig::from_params(10, vec![64, 32], 2);
+        let model: UmapMlp = config.init(&device);
+
+        let input = Tensor::<2>::random(
+            [16, 10],
+            burn::tensor::Distribution::Uniform(-1.0, 1.0),
+            &device,
+        );
+        let output = model.forward(input);
+
+        let output_data: Vec<f32> = output.to_data().try_to_vec().unwrap();
+
+        for (i, &val) in output_data.iter().enumerate() {
+            assert!(
+                val.is_finite(),
+                "Output at index {} is not finite: {}",
+                i,
+                val
+            );
+        }
+    }
+
+    #[test]
+    fn test_model_batch_size_one() {
+        let device = Device::flex();
+        let config = UmapMlpConfig::from_params(5, vec![32], 3);
+        let model: UmapMlp = config.init(&device);
+
+        let input = Tensor::<2>::random(
+            [1, 5],
+            burn::tensor::Distribution::Uniform(-1.0, 1.0),
+            &device,
+        );
+        let output = model.forward(input);
+
+        assert_eq!(output.dims()[0], 1);
+        assert_eq!(output.dims()[1], 3);
+    }
+
+    #[test]
+    fn test_model_deterministic() {
+        let device = Device::flex();
+        let config = UmapMlpConfig::from_params(10, vec![64], 2);
+        let model: UmapMlp = config.init(&device);
+
+        let input = Tensor::<2>::from_floats([[1.0; 10], [2.0; 10], [3.0; 10]], &device);
+
+        let output1 = model.forward(input.clone());
+        let output2 = model.forward(input.clone());
+
+        let data1: Vec<f32> = output1.to_data().try_to_vec().unwrap();
+        let data2: Vec<f32> = output2.to_data().try_to_vec().unwrap();
+
+        assert_eq!(data1, data2, "Model should be deterministic");
+    }
+
+    #[test]
+    fn test_model_different_inputs_different_outputs() {
+        let device = Device::flex();
+        let config = UmapMlpConfig::from_params(10, vec![64], 2);
+        let model: UmapMlp = config.init(&device);
+
+        let input1 = Tensor::<2>::from_floats([[1.0; 10]], &device);
+        let input2 = Tensor::<2>::from_floats([[2.0; 10]], &device);
+
+        let output1 = model.forward(input1);
+        let output2 = model.forward(input2);
+
+        let data1: Vec<f32> = output1.to_data().try_to_vec().unwrap();
+        let data2: Vec<f32> = output2.to_data().try_to_vec().unwrap();
+
+        assert_ne!(
+            data1, data2,
+            "Different inputs should produce different outputs"
+        );
+    }
+
+    #[test]
+    fn test_model_config_builder() {
+        let config = UmapMlpConfig::from_params(20, vec![128, 64, 32], 5);
+
+        assert_eq!(config.input_size, 20);
+        assert_eq!(config.hidden_sizes, vec![128, 64, 32]);
+        assert_eq!(config.output_size, 5);
+    }
+}

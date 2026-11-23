@@ -14,13 +14,15 @@ The app keeps loaded files in a **Pool** and each loaded template in its own **w
 | Rendering, evaluation, loading | + 11 (performance) |
 | Toolbar or layout | + 3, 10 |
 | Cofactors, Global Settings | + 5, 18 |
+| Histograms, 1D range gates, plot colours, axis range dialog | + 4, 19 |
+| ManifoldNG (manifoldng/, the embedded module, its panel or status bar), side panel handles | + 4, 8, 9, 15, 19, 20 |
 | Export FCS, SpikeNG | + 15 |
 | Share dialog options, hostile text from files | + 8, 16, 17 |
 | Check page, manifest, publisher check, offline copy, repository rules | + 17 (and `doc/SECURITY.md`) |
 
 ## Automated run
 
-`scripts/run_suite.py` runs the browser tests of sections 3 to 13 and 15 to 18 in headless Chrome (Google Chrome or Chromium required) and prints a pass/fail list using this file's row numbers; the test pages are in `scripts/suite/` (one per section, sharing `lib.js`).
+`scripts/run_suite.py` runs the browser tests of sections 3 to 13 and 15 to 20 in headless Chrome (Google Chrome or Chromium required) and prints a pass/fail list using this file's row numbers; the test pages are in `scripts/suite/` (one per section, sharing `lib.js`).
 
 ```bash
 /usr/bin/python3 scripts/run_suite.py                 # everything, about 20 minutes, exit code 0 when all pass
@@ -369,3 +371,65 @@ Run: `/usr/bin/python3 scripts/test_check.py shared_full.html shared_locked.html
 | 18.5 | Undo after 18.4 | The FCS file's cofactors return to 300 |
 | 18.6 | Shared locked file | Global Settings has no OT-flow button |
 
+## 19. Histogram, 1D range gate, colours, axis dialog
+
+Automated by `scripts/suite/suite19.html` (`run_suite.py --only 19`). Rows 19.1-19.9 use synthetic mouse events on a 2D plot, 19.10-19.17 a histogram, 19.18-19.22 the axis dialog, 19.23-19.26 the colour rules, 19.27 a template round trip.
+
+| # | Check | Expected |
+|---|---|---|
+| 19.1 | Draw 1D range gates (parent, child, overlapping sibling) | Each selects exactly the events with X between its bars |
+| 19.2 | Inspect a range gate | `gateInfo.range` = `{x1, x2, yf}` with `yf` in 0 to 1, a four-point tall rectangle, `yScale` `lin` |
+| 19.3 | Another 2D plot, same population and X, different Y | The same range gates are listed for it |
+| 19.4 | Hit test | Left bar, right bar, band found; empty plot gives nothing |
+| 19.5-19.6 | Drag the right bar; drag the band | Only x2 moves and the gate is re-evaluated; the band drag moves both ends together and changes the height |
+| 19.7 | After a parent range moves | The child gate's events are still inside the parent |
+| 19.8 | Undo after a drag | The band returns to where it was |
+| 19.9 | Drag with the 1D range tool | A new range gate is made with the band at the drag's height, with its events counted |
+| 19.10 | Set the Y axis to Count | Count and Percent are the first two choices; the plot is a histogram; the Y scale button is disabled (LIN) |
+| 19.11-19.12 | Histogram lines | One for the population plus one per gate below it, in each gate's colour; a gate wholly inside the range totals its event count |
+| 19.13 | Bins slider | 32 to 1024 bins, as set |
+| 19.14 | Percent | Each line is its share of its own population (a gate inside the range totals 100) |
+| 19.15 | Histogram of gate A | A and its true children only; an overlapping sibling (back-gating) is not drawn |
+| 19.16-19.17 | Polygon tool on a histogram; 1D range tool on a histogram | The polygon does nothing; the range gate is made under the plotted population |
+| 19.18-19.19 | Right-click a histogram | Axis dialog shows the X axis and a "Y: Count" note only; every control has a hover explanation |
+| 19.20-19.21 | **Set to data min/max**; **Set to full scale** | Min and Max take the data extremes; the file's full scale (0, or 1 on log, up to `$PnR`) |
+| 19.22 | **Reset to Defaults** on a histogram | Clears X only; the hidden Y parameter's range is kept |
+| 19.23-19.26 | Colour: no colour of its own | Nearest coloured ancestor, else highest-ranked coloured sibling (colour precedence decides), else gray; the farthest-descendant gate owns an event |
+| 19.27 | Build a template and re-apply it | Range gates and their events come back |
+
+
+## 20. ManifoldNG (embedding and clustering)
+
+Automated by `scripts/suite/suite20.html` (`run_suite.py --only 20`), on fixture 1 (about 34,000 events). Run it in Safari too, served and opened from disk (the module must load in both). Before it, rebuild and check the embedded module: `/usr/bin/python3 scripts/build_manifoldng.py --check` (must print "OK"), and run `cargo test --release` in `manifoldng/`. Event caps and their benchmark are in `doc/MANIFOLDNG_BENCH.md`.
+
+| # | Check | Expected |
+|---|---|---|
+| 20.1 | Module block | `#manifoldng-wasm` holds the module with a 64-hex `data-sha256`; the worker source is present |
+| 20.2 | Calibration | `mngSpeed()` gives a speed factor between 0.2 and 20 |
+| 20.3 | Defaults | t-SNE (Barnes-Hut) < UMAP < FlowSOM; more channels lower FlowSOM's default; predicted time at a default is about 60 s |
+| 20.4 | Right-click a population → **ManifoldNG** | Panel: UMAP, events = min(population, 60 s default), input limit = min(population, memory limit), fluorescence ticked, a time and memory prediction, Run enabled |
+| 20.4a | The panel | The toolbar button is active, the panel is open on the right with its handle, the tube is the selected file, the population is All events; UMAP shows 2 main settings and 2 more under a closed **More settings** |
+| 20.5 | A slow computer (speed factor 500), all events | Above the default: a warning with predicted time, memory and the 4 GB limit; the button reads **Run anyway** and is enabled |
+| 20.5b | A method needing 400 MB per 1,000 events | "Too many events", the largest count that fits, Run disabled |
+| 20.5c | Normal speed, all events (under the default) | No warning, plain **Run** |
+| 20.6 | Run UMAP on 3,000 events | The status bar shows method, population, events, channels, stage with epoch count, elapsed and time left, a growing bar; it hides when done |
+| 20.7 | After the run | `UMAP_All events_1`, `UMAP_All events_2` added at the end, marked derived (linear); NaN for every event not in the sample; the run is recorded in `manifolds` |
+| 20.7a | Column names | Method + population (`UMAP_All events_1`); no column name or label contains the file name |
+| 20.7b | Embedding values | Each axis spans exactly 0 to 10 over the events run; `rawRange` and `scaledTo` are recorded |
+| 20.7c | A plot made before the run | Its X and Y menus list both new UMAP columns |
+| 20.8 | Result population and plot | "UMAP_All events sample" holds exactly the 3,000 events; a plot of the two UMAP columns on it opens with linear axes |
+| 20.9 | Re-evaluate the sample population | Same events (its 1D range gate on UMAP_1 selects them) |
+| 20.10 | Same run again | Named `UMAP_All events-2_1`, `-2_2` (new columns; the first run's stay); identical values |
+| 20.11 | Phenograph on the sample | A `Phenograph_UMAP_All events sample` label parameter and one child population per cluster; cluster sizes + unassigned = 3,000; cluster gates re-evaluate to the same events |
+| 20.11a | Clusters and the tree | The clusters are listed under Saved runs, not in the gating tree (the sample population is); ticking **in gating tree** lists them in the tree, unticking hides them again |
+| 20.12 | Cluster plot | Drawn on the newest embedding of the file |
+| 20.13 | FlowSOM on every event (6 × 6 grid, 8 metaclusters) | 8 clusters, 8 populations, no NaN, no sample population |
+| 20.14 | Cancel a t-SNE run from the status bar | Nothing is added; the status bar hides |
+| 20.15 | Recompute compensation | ManifoldNG columns unchanged |
+| 20.16 | Undo after a run | Its populations go; its columns stay |
+| 20.20 | Run from the panel with run name "My map" | Columns `My map_1`, `My map_2`; "My map" is first under Saved runs |
+| 20.21 | **Use settings** on the FlowSOM run | Form: FlowSOM, all events, seed 1, parameters 6, 6, 5, 8 |
+| 20.22 | Side panel handles | Dragging the left handle 80 px right widens the sidebar by 80 px, the right handle 60 px left widens the ManifoldNG panel by 60 px; a click hides the panel, another shows it at the same width |
+| 20.17 | Export all events as FCS, reopen | The file carries `FLOWNG_MANIFOLDS`; reopened, the columns are marked derived again |
+| 20.18 | Locked shared file | No module, worker or ManifoldNG functions in it; params keep `derived`, the file keeps `manifolds` |
+| 20.19 | Reopen the locked file | Columns with the same NaN count, the cluster populations and the run records come back |

@@ -1,0 +1,183 @@
+<!doctype html><meta charset="utf-8"><body><script src="lib.js"></script>
+<script>
+// Section 19: 1D histogram, 1D range gate, axis range dialog on histograms, colour inheritance.
+(async () => {
+  let L;
+  try {
+    L = await fresh({ fixtures: 1 });
+    L.E('generateStarterWorkspace()'); await sleep(2500);
+    // helpers that live in the app's window
+    L.E(`window.T = {
+      sl: ms => new Promise(r => setTimeout(r, ms)),
+      f: () => fcsFiles[0],
+      col: x => { const f = fcsFiles[0], a = new Float32Array(f.nEvents); for (let e = 0; e < f.nEvents; e++) a[e] = f.data[e * f.nPar + x]; return a; },
+      q: (x, p) => { const a = T.col(x).sort(); return a[Math.floor(p * (a.length - 1))]; },
+      cnt: (x, lo, hi, idx) => { const f = fcsFiles[0]; let n = 0; const ok = e => { const v = f.data[e * f.nPar + x]; return v >= lo && v <= hi; };
+        if (!idx) { for (let e = 0; e < f.nEvents; e++) if (ok(e)) n++; } else for (const e of idx) if (ok(e)) n++; return n; },
+      root: () => fcsFiles[0].populations.find(p => p._isAll),
+      byId: id => populations.find(p => p.id === id),
+      mk: async (plot, parentId, lo, hi) => { changePop(plot.id, parentId); createRangeGate(plot, lo, hi, 0.5); await T.sl(2500);
+        const ps = fcsFiles[0].populations; return ps[ps.length - 1].id; },
+      ev: (plot, cx, cy) => { const c = document.getElementById('canvas-' + plot.id), r = c.getBoundingClientRect();
+        return { button: 0, clientX: r.left + cx * r.width / c.width, clientY: r.top + cy * r.height / c.height, preventDefault() {} }; },
+      drag: (plot, x0, y0, x1, y1) => { const c = document.getElementById('canvas-' + plot.id);
+        onCanvasMouseDown(T.ev(plot, x0, y0), c, plot); onCanvasMouseMove(T.ev(plot, x1, y1), c, plot); onCanvasMouseUp(T.ev(plot, x1, y1), c, plot); },
+    }`);
+    const E = s => L.E(s);
+    const X = 0, Y1 = 1, Y2 = E('Math.min(2, fcsFiles[0].nPar - 1)');
+    E(`addPlot(${X}, ${Y1})`); await sleep(1200);
+    E(`addPlot(${X}, ${Y2})`); await sleep(1200);
+    const pidA = E('plots[plots.length - 2].id'), pidB = E('plots[plots.length - 1].id');
+    const P = id => `plots.find(p => p.id === ${id})`;
+    const rootId = E('T.root().id');
+    const q = p => E(`T.q(${X}, ${p}) + 0.37`);   // nudged off the data values: an event exactly on a bar is a tie
+    const q10 = q(0.10), q30 = q(0.30), q40 = q(0.40), q60 = q(0.60), q70 = q(0.70), q90 = q(0.90);
+    R('19.0', 'Test column has a spread (quantiles increase)', q10 < q30 && q30 < q40 && q40 < q60 && q60 < q70 && q70 < q90, [q10, q30, q40, q60, q70, q90]);
+
+    // ── 1D range gate on a 2D plot ────────────────────────────────────────────
+    const idA = await E(`T.mk(${P(pidA)}, ${rootId}, ${q10}, ${q90})`);          // under All events
+    const idB = await E(`T.mk(${P(pidA)}, ${idA}, ${q40}, ${q60})`);              // child of A
+    const idC = await E(`T.mk(${P(pidA)}, ${rootId}, ${q30}, ${q70})`);           // sibling of A, overlaps it (back-gating)
+    const nA = E('T.byId(' + idA + ').indices.length'), nB = E('T.byId(' + idB + ').indices.length'), nC = E('T.byId(' + idC + ').indices.length');
+    R('19.1', 'A 1D range gate selects exactly the events with X between its bars (parent and child gates)',
+      nA === E(`T.cnt(${X}, ${q10}, ${q90})`) && nB === E(`T.cnt(${X}, ${q40}, ${q60})`) && nC === E(`T.cnt(${X}, ${q30}, ${q70})`) && nA > 0 && nB > 0, { nA, nB, nC });
+    const gi = E(`JSON.parse(JSON.stringify(T.byId(${idA}).gateInfo))`);
+    R('19.2', 'Range gate stores x1, x2, a band height in 0-1, and a tall rectangle so evaluation and the worker are unchanged',
+      gi.range && gi.range.x1 === q10 && gi.range.x2 === q90 && gi.range.yf >= 0 && gi.range.yf <= 1 && gi.rawPts.length === 4 && gi.yScale === 'lin', gi);
+    R('19.3', 'The gate shows on another 2D plot with the same population and X, whatever its Y axis',
+      E(`(() => { const p = ${P(pidB)}; changePop(p.id, ${rootId}); return _rangeGatesOn(p).map(g => g.id).sort().join(','); })()`) === [idA, idC].sort().join(','), '');
+
+    // hit test and drags (Select mode, plot A shows All events)
+    E(`(() => { const p = ${P(pidA)}; changePop(p.id, ${rootId}); p.mode = 'pan'; renderPlot(p); })()`); await sleep(400);
+    const geo = E(`(() => { const p = ${P(pidA)}, g = T.byId(${idA}); return _rangeGeom(g, p._tf, p._pad, p._pw, p._ph); })()`);
+    const hit = (cx, cy) => E(`(() => { const h = _rangeHit(${cx}, ${cy}, ${P(pidA)}); return h ? h.gate.id + ':' + h.part : null; })()`);
+    const mid = (geo.xa + geo.xb) / 2;
+    R('19.4', 'Hit test: the left bar, the right bar and the band are found; empty plot is not',
+      hit(geo.xa, geo.y + 60) === idA + ':x1' && hit(geo.xb, geo.y + 60) === idA + ':x2' && hit(mid - 15, geo.y) === idA + ':move' && hit(mid, geo.y + 80) === null,
+      [hit(geo.xa, geo.y + 60), hit(geo.xb, geo.y + 60), hit(mid - 15, geo.y), hit(mid, geo.y + 80)]);
+    const r0 = E(`({ ...T.byId(${idA}).gateInfo.range })`);
+    E(`T.drag(${P(pidA)}, ${geo.xb}, ${geo.y + 60}, ${geo.xb - 25}, ${geo.y + 60})`); await sleep(2500);
+    const r1 = E(`({ ...T.byId(${idA}).gateInfo.range })`);
+    R('19.5', 'Dragging the right bar moves only x2; the gate is re-evaluated to the new range',
+      Math.abs(r1.x1 - r0.x1) < 1e-6 * Math.abs(r0.x1) && r1.x2 < r0.x2 && r1.yf === r0.yf && E(`T.byId(${idA}).indices.length`) === E(`T.cnt(${X}, ${r1.x1}, ${r1.x2})`), { r0, r1 });
+    E(`T.drag(${P(pidA)}, ${mid - 40}, ${geo.y}, ${mid - 10}, ${geo.y - 50})`); await sleep(2500);
+    const r2 = E(`({ ...T.byId(${idA}).gateInfo.range })`);
+    R('19.6', 'Dragging the band moves both ends the same way (equal in display space) and raises the band',
+      r2.x1 > r1.x1 && r2.x2 > r1.x2 && r2.yf > r1.yf, { r1, r2 });
+    R('19.7', 'Child gate stays inside its moved parent after re-evaluation',
+      E(`(() => { const a = new Set(T.byId(${idA}).indices); return Array.from(T.byId(${idB}).indices).every(e => a.has(e)); })()`), '');
+    E('undo()'); await sleep(2500);
+    const r3 = E(`({ ...T.byId(${idA}).gateInfo.range })`);
+    R('19.8', 'Undo puts the band back where it was before the last drag', Math.abs(r3.x1 - r1.x1) < 1e-6 * Math.abs(r1.x1) && Math.abs(r3.x2 - r1.x2) < 1e-6 * Math.abs(r1.x2) && r3.yf === r1.yf, { r1, r3 });
+
+    // drawing a new range with the tool, on the 2D plot
+    const nBefore = E('fcsFiles[0].populations.filter(p => p.gateInfo && p.gateInfo.range).length');
+    E(`(() => { const p = ${P(pidA)}; p.mode = 'range'; })()`);
+    E(`T.drag(${P(pidA)}, ${geo.xa + 5}, ${geo.y - 90}, ${geo.xa + 70}, ${geo.y - 90})`); await sleep(2500);
+    const newId = E('fcsFiles[0].populations[fcsFiles[0].populations.length - 1].id');
+    const nd = E(`T.byId(${newId}).gateInfo`);
+    R('19.9', 'The 1D range tool creates a range gate by dragging across the plot, with the band where the drag started',
+      E('fcsFiles[0].populations.filter(p => p.gateInfo && p.gateInfo.range).length') === nBefore + 1 && nd.range && nd.range.x2 > nd.range.x1 &&
+      E(`T.byId(${newId}).indices.length`) === E(`T.cnt(${X}, ${nd.range.x1}, ${nd.range.x2})`), nd.range);
+    E(`deleteGateAndDescendants(${newId}); refreshAfterGateChange()`); await sleep(500);
+
+    // ── Histogram ─────────────────────────────────────────────────────────────
+    E(`(() => { const p = ${P(pidA)}; p.mode = 'pan'; changePop(p.id, ${rootId}); changeAxis(p.id, 'y', 'hist:count'); })()`); await sleep(600);
+    const opts = E(`[...document.getElementById('y-sel-${pidA}').options].slice(0, 3).map(o => o.text)`);
+    R('19.10', 'Count and Percent are the first two Y-axis choices; the plot becomes a histogram with a linear Y',
+      opts[0] === 'Count' && opts[1] === 'Percent' && E(`${P(pidA)}.hist`) === 'count' && E(`${P(pidA)}._histMax`) > 0 &&
+      E(`document.getElementById('btn-ylog-${pidA}').disabled`) === true, opts);
+    const hi = () => E(`JSON.parse(JSON.stringify(${P(pidA)}._histInfo))`);
+    let h = hi(); const gids = h.lines.map(l => l.gate);
+    R('19.11', 'Histogram has one line for the population plus one per gate below it, each in the gate colour',
+      gids.includes(rootId) && gids.includes(idA) && gids.includes(idB) && gids.includes(idC) &&
+      h.lines.find(l => l.gate === idA).color === E(`T.byId(${idA}).color`), h.lines.map(l => [l.gate, l.color]));
+    R('19.12', 'Count mode: a gate wholly inside the plot range totals its event count',
+      h.lines.find(l => l.gate === idB).total === E(`T.byId(${idB}).indices.length`), h.lines.find(l => l.gate === idB));
+    R('19.13', 'The bins slider sets the number of bins (32 to 1024)',
+      h.bins === 256 && (E(`changeBins(${pidA}, 32)`), hi().bins === 32) && (E(`changeBins(${pidA}, 1024)`), hi().bins === 1024) && (E(`changeBins(${pidA}, 256)`), hi().bins === 256), h.bins);
+    E(`changeAxis(${pidA}, 'y', 'hist:percent')`); await sleep(400); h = hi();
+    R('19.14', 'Percent mode: each line is its share of its own population (a wholly-inside gate totals 100)',
+      h.mode === 'percent' && Math.abs(h.lines.find(l => l.gate === idB).total - 100) < 1e-6 && h.lines.every(l => l.total <= 100 + 1e-6), h.lines.map(l => [l.gate, l.total]));
+    E(`${P(pidA)}.hist = 'count'; changePop(${pidA}, ${idA})`); await sleep(400); h = hi();
+    const cg = E(`getColorGates(${idA}).map(g => g.id)`);
+    R('19.15', 'Histogram of gate A shows A and its true children (B) only, not the overlapping sibling C that back-gating would add',
+      cg.includes(idC) && h.lines.map(l => l.gate).sort().join(',') === [idA, idB].sort().join(','), { colorGates: cg, lines: h.lines.map(l => l.gate) });
+    E(`(() => { const p = ${P(pidA)}; p.gatePoints = []; p.mode = 'gate'; const c = document.getElementById('canvas-' + p.id);
+        onCanvasMouseDown(T.ev(p, 200, 200), c, p); onCanvasClick(T.ev(p, 200, 200), c, p); })()`);
+    R('19.16', 'Polygon and other 2D gate tools do nothing on a histogram', E(`${P(pidA)}.gatePoints.length`) === 0, '');
+    const nb2 = E('fcsFiles[0].populations.filter(p => p.gateInfo && p.gateInfo.range).length');
+    E(`(() => { const p = ${P(pidA)}; p.mode = 'range'; p.gatePoints = []; })()`);
+    E(`T.drag(${P(pidA)}, 150, 150, 230, 150)`); await sleep(2500);
+    const hid = E('fcsFiles[0].populations[fcsFiles[0].populations.length - 1].id');
+    R('19.17', 'The 1D range tool works on a histogram and the gate lands under the plotted population',
+      E('fcsFiles[0].populations.filter(p => p.gateInfo && p.gateInfo.range).length') === nb2 + 1 && E(`T.byId(${hid}).parentId`) === idA, '');
+    E(`deleteGateAndDescendants(${hid}); refreshAfterGateChange(); ${P(pidA)}.mode = 'pan'`); await sleep(400);
+
+    // ── Axis range dialog ────────────────────────────────────────────────────
+    E(`showAxisRangeModal(${P(pidA)}, 0, 0)`); await sleep(300);
+    const dlg = E(`(() => { const m = document.getElementById('axis-range-modal'); return { x: !!m.querySelector('#rm-x-min'), y: !!m.querySelector('#rm-y-min'), text: m.innerText,
+      untitled: [...m.querySelectorAll('button, input, label')].filter(e => !e.title && !e.closest('[title]')).map(e => e.outerHTML.slice(0, 60)) }; })()`);
+    R('19.18', 'Axis dialog on a histogram shows only the X axis plus a note on the Y (Count, linear)', dlg.x && !dlg.y && /Count/.test(dlg.text), dlg.text.slice(0, 200));
+    R('19.19', 'Every control in the axis dialog has a hover explanation', dlg.untitled.length === 0, dlg.untitled);
+    const dMin = E(`fcsFiles[0].colMins[${X}]`), dMax = E(`fcsFiles[0].colMaxs[${X}]`), full = E(`fcsFiles[0].params[${X}].range`);
+    const near = (a, b) => Math.abs(a - b) <= 1e-4 * Math.max(1, Math.abs(b)) + 1;
+    const val = id => E(`parseFloat(document.getElementById('${id}').value)`);
+    E(`document.querySelector('#axis-range-modal .axis-minmax-btn').click()`);
+    R('19.20', 'Set to data min/max fills Min and Max with the data minimum and maximum', near(val('rm-x-min'), dMin) && near(val('rm-x-max'), dMax), { dMin, dMax, got: [val('rm-x-min'), val('rm-x-max')] });
+    E(`document.querySelector('#axis-range-modal .axis-full-btn').click()`);
+    const scaleX = E(`plotScale(${P(pidA)}, 'x')`);
+    R('19.21', 'Set to full scale fills Min and Max with the file full scale (0, or 1 on a log axis, up to $PnR)',
+      near(val('rm-x-max'), full) && near(val('rm-x-min'), scaleX === 'log' ? 1 : Math.min(0, dMin)), { full, scaleX, got: [val('rm-x-min'), val('rm-x-max')] });
+    E(`document.getElementById('axis-range-modal').remove()`);
+    E(`(() => { const f = fcsFiles[0]; _paramRanges = f.paramRanges; f.paramRanges.set(${X}, { rawMax: 5000 }); f.paramRanges.set(${Y1}, { rawMax: 7000 }); })()`);
+    E(`showAxisRangeModal(${P(pidA)}, 0, 0)`); await sleep(200);
+    E(`resetAxisRangeModal(${pidA})`); await sleep(400);
+    R('19.22', 'Reset to Defaults on a histogram clears the X axis only, not the hidden Y parameter',
+      E(`fcsFiles[0].paramRanges.has(${X})`) === false && E(`fcsFiles[0].paramRanges.has(${Y1})`) === true, '');
+    E(`document.getElementById('axis-range-modal')?.remove(); fcsFiles[0].paramRanges.delete(${Y1})`);
+
+    // ── Colour inheritance ───────────────────────────────────────────────────
+    const col = E(`(() => {
+      const f = fcsFiles[0], root = T.root(), made = [];
+      const sync = () => rebuildPopulationsView();
+      const mkp = (name, parentId, color, noColor) => { const p = { id: popIdCounter++, name, color, noColor: !!noColor, parentId, fileId: f.fileId, indices: new Int32Array(0), gateInfo: { rawPts: [], xParam: 0, yParam: 1 } }; f.populations.push(p); made.push(p); sync(); return p; };
+      const out = {};
+      const G0 = mkp('G0', root.id, null, true);                         // uncoloured, nothing coloured above it
+      const Q = mkp('Q', G0.id, null, true), S1 = mkp('S1', G0.id, '#00ff00'), S2 = mkp('S2', G0.id, '#0000ff');
+      f.colorPrecedence = [S2.id, S1.id, ...f.colorPrecedence.filter(i => ![S1.id, S2.id].includes(i))];
+      out.rank1 = _primoColor(Q);                                         // S2 outranks S1
+      f.colorPrecedence = [S1.id, S2.id, ...f.colorPrecedence.filter(i => ![S1.id, S2.id].includes(i))];
+      out.rank2 = _primoColor(Q);                                         // now S1
+      const P = mkp('P', G0.id, '#ff0000'); const c1 = mkp('c1', P.id, null, true);
+      out.ancestor = _primoColor(c1);                                     // nearest coloured ancestor beats siblings
+      S1.color = null; S2.color = null; P.color = null;   // P is also a sibling of Q
+      out.none = _primoColor(Q);                                          // nothing coloured among siblings
+      S1.color = '#00ff00'; S2.color = '#0000ff'; P.color = '#ff0000';
+      // farthest descendant wins, then its colour by the same rules
+      const D1 = mkp('D1', G0.id, '#ff0000'), D2 = mkp('D2', D1.id, null, true), E1 = mkp('E1', G0.id, '#00ff00');
+      const items = _ng2ClassItems([D1, D2, E1].map(_withEffColor), G0);
+      out.deepest = items[items.length - 1].g.id === D2.id; out.deepestCol = items[items.length - 1].col;
+      const Z = mkp('Z', Q.id, null, true);                               // deeper still, no colour anywhere
+      const it2 = _ng2ClassItems([Q, Z].map(_withEffColor), G0);
+      out.grayLast = it2[it2.length - 1].g.id === Z.id && it2[it2.length - 1].col === null;
+      out.S1 = S1.color; out.S2 = S2.color;
+      f.populations = f.populations.filter(p => !made.includes(p)); f.colorPrecedence = f.colorPrecedence.filter(i => !made.some(p => p.id === i)); sync();
+      return out; })()`);
+    R('19.23', 'Colour: an uncoloured population takes its highest-ranked coloured sibling when no ancestor has colour; precedence order decides', col.rank1 === '#0000ff' && col.rank2 === '#00ff00', col);
+    R('19.24', 'Colour: a nearest coloured ancestor beats a sibling', col.ancestor === '#ff0000', col);
+    R('19.25', 'Colour: nothing to inherit gives no colour (drawn gray)', col.none === null, col);
+    R('19.26', 'Colour: the farthest-descendant gate owns an event, in its inherited colour; with nothing to inherit it still owns it (gray)',
+      col.deepest === true && col.deepestCol === '#ff0000' && col.grayLast === true, col);
+
+    // ── Template round trip keeps range gates ────────────────────────────────
+    const nameA = E(`T.byId(${idA}).name`);
+    const tmpl = E(`(() => { const t = _buildTemplateV3('t'); return { has: JSON.stringify(t).includes('"range":{'), t }; })()`);
+    L.w.__t = tmpl.t; const before = E(`T.byId(${idA}).gateInfo.range.x1`);
+    E(`_applyTemplateV3(__t, [fcsFiles[0]])`); await sleep(3500);
+    const after = E(`(() => { const g = fcsFiles[0].populations.find(p => p.gateInfo && p.gateInfo.range && p.name === ${JSON.stringify(nameA)}); return g ? { x1: g.gateInfo.range.x1, n: g.indices.length, ranges: fcsFiles[0].populations.filter(p => p.gateInfo && p.gateInfo.range).length } : null; })()`);
+    R('19.27', 'Templates save range gates and restore them (range, events)', tmpl.has && after && after.x1 === before && after.n > 0 && after.ranges >= 3, { before, after });
+  } catch (e) { R('0', 'harness error', false, String(e) + (e && e.stack)); }
+  await finish('s19');
+})();
+</script>

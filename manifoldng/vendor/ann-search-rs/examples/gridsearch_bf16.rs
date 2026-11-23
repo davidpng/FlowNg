@@ -1,0 +1,269 @@
+mod commons;
+
+use ann_search_rs::*;
+use clap::Parser;
+use commons::*;
+use faer::Mat;
+use std::collections::HashSet;
+use std::f64;
+use std::time::Instant;
+use thousands::*;
+
+fn main() {
+    let cli = Cli::parse();
+
+    println!("-----------------------------");
+    println!(
+        "Generating synthetic data: {} samples, {} dimensions, {} clusters, {} dist.",
+        cli.n_samples.separate_with_underscores(),
+        cli.dim,
+        cli.n_clusters,
+        cli.distance
+    );
+    println!("-----------------------------");
+
+    let (data, _): (Mat<f32>, _) = generate_data(&cli);
+    let query_data = subsample_with_noise(&data, DEFAULT_N_QUERY, cli.seed + 1);
+    let mut results = Vec::new();
+
+    // Exhaustive query benchmark
+    println!("Building exhaustive index...");
+    let start = Instant::now();
+    let exhaustive_idx = build_exhaustive_index(data.as_ref(), &cli.distance, Verbosity::Quiet);
+    let build_time = start.elapsed().as_secs_f64() * 1000.0;
+
+    let index_size_mb = exhaustive_idx.memory_usage_bytes() as f64 / (1024.0 * 1024.0);
+
+    println!("Querying exhaustive index...");
+    let start = Instant::now();
+    let (true_neighbors, true_distances) = query_exhaustive_index(
+        query_data.as_ref(),
+        &exhaustive_idx,
+        cli.k,
+        true,
+        Verbosity::Quiet,
+    )
+    .unwrap();
+    let query_time = start.elapsed().as_secs_f64() * 1000.0;
+
+    results.push(BenchmarkResultSize {
+        method: "Exhaustive (query)".to_string(),
+        build_time_ms: build_time,
+        query_time_ms: query_time,
+        total_time_ms: build_time + query_time,
+        recall_at_k: 1.0,
+        mean_dist_rat: 1.0,
+        median_dist_rat: 1.0,
+        index_size_mb,
+    });
+
+    // Exhaustive self-query benchmark
+    println!("Self-querying exhaustive index...");
+    let start = Instant::now();
+    let (true_neighbors_self, true_distances_self) =
+        query_exhaustive_self(&exhaustive_idx, cli.k, true, Verbosity::Quiet).unwrap();
+    let self_query_time = start.elapsed().as_secs_f64() * 1000.0;
+
+    results.push(BenchmarkResultSize {
+        method: "Exhaustive (self)".to_string(),
+        build_time_ms: build_time,
+        query_time_ms: self_query_time,
+        total_time_ms: build_time + self_query_time,
+        recall_at_k: 1.0,
+        mean_dist_rat: 1.0,
+        median_dist_rat: 1.0,
+        index_size_mb,
+    });
+
+    println!("-----------------------------");
+
+    println!("Building exhaustive index (BF16 quantised)...");
+    let start = Instant::now();
+    let exhaustive_idx_bf16 =
+        build_exhaustive_bf16_index(data.as_ref(), &cli.distance, Verbosity::Quiet).unwrap();
+    let build_time = start.elapsed().as_secs_f64() * 1000.0;
+
+    let index_size_mb = exhaustive_idx_bf16.memory_usage_bytes() as f64 / (1024.0 * 1024.0);
+
+    println!("Querying exhaustive index (BF16 quantised)...");
+    let start = Instant::now();
+    let (approx_neighbors, _) = query_exhaustive_bf16_index(
+        query_data.as_ref(),
+        &exhaustive_idx_bf16,
+        cli.k,
+        false,
+        Verbosity::Quiet,
+    )
+    .unwrap();
+    let query_time = start.elapsed().as_secs_f64() * 1000.0;
+
+    let recall = calculate_recall(&true_neighbors, &approx_neighbors, cli.k);
+
+    results.push(BenchmarkResultSize {
+        method: "Exhaustive-BF16 (query)".to_string(),
+        build_time_ms: build_time,
+        query_time_ms: query_time,
+        total_time_ms: build_time + query_time,
+        recall_at_k: recall,
+        mean_dist_rat: calculate_mean_distance_ratio(
+            true_distances.as_ref().unwrap(),
+            &exact_distances(&data, &query_data, &approx_neighbors, &cli.distance),
+            cli.k,
+        ),
+        median_dist_rat: calculate_median_distance_ratio(
+            true_distances.as_ref().unwrap(),
+            &exact_distances(&data, &query_data, &approx_neighbors, &cli.distance),
+            cli.k,
+        ),
+        index_size_mb,
+    });
+
+    // Exhaustive self-query benchmark
+    println!("Self-querying exhaustive index (BF16 quantised)...");
+    let start = Instant::now();
+    let (approx_neighbors_self, _) =
+        query_exhaustive_bf16_self(&exhaustive_idx_bf16, cli.k, false, Verbosity::Quiet).unwrap();
+    let self_query_time = start.elapsed().as_secs_f64() * 1000.0;
+
+    let recall = calculate_recall(&true_neighbors_self, &approx_neighbors_self, cli.k);
+
+    results.push(BenchmarkResultSize {
+        method: "Exhaustive-BF16 (self)".to_string(),
+        build_time_ms: build_time,
+        query_time_ms: self_query_time,
+        total_time_ms: build_time + self_query_time,
+        recall_at_k: recall,
+        mean_dist_rat: calculate_mean_distance_ratio(
+            true_distances_self.as_ref().unwrap(),
+            &exact_distances(&data, &data, &approx_neighbors_self, &cli.distance),
+            cli.k,
+        ),
+        median_dist_rat: calculate_median_distance_ratio(
+            true_distances_self.as_ref().unwrap(),
+            &exact_distances(&data, &data, &approx_neighbors_self, &cli.distance),
+            cli.k,
+        ),
+        index_size_mb,
+    });
+
+    println!("-----------------------------");
+
+    let nlist_values = [
+        (cli.n_samples as f32 * 0.5).sqrt() as usize,
+        (cli.n_samples as f32).sqrt() as usize,
+        (cli.n_samples as f32 * 2.0).sqrt() as usize,
+    ];
+
+    for nlist in nlist_values {
+        println!("Building IVF-BF16 index (nlist={})...", nlist);
+        let start = Instant::now();
+        let ivf_bf16_idx = build_ivf_bf16_index(
+            data.as_ref(),
+            Some(nlist),
+            None,
+            &cli.distance,
+            cli.seed as usize,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+        let build_time = start.elapsed().as_secs_f64() * 1000.0;
+
+        let index_size_mb = ivf_bf16_idx.memory_usage_bytes() as f64 / (1024.0 * 1024.0);
+
+        let nprobe_values = [
+            (nlist as f32).sqrt() as usize,
+            (nlist as f32 * 2.0).sqrt() as usize,
+            (0.05 * nlist as f32) as usize,
+        ];
+        let mut nprobe_values: Vec<_> = nprobe_values
+            .into_iter()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        nprobe_values.sort();
+
+        // Query benchmarks
+        for nprobe in &nprobe_values {
+            if *nprobe > nlist || *nprobe == 0 {
+                continue;
+            }
+
+            println!(
+                "Querying IVF-BF16 index (nlist={}, nprobe={})...",
+                nlist, nprobe
+            );
+            let start = Instant::now();
+            let (approx_neighbors, _) = query_ivf_bf16_index(
+                query_data.as_ref(),
+                &ivf_bf16_idx,
+                cli.k,
+                Some(*nprobe),
+                false,
+                Verbosity::Quiet,
+            )
+            .unwrap();
+            let query_time = start.elapsed().as_secs_f64() * 1000.0;
+
+            let recall = calculate_recall(&true_neighbors, &approx_neighbors, cli.k);
+
+            results.push(BenchmarkResultSize {
+                method: format!("IVF-BF16-nl{}-np{} (query)", nlist, nprobe),
+                build_time_ms: build_time,
+                query_time_ms: query_time,
+                total_time_ms: build_time + query_time,
+                recall_at_k: recall,
+                mean_dist_rat: calculate_mean_distance_ratio(
+                    true_distances.as_ref().unwrap(),
+                    &exact_distances(&data, &query_data, &approx_neighbors, &cli.distance),
+                    cli.k,
+                ),
+                median_dist_rat: calculate_median_distance_ratio(
+                    true_distances.as_ref().unwrap(),
+                    &exact_distances(&data, &query_data, &approx_neighbors, &cli.distance),
+                    cli.k,
+                ),
+                index_size_mb,
+            });
+        }
+
+        // Self-query benchmark
+        let nprobe_self = (nlist as f32 * 2.0).sqrt() as usize;
+        println!("Self-querying IVF-BF16 index (nprobe={})...", nprobe_self);
+        let start = Instant::now();
+        let (approx_neighbors_self, _) = query_ivf_bf16_self(
+            &ivf_bf16_idx,
+            cli.k,
+            Some(nprobe_self),
+            false,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+        let self_query_time = start.elapsed().as_secs_f64() * 1000.0;
+
+        let recall_self = calculate_recall(&true_neighbors_self, &approx_neighbors_self, cli.k);
+
+        results.push(BenchmarkResultSize {
+            method: format!("IVF-BF16-nl{} (self)", nlist),
+            build_time_ms: build_time,
+            query_time_ms: self_query_time,
+            total_time_ms: build_time + self_query_time,
+            recall_at_k: recall_self,
+            mean_dist_rat: calculate_mean_distance_ratio(
+                true_distances_self.as_ref().unwrap(),
+                &exact_distances(&data, &data, &approx_neighbors_self, &cli.distance),
+                cli.k,
+            ),
+            median_dist_rat: calculate_median_distance_ratio(
+                true_distances_self.as_ref().unwrap(),
+                &exact_distances(&data, &data, &approx_neighbors_self, &cli.distance),
+                cli.k,
+            ),
+            index_size_mb,
+        });
+    }
+
+    print_results_size(
+        &format!("{}k samples, {}D", cli.n_samples / 1000, cli.dim),
+        &results,
+    );
+}

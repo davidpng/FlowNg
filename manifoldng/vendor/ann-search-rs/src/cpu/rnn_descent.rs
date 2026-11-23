@@ -1,0 +1,1523 @@
+//! Relative NN-Descent (RNN-Descent) index.
+//!
+//! RNN-Descent (Ono & Matsui, ACM MM 2023) folds the RNG-style pruning of NSG
+//! into the NN-Descent update loop so a single pass produces a search-ready
+//! graph. Compared to NN-Descent + NSG, no separate kNN graph is materialised.
+//!
+//! Ono, N. and Matsui, Y. *Relative NN-Descent: A Fast Index Construction for
+//! Graph-Based Approximate Nearest Neighbor Search.* ACM MM 2023.
+//! arXiv:2310.20419.
+
+use faer::RowRef;
+use rand::{rngs::SmallRng, Rng, SeedableRng};
+use rayon::prelude::*;
+use std::cell::RefCell;
+use std::cmp::{Ordering, Reverse};
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+use std::time::Duration; use crate::wtime::Instant;
+use thousands::*;
+
+use crate::cpu::kd_forest::KdTreeIndex;
+use crate::prelude::*;
+use crate::utils::graph_utils::SearchState;
+use crate::utils::nndescent_utils::{
+    ApplySortedUpdates, Neighbour, UnsafeMutPtr, Update, UpdateGrouper, SENTINEL_PID,
+};
+use crate::utils::verbosity::{BuildLog, QueryProgress};
+use crate::utils::*;
+
+///////////////////
+// Thread locals //
+///////////////////
+
+thread_local! {
+    // UpdateNeighbors per-thread scratch
+    static RNN_UPDATE_SCRATCH_F32: RefCell<UpdateScratch<f32>> =
+        const { RefCell::new(UpdateScratch::new()) };
+    static RNN_UPDATE_SCRATCH_F64: RefCell<UpdateScratch<f64>> =
+        const { RefCell::new(UpdateScratch::new()) };
+
+    // Query beam
+    static RNN_SEARCH_STATE_F32: RefCell<SearchState<f32>> = RefCell::new(SearchState::new(1024));
+    static RNN_SEARCH_STATE_F64: RefCell<SearchState<f64>> = RefCell::new(SearchState::new(1024));
+}
+
+/// Per-thread scratch for the parallel UpdateNeighbors pass.
+///
+/// Only the emit buffer survives between nodes; the prune compacts the node's
+/// adjacency in place.
+pub struct UpdateScratch<T> {
+    /// Updates to be batched and applied via [`ApplySortedUpdates`]
+    pub emitted: Vec<Update<T>>,
+}
+
+impl<T> UpdateScratch<T> {
+    /// Create an empty scratch.
+    ///
+    /// ### Returns
+    ///
+    /// Empty [`UpdateScratch`].
+    pub const fn new() -> Self {
+        Self {
+            emitted: Vec::new(),
+        }
+    }
+}
+
+impl<T> Default for UpdateScratch<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Thread-local state accessors for build-time and query-time paths.
+pub trait RnnDescentState<T> {
+    /// Access the thread-local UpdateNeighbors scratch.
+    ///
+    /// ### Params
+    ///
+    /// * `f` - Closure operating on the borrowed cell
+    fn with_update_scratch<F, R>(f: F) -> R
+    where
+        F: FnOnce(&std::cell::RefCell<UpdateScratch<T>>) -> R;
+
+    /// Access the thread-local query beam state.
+    ///
+    /// ### Params
+    ///
+    /// * `f` - Closure operating on the borrowed cell
+    fn with_search_state<F, R>(f: F) -> R
+    where
+        F: FnOnce(&std::cell::RefCell<SearchState<T>>) -> R;
+}
+
+impl RnnDescentState<f32> for RnnDescentIndex<f32> {
+    fn with_update_scratch<F, R>(f: F) -> R
+    where
+        F: FnOnce(&std::cell::RefCell<UpdateScratch<f32>>) -> R,
+    {
+        RNN_UPDATE_SCRATCH_F32.with(f)
+    }
+    fn with_search_state<F, R>(f: F) -> R
+    where
+        F: FnOnce(&std::cell::RefCell<SearchState<f32>>) -> R,
+    {
+        RNN_SEARCH_STATE_F32.with(f)
+    }
+}
+
+impl RnnDescentState<f64> for RnnDescentIndex<f64> {
+    fn with_update_scratch<F, R>(f: F) -> R
+    where
+        F: FnOnce(&std::cell::RefCell<UpdateScratch<f64>>) -> R,
+    {
+        RNN_UPDATE_SCRATCH_F64.with(f)
+    }
+    fn with_search_state<F, R>(f: F) -> R
+    where
+        F: FnOnce(&std::cell::RefCell<SearchState<f64>>) -> R,
+    {
+        RNN_SEARCH_STATE_F64.with(f)
+    }
+}
+
+///////////////////
+// Build timings //
+///////////////////
+
+/// Prune-loop counters accumulated per rayon task.
+///
+/// Folded alongside the emitted updates so the counting touches registers
+/// rather than shared atomics. Deliberately per node, not per candidate pair,
+/// to keep counting out of the innermost loop.
+#[derive(Default, Clone, Copy)]
+struct PruneStats {
+    /// Adjacency lengths summed over the nodes seen
+    deg_sum: u64,
+    /// Nodes seen
+    deg_count: u64,
+    /// Longest adjacency seen
+    deg_max: u32,
+    /// Nodes skipped because their adjacency held no new edge
+    skipped: u64,
+}
+
+impl PruneStats {
+    /// Combine two task-local accumulators.
+    ///
+    /// ### Params
+    ///
+    /// * `other` - Accumulator to fold in
+    ///
+    /// ### Returns
+    ///
+    /// The combined counters.
+    fn merge(self, other: Self) -> Self {
+        Self {
+            deg_sum: self.deg_sum + other.deg_sum,
+            deg_count: self.deg_count + other.deg_count,
+            deg_max: self.deg_max.max(other.deg_max),
+            skipped: self.skipped + other.skipped,
+        }
+    }
+}
+
+/// Per-phase wall-clock breakdown of a build, accumulated across passes.
+///
+/// Timed from the driving loop rather than from inside the parallel closures.
+/// Reported at `Detailed`. The phases partition the descent passes.
+#[derive(Default, Clone, Copy)]
+struct BuildTimings {
+    /// The RNG prune: pairwise distances plus the greedy accept
+    prune: Duration,
+    /// Grouping the emitted updates by target node
+    group: Duration,
+    /// Merging grouped updates back into the graph rows
+    apply: Duration,
+    /// Collecting the reverse edges between outer rounds
+    reverse: Duration,
+    /// Reinsert updates emitted before any rejection
+    updates_emitted: u64,
+    /// Updates that actually changed a graph row
+    updates_accepted: u64,
+    /// Prune-loop counters
+    prune_stats: PruneStats,
+}
+
+impl BuildTimings {
+    /// Print the pass breakdown as `Detailed` stage lines.
+    fn report(&self) {
+        println!(
+            " Descent phases: prune {:.2?}, group {:.2?}, apply {:.2?}, reverse edges {:.2?}",
+            self.prune, self.group, self.apply, self.reverse
+        );
+
+        let accept = if self.updates_emitted > 0 {
+            100.0 * self.updates_accepted as f64 / self.updates_emitted as f64
+        } else {
+            0.0
+        };
+        println!(
+            " Updates: {} emitted, {} accepted ({:.2}%)",
+            self.updates_emitted.separate_with_underscores(),
+            self.updates_accepted.separate_with_underscores(),
+            accept
+        );
+
+        let st = self.prune_stats;
+        if st.deg_count > 0 {
+            println!(
+                " Adjacency: mean {:.1}, max {}; {} of {} node passes skipped as all-old ({:.1}%)",
+                st.deg_sum as f64 / st.deg_count as f64,
+                st.deg_max,
+                st.skipped.separate_with_underscores(),
+                st.deg_count.separate_with_underscores(),
+                100.0 * st.skipped as f64 / st.deg_count as f64
+            );
+        }
+    }
+}
+
+////////////
+// Params //
+////////////
+
+/// Build-time parameters for [`RnnDescentIndex`].
+///
+/// Paper defaults are used by [`RnnDescentBuildParams::default`].
+///
+/// ### Fields
+#[derive(Clone, Copy, Debug)]
+pub struct RnnDescentBuildParams {
+    /// Initial out-degree in the random seed graph
+    pub s: usize,
+    /// Maximum per-node adjacency after AddReverseEdges (`R` in the paper)
+    pub r: usize,
+    /// Outer rounds
+    pub t1: usize,
+    /// UpdateNeighbors passes per outer round
+    pub t2: usize,
+}
+
+impl Default for RnnDescentBuildParams {
+    fn default() -> Self {
+        Self {
+            s: 20,
+            r: 96,
+            t1: 4,
+            t2: 15,
+        }
+    }
+}
+
+impl RnnDescentBuildParams {
+    /// Construct with explicit values.
+    ///
+    /// ### Params
+    ///
+    /// * `s` - Initial out-degree
+    /// * `r` - Maximum per-node adjacency
+    /// * `t1` - Outer rounds
+    /// * `t2` - UpdateNeighbors passes per outer round
+    ///
+    /// ### Returns
+    ///
+    /// The parameter set.
+    pub fn new(s: usize, r: usize, t1: usize, t2: usize) -> Self {
+        Self { s, r, t1, t2 }
+    }
+}
+
+/////////////////////
+// RnnDescentIndex //
+/////////////////////
+
+/// Relative NN-Descent index.
+///
+/// The final graph is stored as a flat `Vec<u32>` of size `n * R`, sorted by
+/// distance ascending within each node's slot. Unused trailing slots hold
+/// `SENTINEL_PID`. Build distances are dropped at compaction: the walk needs
+/// `d(query, neighbour)` and never the stored `d(node, neighbour)`.
+///
+/// A small [`KdTreeIndex`] forest is built alongside the graph and used at
+/// query time to pick a batch of near-query entry points. This mirrors how
+/// NN-Descent seeds its beam search, but with fewer trees since the forest
+/// is only queried once per query (not per node during build).
+#[cfg_attr(feature = "serialise", derive(serde::Serialize, serde::Deserialize))]
+pub struct RnnDescentIndex<T> {
+    /// Row-major flattened vectors. Empty for a freshly built index: the
+    /// vectors then live in `forest`, the graph is over its row order and
+    /// `original_ids` maps back. Only indices saved by earlier versions fill
+    /// it, with the graph over input order.
+    pub vectors_flat: Vec<T>,
+    /// Dimensionality
+    pub dim: usize,
+    /// Number of vectors
+    pub n: usize,
+    /// Maximum per-node adjacency
+    pub r: usize,
+    /// Distance metric
+    pub metric: Dist,
+    /// Pre-computed L2 norms (Cosine only; empty otherwise)
+    pub norms: Vec<T>,
+    /// Flat final graph, `n * R` point ids, sentinel-padded.
+    ///
+    /// Ids only: the walk needs `d(query, neighbour)`, never the stored
+    /// `d(node, neighbour)`, so keeping build distances here would double the
+    /// bytes touched per hop for nothing. Matches the reference CSR.
+    pub graph: Vec<u32>,
+    /// Kd-tree forest used to pick query entry points
+    pub forest: KdTreeIndex<T>,
+    /// Original ids
+    original_ids: Vec<u32>,
+}
+
+////////////////////
+// VectorDistance //
+////////////////////
+
+impl<T> VectorDistance<T> for RnnDescentIndex<T>
+where
+    T: AnnSearchFloat,
+{
+    fn vectors_flat(&self) -> &[T] {
+        // empty own copy: the vectors live in the forest
+        if self.vectors_flat.is_empty() {
+            &self.forest.vectors_flat
+        } else {
+            &self.vectors_flat
+        }
+    }
+    fn dim(&self) -> usize {
+        self.dim
+    }
+    fn norms(&self) -> &[T] {
+        &self.norms
+    }
+}
+
+impl<T> DimensionValidation for RnnDescentIndex<T> {
+    fn dim(&self) -> usize {
+        self.dim
+    }
+}
+
+////////////////////////
+// ApplySortedUpdates //
+////////////////////////
+
+/// Merge a target-sorted update batch into the flat graph.
+///
+/// Shares its shape with NN-Descent's implementation
+/// (`src/cpu/nndescent.rs`): `par_chunk_by` splits the batch on target
+/// boundaries, and each segment owns one row for the whole call, which is what
+/// makes the raw-pointer writes sound.
+///
+/// Rows are sentinel-padded to `R` and the RNG prune keeps mean degree far
+/// below it, so every scan stops at the first sentinel instead of walking the
+/// whole slot.
+///
+/// The merge is a bounded insertion sort under the total order
+/// `(dist, source)`, so the outcome is independent of update arrival order
+/// within a segment: the final row is the `R` best of `existing + candidates`.
+impl<T> ApplySortedUpdates<T> for RnnDescentIndex<T>
+where
+    T: AnnSearchFloat,
+{
+    fn apply_sorted_updates(
+        &self,
+        updates: &[Update<T>],
+        graph: &mut [Neighbour<T>],
+        k: usize,
+        updates_count: &AtomicUsize,
+    ) {
+        if updates.is_empty() || k == 0 {
+            return;
+        }
+
+        let graph_ptr = UnsafeMutPtr(graph.as_mut_ptr());
+
+        updates
+            .par_chunk_by(|a, b| a.target == b.target)
+            .for_each(|segment| {
+                let target = segment[0].target as usize;
+
+                #[allow(clippy::redundant_locals)]
+                let graph_ptr = graph_ptr;
+
+                // SAFETY: the batch is sorted by target and each segment covers
+                // exactly one target, so this thread owns the row for the whole
+                // call and no other thread aliases it.
+                let row = unsafe { std::slice::from_raw_parts_mut(graph_ptr.0.add(target * k), k) };
+
+                let mut degree = row.iter().position(|e| e.is_sentinel()).unwrap_or(k);
+
+                // Most segments change nothing once the graph settles, so bail
+                // before touching the row if not one update can beat its
+                // current worst. Only meaningful on a full row; a short row has
+                // spare slots and always accepts.
+                if degree == k {
+                    let cutoff = row[k - 1].dist;
+                    if segment.iter().all(|u| u.dist > cutoff) {
+                        return;
+                    }
+                }
+
+                let mut edge_updates = 0usize;
+
+                for update in segment {
+                    let d = update.dist;
+                    let src = update.source;
+                    if src as usize == target {
+                        continue;
+                    }
+                    if degree == k && d > row[k - 1].dist {
+                        continue;
+                    }
+
+                    // One pass over the live prefix finds both the duplicate
+                    // and the insertion point. The scan must run to the end of
+                    // the prefix regardless, since a duplicate can sit past the
+                    // insertion point.
+                    let mut pos = degree;
+                    let mut duplicate = false;
+                    for (i, slot) in row[..degree].iter().enumerate() {
+                        let pid = slot.pid();
+                        if pid == src {
+                            duplicate = true;
+                            break;
+                        }
+                        if pos == degree && (d < slot.dist || (d == slot.dist && src < pid)) {
+                            pos = i;
+                        }
+                    }
+
+                    if duplicate || pos == k {
+                        continue;
+                    }
+
+                    // Shift the tail down one slot, dropping the worst when the
+                    // row is already full. `pos == degree < k` appends, and the
+                    // copy is then empty.
+                    row.copy_within(pos..degree.min(k - 1), pos + 1);
+                    row[pos] = Neighbour::new(src, d, true);
+                    degree = (degree + 1).min(k);
+                    edge_updates += 1;
+                }
+
+                if edge_updates > 0 {
+                    updates_count.fetch_add(edge_updates, AtomicOrdering::Relaxed);
+                }
+            });
+    }
+}
+
+/////////////
+// Helpers //
+/////////////
+
+/// Whether a metric requires pre-computed L2 norms.
+fn metric_needs_norms(metric: Dist) -> bool {
+    matches!(metric, Dist::Cosine)
+}
+
+/// Row-wise L2 norms.
+fn precompute_norms<T: AnnSearchFloat>(vectors_flat: &[T], n: usize, dim: usize) -> Vec<T> {
+    (0..n)
+        .map(|i| {
+            let start = i * dim;
+            let end = start + dim;
+            T::calculate_l2_norm(&vectors_flat[start..end])
+        })
+        .collect()
+}
+
+//////////////
+// Distance //
+//////////////
+
+impl<T> RnnDescentIndex<T>
+where
+    T: AnnSearchFloat,
+{
+    /// Distance between two indexed points under the index metric.
+    #[inline(always)]
+    fn distance(&self, i: usize, j: usize) -> T {
+        match self.metric {
+            Dist::SquaredEuclidean => self.euclidean_distance(i, j),
+            Dist::Cosine => self.cosine_distance(i, j),
+            Dist::Manhattan => self.manhattan_distance(i, j),
+        }
+    }
+
+    /// Distance between two rows that the caller has already sliced.
+    ///
+    /// Same arithmetic as [`Self::distance`], but the metric and the row
+    /// slices are lifted out of the caller's loop, as the source row is
+    /// invariant across the whole inner loop.
+    ///
+    /// ### Params
+    ///
+    /// * `a` - First row, length `dim`
+    /// * `b` - Second row, length `dim`
+    /// * `norms` - Pre-computed L2 norms (Cosine only)
+    /// * `a_id` - Row index of `a`, for its norm
+    /// * `b_id` - Row index of `b`, for its norm
+    /// * `metric` - Distance metric
+    ///
+    /// ### Returns
+    ///
+    /// The distance between the two rows.
+    #[inline(always)]
+    fn row_distance(a: &[T], b: &[T], norms: &[T], a_id: usize, b_id: usize, metric: Dist) -> T {
+        match metric {
+            Dist::SquaredEuclidean => T::euclidean_simd(a, b),
+            Dist::Cosine => T::one() - (T::dot_simd(a, b) / (norms[a_id] * norms[b_id])),
+            Dist::Manhattan => T::manhattan_simd(a, b),
+        }
+    }
+
+    /// Distance from external query to an indexed point.
+    #[inline(always)]
+    fn compute_query_distance(&self, query: &[T], idx: usize, query_norm: T) -> T {
+        match self.metric {
+            Dist::SquaredEuclidean => self.euclidean_distance_to_query(idx, query),
+            Dist::Cosine => self.cosine_distance_to_query(idx, query, query_norm),
+            Dist::Manhattan => self.manhattan_distance_to_query(idx, query),
+        }
+    }
+}
+
+///////////
+// Build //
+///////////
+
+impl<T> RnnDescentIndex<T>
+where
+    T: AnnSearchFloat,
+    Self: RnnDescentState<T> + ApplySortedUpdates<T>,
+{
+    /// Build a new Relative NN-Descent index.
+    ///
+    /// ### Params
+    ///
+    /// * `data` - Data matrix (samples x features)
+    /// * `metric` - Distance metric
+    /// * `params` - Build parameters
+    /// * `n_trees` - Kd-forest size for query entry points. `None` picks a
+    ///   dataset-scaled default `min(5 + n^0.25 / 2, 16)` — half of
+    ///   NN-Descent's rule since the forest is only queried at search time
+    ///   (not per build node), so a lower budget is sufficient.
+    /// * `seed` - Random seed for reproducibility
+    /// * `verbosity` - `Normal` prints start and end, `Detailed` adds the
+    ///   forest, the seed graph and the per-pass lines
+    ///
+    /// ### Returns
+    ///
+    /// The built index on success.
+    pub fn build(
+        data: impl AnnMatrix<T>,
+        metric: Dist,
+        params: RnnDescentBuildParams,
+        n_trees: Option<usize>,
+        seed: usize,
+        verbosity: Verbosity,
+    ) -> Result<Self, AnnSearchErrors> {
+        let log = BuildLog::new("RNNDescent index", verbosity);
+        let detailed = verbosity.detailed_verbosity();
+        let (vectors_flat, n, dim) = data.into_row_major();
+
+        let n_trees =
+            n_trees.unwrap_or_else(|| ((n as f64).powf(0.25) / 2.0 + 5.0).min(16.0) as usize);
+
+        // Build the entry-point forest once, before the graph. Query time
+        // multi-seeds the beam from `forest.query()` results. The forest owns
+        // the only copy of the vectors, and the graph is built over its row
+        // order.
+        let mut timings = BuildTimings::default();
+        let start = Instant::now();
+        let forest = KdTreeIndex::new(
+            (vectors_flat, n, dim),
+            n_trees,
+            metric,
+            seed,
+            Verbosity::Quiet,
+        );
+        if detailed {
+            println!(
+                " Built KdForest ({n_trees} trees) in {:.2?}",
+                start.elapsed()
+            );
+        }
+        let norms = if metric_needs_norms(metric) {
+            precompute_norms(&forest.vectors_flat, n, dim)
+        } else {
+            Vec::new()
+        };
+        let original_ids = KnnValidation::original_ids(&forest).to_vec();
+
+        let mut index = Self {
+            vectors_flat: Vec::new(),
+            dim,
+            n,
+            r: params.r,
+            metric,
+            norms,
+            graph: Vec::new(),
+            forest,
+            original_ids,
+        };
+
+        // Working flat graph in Neighbour<T> form during build.
+        let sentinel = Neighbour::new(SENTINEL_PID as u32, T::max_value(), false);
+        let mut build_graph = vec![sentinel; n * params.r];
+
+        // One grouper for the whole build: every pass reuses its cursor array
+        // and its output buffer.
+        let mut grouper = UpdateGrouper::new();
+
+        let start = Instant::now();
+        index.initialise_random_graph(&mut build_graph, params.s, params.r, seed);
+        if detailed {
+            println!(
+                " Seeded random graph (S = {}, R = {}) in {:.2?}",
+                params.s,
+                params.r,
+                start.elapsed()
+            );
+        }
+
+        for t1 in 0..params.t1 {
+            for t2 in 0..params.t2 {
+                let changes = index.update_neighbours_pass(
+                    &mut build_graph,
+                    params.r,
+                    &mut grouper,
+                    &mut timings,
+                );
+                if detailed {
+                    println!(
+                        "  Pass {}.{}: {} reinsert updates",
+                        t1 + 1,
+                        t2 + 1,
+                        changes.separate_with_underscores()
+                    );
+                }
+            }
+            if t1 + 1 != params.t1 {
+                let changes = index.add_reverse_edges_pass(
+                    &mut build_graph,
+                    params.r,
+                    &mut grouper,
+                    &mut timings,
+                );
+                if detailed {
+                    println!(
+                        "  Pass {}: {} reverse-edge updates",
+                        t1 + 1,
+                        changes.separate_with_underscores()
+                    );
+                }
+            }
+        }
+
+        if detailed {
+            timings.report();
+        }
+
+        // Flatten to compact ids-only storage.
+        // `collect` reuses the Neighbour<T> allocation in place, so shrink to
+        // release the surplus capacity.
+        index.graph = build_graph.into_iter().map(|n| n.pid()).collect();
+        index.graph.shrink_to_fit();
+
+        log.finish();
+
+        Ok(index)
+    }
+
+    /// Random-seed graph.
+    ///
+    /// Each node picks `s` distinct random out-neighbours (never itself),
+    /// computes distances, sorts ascending, and stores flagged new. Trailing
+    /// slots up to `r` are left as sentinels.
+    ///
+    /// ### Params
+    ///
+    /// * `graph` - Flat build-time graph (`n * r`)
+    /// * `s` - Initial out-degree
+    /// * `r` - Slot capacity per node
+    /// * `seed` - Random seed
+    fn initialise_random_graph(&self, graph: &mut [Neighbour<T>], s: usize, r: usize, seed: usize) {
+        let n = self.n;
+        let actual_s = s.min(n.saturating_sub(1));
+        graph.par_chunks_mut(r).enumerate().for_each(|(u, slot)| {
+            let mut rng = SmallRng::seed_from_u64((seed as u64).wrapping_add(u as u64));
+            let mut chosen: Vec<usize> = Vec::with_capacity(actual_s);
+            while chosen.len() < actual_s {
+                let cand = rng.random_range(0..n);
+                if cand == u || chosen.contains(&cand) {
+                    continue;
+                }
+                chosen.push(cand);
+            }
+
+            let mut with_dist: Vec<(T, usize)> = chosen
+                .into_iter()
+                .map(|v| (self.distance(u, v), v))
+                .collect();
+            with_dist.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+
+            for (i, (d, v)) in with_dist.into_iter().enumerate() {
+                slot[i] = Neighbour::new(v as u32, d, true);
+            }
+        });
+    }
+
+    /// One UpdateNeighbors pass.
+    ///
+    /// Parallel over source nodes; each thread accumulates reinsert updates
+    /// into a per-thread scratch. After the pass, updates are radix-sorted by
+    /// target and applied via [`ApplySortedUpdates`].
+    ///
+    /// ### Params
+    ///
+    /// * `graph` - Build-time graph (mutated in place)
+    /// * `r` - Slot capacity per node
+    /// * `grouper` - Reused counting-sort scratch for the emitted updates
+    /// * `timings` - Phase accumulator for the `Detailed` breakdown
+    ///
+    /// ### Returns
+    ///
+    /// Number of edge changes applied by [`ApplySortedUpdates`] this pass.
+    fn update_neighbours_pass(
+        &self,
+        graph: &mut [Neighbour<T>],
+        r: usize,
+        grouper: &mut UpdateGrouper<T>,
+        timings: &mut BuildTimings,
+    ) -> usize {
+        let counter = AtomicUsize::new(0);
+        let graph_ptr = UnsafeMutPtr(graph.as_mut_ptr());
+        let n = self.n;
+
+        grouper.reset_counts(n);
+        let counts = grouper.counts(n);
+
+        let start = Instant::now();
+        let per_thread_updates: Vec<(Vec<Update<T>>, PruneStats)> = (0..n)
+            .into_par_iter()
+            .fold(
+                || (Vec::<Update<T>>::new(), PruneStats::default()),
+                |(mut local_emits, mut stats), u| {
+                    #[allow(clippy::redundant_locals)]
+                    let graph_ptr = graph_ptr;
+                    Self::with_update_scratch(|scratch_cell| {
+                        let mut scratch_ref = scratch_cell.borrow_mut();
+                        let UpdateScratch { emitted } = &mut *scratch_ref;
+                        emitted.clear();
+
+                        // Load u's current sorted adjacency.
+                        // SAFETY: u is unique across the parallel iterator.
+                        let slot =
+                            unsafe { std::slice::from_raw_parts_mut(graph_ptr.0.add(u * r), r) };
+
+                        let mut degree = 0usize;
+                        let mut any_new = false;
+                        for entry in slot.iter() {
+                            if entry.is_sentinel() {
+                                break;
+                            }
+                            any_new |= entry.is_new();
+                            degree += 1;
+                        }
+
+                        stats.deg_sum += degree as u64;
+                        stats.deg_count += 1;
+                        stats.deg_max = stats.deg_max.max(degree as u32);
+
+                        // Every survivor is written back old, so the paper's
+                        // `!v_new && !w_new` guard reduces to `v_new`. An
+                        // all-old adjacency is therefore a no-op for the node.
+                        if !any_new {
+                            stats.skipped += 1;
+                            return;
+                        }
+
+                        let dim = self.dim;
+                        let metric = self.metric;
+                        let flat = VectorDistance::vectors_flat(self);
+                        let norms = &self.norms;
+
+                        // Greedy-accept in ascending distance order, compacting
+                        // in place: a survivor is written at `j <= i`, so the
+                        // write never passes the read and the entry is copied
+                        // out first. `slot[..j]` is the surviving list the RNG
+                        // rule tests against.
+                        let mut j = 0usize;
+                        for i in 0..degree {
+                            let entry = slot[i];
+                            let v_dist = entry.dist;
+                            let v = entry.pid();
+
+                            if !entry.is_new() {
+                                slot[j] = Neighbour::new(v, v_dist, false);
+                                j += 1;
+                                continue;
+                            }
+
+                            let v_row = &flat[v as usize * dim..v as usize * dim + dim];
+                            let mut pruned = false;
+                            for t in 0..j {
+                                let w = slot[t].pid();
+                                let w_row = &flat[w as usize * dim..w as usize * dim + dim];
+                                let d_vw = Self::row_distance(
+                                    v_row, w_row, norms, v as usize, w as usize, metric,
+                                );
+                                // RNG prune rule from Alg. 4.
+                                if v_dist >= d_vw {
+                                    emitted.push(Update::new(w, v, d_vw));
+                                    counts[w as usize].fetch_add(1, AtomicOrdering::Relaxed);
+                                    pruned = true;
+                                    break;
+                                }
+                            }
+
+                            if !pruned {
+                                slot[j] = Neighbour::new(v, v_dist, false);
+                                j += 1;
+                            }
+                        }
+
+                        // Only the range the prune just vacated needs clearing;
+                        // everything from the old degree onwards is already
+                        // sentinel.
+                        for i in j..degree {
+                            slot[i] = Neighbour::new(SENTINEL_PID as u32, T::max_value(), false);
+                        }
+
+                        local_emits.append(emitted);
+                    });
+                    (local_emits, stats)
+                },
+            )
+            .collect();
+
+        let mut batches = Vec::with_capacity(per_thread_updates.len());
+        let mut stats = PruneStats::default();
+        for (emits, task_stats) in per_thread_updates {
+            stats = stats.merge(task_stats);
+            batches.push(emits);
+        }
+        timings.prune += start.elapsed();
+        timings.prune_stats = timings.prune_stats.merge(stats);
+
+        let start = Instant::now();
+        let grouped = grouper.group_counted(&batches, n);
+        timings.updates_emitted += grouped.len() as u64;
+        timings.group += start.elapsed();
+
+        if !grouped.is_empty() {
+            let start = Instant::now();
+            self.apply_sorted_updates(grouped, graph, r, &counter);
+            timings.apply += start.elapsed();
+        }
+
+        let applied = counter.load(AtomicOrdering::Relaxed);
+        timings.updates_accepted += applied as u64;
+        applied
+    }
+
+    /// One AddReverseEdges pass.
+    ///
+    /// Emits reverse edges from every current directed edge, then applies them
+    /// via [`ApplySortedUpdates`] with per-target cap `R`. Returns the number
+    /// of edge changes applied.
+    ///
+    /// ### Params
+    ///
+    /// * `graph` - Build-time graph (mutated in place)
+    /// * `r` - Slot capacity per node
+    /// * `grouper` - Reused counting-sort scratch for the emitted updates
+    /// * `timings` - Phase accumulator for the `Detailed` breakdown
+    ///
+    /// ### Returns
+    ///
+    /// Number of edge changes applied.
+    fn add_reverse_edges_pass(
+        &self,
+        graph: &mut [Neighbour<T>],
+        r: usize,
+        grouper: &mut UpdateGrouper<T>,
+        timings: &mut BuildTimings,
+    ) -> usize {
+        let counter = AtomicUsize::new(0);
+        let n = self.n;
+        let start = Instant::now();
+
+        // Re-arm every surviving edge as new. UpdateNeighbors writes all
+        // survivors back as old, so without this the `!v_new && !w_new` guard
+        // skips essentially every pair from the second outer round onwards.
+        // Matches the reference (RNNDescent.cpp, add_reverse_edges).
+        graph.par_iter_mut().for_each(|entry| {
+            if !entry.is_sentinel() {
+                entry.mark_new();
+            }
+        });
+
+        grouper.reset_counts(n);
+        let counts = grouper.counts(n);
+
+        // Collect reverse-edge updates in parallel.
+        let per_thread: Vec<Vec<Update<T>>> = (0..n)
+            .into_par_iter()
+            .fold(Vec::<Update<T>>::new, |mut local, u| {
+                let base = u * r;
+                for entry in &graph[base..base + r] {
+                    if entry.is_sentinel() {
+                        break;
+                    }
+                    // Reverse edge: target = entry.pid, source = u.
+                    let pid = entry.pid();
+                    local.push(Update::new(pid, u as u32, entry.dist));
+                    counts[pid as usize].fetch_add(1, AtomicOrdering::Relaxed);
+                }
+                local
+            })
+            .collect();
+
+        timings.reverse += start.elapsed();
+
+        let start = Instant::now();
+        let grouped = grouper.group_counted(&per_thread, n);
+        timings.updates_emitted += grouped.len() as u64;
+        timings.group += start.elapsed();
+
+        if !grouped.is_empty() {
+            let start = Instant::now();
+            self.apply_sorted_updates(grouped, graph, r, &counter);
+            timings.apply += start.elapsed();
+        }
+
+        let applied = counter.load(AtomicOrdering::Relaxed);
+        timings.updates_accepted += applied as u64;
+        applied
+    }
+
+    /// Whether the graph runs over the forest's rows and vectors, rather
+    /// than its own copy in input order (indices saved by earlier versions).
+    ///
+    /// ### Returns
+    ///
+    /// `true` for a freshly built index
+    #[inline]
+    fn shares_forest_vectors(&self) -> bool {
+        self.vectors_flat.is_empty()
+    }
+
+    /// Memory usage in bytes.
+    pub fn memory_usage_bytes(&self) -> usize {
+        std::mem::size_of_val(self)
+            + self.vectors_flat.capacity() * std::mem::size_of::<T>()
+            + self.norms.capacity() * std::mem::size_of::<T>()
+            + self.graph.capacity() * std::mem::size_of::<u32>()
+            + self.forest.memory_usage_bytes()
+    }
+}
+
+///////////
+// Query //
+///////////
+
+impl<T> RnnDescentIndex<T>
+where
+    T: AnnSearchFloat,
+    Self: RnnDescentState<T>,
+{
+    /// Read a node's neighbours slice.
+    ///
+    /// ### Params
+    ///
+    /// * `node_id` - Source node
+    ///
+    /// ### Returns
+    ///
+    /// Slice of `R` point ids.
+    #[inline(always)]
+    fn get_neighbours_slot(&self, node_id: usize) -> &[u32] {
+        let base = node_id * self.r;
+        &self.graph[base..base + self.r]
+    }
+
+    /// Query the index for `k` nearest neighbours.
+    ///
+    /// Beam search using [`SearchState`] with pool size `ef` (default 100).
+    ///
+    /// The paper (Ono & Matsui 2023, Section 4.4, Eq. 4) introduces a
+    /// query-time out-degree cap `K` that limits how many of each node's stored
+    /// `R` neighbours the walk expands per hop. Neighbours are stored sorted
+    /// ascending by distance, so this is a `.take(K)` on the slot. Default is
+    /// `min(32, R)`.
+    ///
+    /// ### Params
+    ///
+    /// * `query` - Query vector
+    /// * `k` - Number of neighbours to return
+    /// * `ef_search` - Optional beam width override (default 100)
+    /// * `k_search` - Optional per-hop out-degree cap (default `min(32, R)`)
+    ///
+    /// ### Returns
+    ///
+    /// `(indices, distances)` sorted ascending.
+    pub fn query(
+        &self,
+        query: &[T],
+        k: usize,
+        ef_search: Option<usize>,
+        k_search: Option<usize>,
+    ) -> Result<(Vec<usize>, Vec<T>), AnnSearchErrors> {
+        self.check_dim(query.len())?;
+
+        let ef = ef_search.unwrap_or(100).max(k);
+        let k_hop = k_search.unwrap_or(32).min(self.r).max(1);
+
+        Self::with_search_state(|state_cell| {
+            let mut state = state_cell.borrow_mut();
+            state.reset(self.n);
+            // `BoundedMaxHeap` rather than a sorted buffer: it sifts once per
+            // accepted candidate instead of paying two memmoves of up to `ef`
+            // entries.
+            state.results.reset(ef);
+
+            let query_norm = if self.metric == Dist::Cosine {
+                T::calculate_l2_norm(query)
+            } else {
+                T::one()
+            };
+
+            // Seed the beam from the kd-forest. The forest returns already-near
+            // candidates, so all of them can go straight into the result heap.
+            let init_candidates = (ef / 2).max(2 * k).min(self.n);
+            let search_k = init_candidates * 3;
+            // Seeds must be rows of the graph: forest rows when sharing its
+            // vectors, input ids (= rows) in indices saved before that
+            let (seed_ids, seed_dists) = if self.shares_forest_vectors() {
+                self.forest
+                    .query_rows(query, init_candidates, Some(search_k))?
+            } else {
+                self.forest.query(query, init_candidates, Some(search_k))?
+            };
+
+            for (id, d) in seed_ids.iter().zip(seed_dists.iter()) {
+                if state.is_visited(*id) {
+                    continue;
+                }
+                state.mark_visited(*id);
+                state.candidates.push(Reverse((OrderedFloat(*d), *id)));
+                state.results.push(*d, *id);
+            }
+
+            // `threshold()` is infinity until the heap fills, so the "or the
+            // result set is not yet full" arm of both tests below is implicit.
+            let mut furthest = state.results.threshold();
+
+            while let Some(Reverse((current_dist, current_id))) = state.candidates.pop() {
+                if current_dist.0 > furthest {
+                    break;
+                }
+
+                let neighbours = self.get_neighbours_slot(current_id);
+                for &pid in neighbours.iter().take(k_hop) {
+                    if pid as usize == SENTINEL_PID {
+                        break;
+                    }
+                    let n_idx = pid as usize;
+                    if state.is_visited(n_idx) {
+                        continue;
+                    }
+                    state.mark_visited(n_idx);
+
+                    let d = self.compute_query_distance(query, n_idx, query_norm);
+                    if d < furthest {
+                        state.candidates.push(Reverse((OrderedFloat(d), n_idx)));
+                        state.results.push(d, n_idx);
+                        furthest = state.results.threshold();
+                    }
+                }
+            }
+
+            state.results.sort();
+            let take = k.min(state.results.len());
+
+            Ok((
+                state.results.ids()[..take]
+                    .iter()
+                    .map(|&r| self.original_ids[r] as usize)
+                    .collect(),
+                state.results.dists()[..take].to_vec(),
+            ))
+        })
+    }
+
+    /// Query using a matrix row reference (stride-optimised).
+    #[inline]
+    pub fn query_row(
+        &self,
+        query_row: RowRef<T>,
+        k: usize,
+        ef_search: Option<usize>,
+        k_search: Option<usize>,
+    ) -> Result<(Vec<usize>, Vec<T>), AnnSearchErrors> {
+        if query_row.col_stride() == 1 {
+            let slice =
+                unsafe { std::slice::from_raw_parts(query_row.as_ptr(), query_row.ncols()) };
+            return self.query(slice, k, ef_search, k_search);
+        }
+        let query_vec: Vec<T> = query_row.iter().cloned().collect();
+        self.query(&query_vec, k, ef_search, k_search)
+    }
+
+    /// Generate the full kNN graph by querying every internal vector.
+    ///
+    /// ### Params
+    ///
+    /// * `k` - Number of neighbours per row
+    /// * `ef_search` - Optional beam width override
+    /// * `k_search` - Optional per-hop out-degree cap (default `min(32, R)`)
+    /// * `return_dist` - Whether to return distances
+    /// * `verbosity` - Prints start, progress and end at `Normal`
+    ///
+    /// ### Returns
+    ///
+    /// Tuple of `(knn_indices, optional distances)`.
+    pub fn generate_knn(
+        &self,
+        k: usize,
+        ef_search: Option<usize>,
+        k_search: Option<usize>,
+        return_dist: bool,
+        verbosity: Verbosity,
+    ) -> KnnOptionResult<T> {
+        let progress = QueryProgress::new("RNNDescent index", self.n, true, verbosity);
+
+        let results: Vec<(Vec<usize>, Vec<T>)> = (0..self.n)
+            .into_par_iter()
+            .map(|i| {
+                let start = i * self.dim;
+                let end = start + self.dim;
+                let vec = &VectorDistance::vectors_flat(self)[start..end];
+
+                progress.tick();
+
+                self.query(vec, k, ef_search, k_search)
+            })
+            .collect::<Result<Vec<_>, AnnSearchErrors>>()?;
+        progress.finish();
+
+        // row `i` is internal row `i`; put it back at its original id
+        let mut ordered = vec![(Vec::new(), Vec::new()); self.n];
+        for (i, r) in results.into_iter().enumerate() {
+            ordered[self.original_ids[i] as usize] = r;
+        }
+
+        Ok(pack_knn_results(ordered, return_dist))
+    }
+}
+
+///////////////////
+// KnnValidation //
+///////////////////
+
+impl<T> KnnValidation<T> for RnnDescentIndex<T>
+where
+    T: AnnSearchFloat,
+    Self: RnnDescentState<T>,
+{
+    fn query_for_validation(
+        &self,
+        query_vec: &[T],
+        k: usize,
+    ) -> Result<(Vec<usize>, Vec<T>), AnnSearchErrors> {
+        self.query(query_vec, k, None, None)
+    }
+
+    fn n(&self) -> usize {
+        self.n
+    }
+    fn dim(&self) -> usize {
+        self.dim
+    }
+    fn metric(&self) -> Dist {
+        self.metric
+    }
+    fn original_ids(&self) -> &[u32] {
+        &self.original_ids
+    }
+}
+
+///////////
+// Tests //
+///////////
+
+/////////////
+// IndexIo //
+/////////////
+
+#[cfg(feature = "serialise")]
+impl<T> IndexIo for RnnDescentIndex<T>
+where
+    T: AnnSearchFloat,
+{
+    type Elem = T;
+
+    const KIND: &'static str = "rnn_descent";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+    use faer::Mat;
+
+    fn simple_matrix() -> Mat<f32> {
+        let data = [
+            1.0_f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0,
+        ];
+        Mat::from_fn(5, 3, |i, j| data[i * 3 + j])
+    }
+
+    fn linear_matrix(n: usize, dim: usize) -> Mat<f32> {
+        let mut data = vec![0.0_f32; n * dim];
+        for i in 0..n {
+            data[i * dim] = i as f32 * 0.1;
+        }
+        Mat::from_fn(n, dim, |i, j| data[i * dim + j])
+    }
+
+    fn build_default(mat: &Mat<f32>, metric: Dist) -> RnnDescentIndex<f32> {
+        let params = RnnDescentBuildParams::new(10, 32, 3, 8);
+        RnnDescentIndex::<f32>::build(mat.as_ref(), metric, params, None, 42, Verbosity::Quiet)
+            .unwrap()
+    }
+
+    #[test]
+    fn build_euclidean_small() {
+        let mat = simple_matrix();
+        let _ = build_default(&mat, Dist::SquaredEuclidean);
+    }
+
+    #[test]
+    fn build_cosine_small() {
+        let mat = simple_matrix();
+        let _ = build_default(&mat, Dist::Cosine);
+    }
+
+    #[test]
+    fn query_finds_self_euclidean() {
+        let mat = simple_matrix();
+        let idx = build_default(&mat, Dist::SquaredEuclidean);
+        let query = vec![1.0_f32, 0.0, 0.0];
+        let (indices, distances) = idx.query(&query, 1, None, None).unwrap();
+        assert_eq!(indices.len(), 1);
+        assert_eq!(indices[0], 0);
+        assert_relative_eq!(distances[0], 0.0, epsilon = 1e-5);
+    }
+
+    #[test]
+    fn query_finds_self_cosine() {
+        let mat = simple_matrix();
+        let idx = build_default(&mat, Dist::Cosine);
+        let query = vec![1.0_f32, 0.0, 0.0];
+        let (indices, distances) = idx.query(&query, 1, None, None).unwrap();
+        assert_eq!(indices[0], 0);
+        assert_relative_eq!(distances[0], 0.0, epsilon = 1e-5);
+    }
+
+    #[test]
+    fn distances_ascending() {
+        let mat = simple_matrix();
+        let idx = build_default(&mat, Dist::SquaredEuclidean);
+        let query = vec![0.5_f32, 0.5, 0.0];
+        let (_, distances) = idx.query(&query, 4, None, None).unwrap();
+        for i in 1..distances.len() {
+            assert!(distances[i] >= distances[i - 1]);
+        }
+    }
+
+    #[test]
+    fn query_returns_exactly_k() {
+        let mat = simple_matrix();
+        let idx = build_default(&mat, Dist::SquaredEuclidean);
+        let query = vec![0.0_f32, 0.0, 0.0];
+        for k in 1..=5 {
+            let (indices, distances) = idx.query(&query, k, None, None).unwrap();
+            assert_eq!(indices.len(), k);
+            assert_eq!(distances.len(), k);
+        }
+    }
+
+    #[test]
+    fn degree_within_r_cap() {
+        let n = 200;
+        let dim = 4;
+        let mat = linear_matrix(n, dim);
+        let params = RnnDescentBuildParams::new(20, 32, 3, 8);
+        let idx = RnnDescentIndex::<f32>::build(
+            mat.as_ref(),
+            Dist::SquaredEuclidean,
+            params,
+            None,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        for node in 0..idx.n {
+            let base = node * idx.r;
+            let slot = &idx.graph[base..base + idx.r];
+            let mut deg = 0;
+            for &pid in slot {
+                if pid as usize == SENTINEL_PID {
+                    break;
+                }
+                deg += 1;
+            }
+            assert!(deg <= idx.r);
+        }
+    }
+
+    #[test]
+    fn per_node_neighbours_sorted() {
+        let n = 200;
+        let dim = 4;
+        let mat = linear_matrix(n, dim);
+        let params = RnnDescentBuildParams::new(20, 32, 3, 8);
+        let idx = RnnDescentIndex::<f32>::build(
+            mat.as_ref(),
+            Dist::SquaredEuclidean,
+            params,
+            None,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        // The final graph is ids only, so recompute distances to check ordering.
+        for node in 0..idx.n {
+            let base = node * idx.r;
+            let slot = &idx.graph[base..base + idx.r];
+            let mut prev = f32::MIN;
+            for &pid in slot {
+                if pid as usize == SENTINEL_PID {
+                    break;
+                }
+                let d = idx.distance(node, pid as usize);
+                assert!(d >= prev, "Distances not ascending at node {}", node);
+                prev = d;
+            }
+        }
+    }
+
+    #[test]
+    fn no_self_loops() {
+        let mat = simple_matrix();
+        let idx = build_default(&mat, Dist::SquaredEuclidean);
+        for node in 0..idx.n {
+            let base = node * idx.r;
+            for &pid in &idx.graph[base..base + idx.r] {
+                if pid as usize == SENTINEL_PID {
+                    break;
+                }
+                assert_ne!(pid as usize, node);
+            }
+        }
+    }
+
+    #[test]
+    fn recall_linear_data() {
+        let n = 200;
+        let dim = 4;
+        let mat = linear_matrix(n, dim);
+        let params = RnnDescentBuildParams::new(20, 48, 3, 8);
+        let idx = RnnDescentIndex::<f32>::build(
+            mat.as_ref(),
+            Dist::SquaredEuclidean,
+            params,
+            None,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let query = vec![0.0_f32; dim];
+        let (indices, _) = idx.query(&query, 5, Some(80), None).unwrap();
+        assert_eq!(indices[0], 0);
+        let expected: Vec<usize> = (0..5).collect();
+        let found = indices.iter().filter(|&&i| expected.contains(&i)).count();
+        assert!(found >= 4, "Expected 4/5 top-5, got {}", found);
+    }
+
+    #[test]
+    fn recall_validation_high() {
+        let n = 500;
+        let dim = 8;
+        let mut data = vec![0.0_f32; n * dim];
+        let mut seed = 0xdead_beef_u64;
+        for slot in data.iter_mut() {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *slot = ((seed >> 32) as u32 as f32) / (u32::MAX as f32);
+        }
+        let mat = Mat::from_fn(n, dim, |i, j| data[i * dim + j]);
+
+        let params = RnnDescentBuildParams::new(20, 64, 4, 10);
+        let idx = RnnDescentIndex::<f32>::build(
+            mat.as_ref(),
+            Dist::SquaredEuclidean,
+            params,
+            None,
+            42,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+
+        let recall = idx.validate_index(5, 42, Some(50)).unwrap();
+        assert!(recall > 0.85, "Recall too low: {}", recall);
+    }
+
+    #[test]
+    fn reproducible_same_seed() {
+        let n = 100;
+        let dim = 4;
+        let mat = linear_matrix(n, dim);
+        let params = RnnDescentBuildParams::new(15, 32, 3, 6);
+        let a = RnnDescentIndex::<f32>::build(
+            mat.as_ref(),
+            Dist::SquaredEuclidean,
+            params,
+            None,
+            7,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+        let b = RnnDescentIndex::<f32>::build(
+            mat.as_ref(),
+            Dist::SquaredEuclidean,
+            params,
+            None,
+            7,
+            Verbosity::Quiet,
+        )
+        .unwrap();
+        assert_eq!(a.graph, b.graph);
+
+        // Same seed → same forest → same query answer.
+        let query = vec![0.5_f32; dim];
+        let (a_ids, _) = a.query(&query, 3, None, None).unwrap();
+        let (b_ids, _) = b.query(&query, 3, None, None).unwrap();
+        assert_eq!(a_ids, b_ids);
+    }
+
+    #[test]
+    fn legacy_layout_matches_shared_forest_layout() {
+        use rand::{rngs::StdRng, Rng, SeedableRng};
+        let (n, dim) = (400, 6);
+        let mut rng = StdRng::seed_from_u64(3);
+        let data: Vec<f32> = (0..n * dim).map(|_| rng.random::<f32>()).collect();
+        let mat = Mat::from_fn(n, dim, |i, j| data[i * dim + j]);
+        let index = build_default(&mat, Dist::SquaredEuclidean);
+        assert!(index.vectors_flat.is_empty());
+
+        // Rebuild the pre-sharing layout: own vectors and graph in input
+        // order, identity ids, the same forest.
+        let r = index.r;
+        let mut vectors_flat = vec![0.0_f32; n * dim];
+        let mut graph = vec![SENTINEL_PID as u32; n * r];
+        for (row, &orig) in index.original_ids.iter().enumerate() {
+            let orig = orig as usize;
+            vectors_flat[orig * dim..(orig + 1) * dim]
+                .copy_from_slice(&index.forest.vectors_flat[row * dim..(row + 1) * dim]);
+            for (slot, &pid) in graph[orig * r..(orig + 1) * r]
+                .iter_mut()
+                .zip(&index.graph[row * r..(row + 1) * r])
+            {
+                if pid as usize != SENTINEL_PID {
+                    *slot = index.original_ids[pid as usize];
+                }
+            }
+        }
+        let legacy = RnnDescentIndex {
+            vectors_flat,
+            dim,
+            n,
+            r,
+            metric: index.metric,
+            norms: Vec::new(),
+            graph,
+            forest: KdTreeIndex::new(
+                mat.as_ref(),
+                index.forest.n_trees,
+                index.metric,
+                42,
+                Verbosity::Quiet,
+            ),
+            original_ids: (0..n as u32).collect(),
+        };
+
+        for q in 0..20 {
+            let query = &data[q * dim..(q + 1) * dim];
+            let (a, da) = index.query(query, 10, None, None).unwrap();
+            let (b, db) = legacy.query(query, 10, None, None).unwrap();
+            assert_eq!(a, b);
+            assert_eq!(da, db);
+        }
+        let (a, _) = index
+            .generate_knn(5, None, None, false, Verbosity::Quiet)
+            .unwrap();
+        let (b, _) = legacy
+            .generate_knn(5, None, None, false, Verbosity::Quiet)
+            .unwrap();
+        assert_eq!(a, b);
+    }
+}

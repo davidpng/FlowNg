@@ -1,0 +1,299 @@
+//! Errors that can occur in manifolds-rs
+
+use thiserror::Error;
+
+/// Errors that can be returned by manifolds-rs
+#[derive(Debug, Error)]
+pub enum ManifoldsError {
+    // -- tSNE --
+    /// Error when perplexity is set too high
+    #[error("perplexity ({perplexity}) must be strictly less than the kNN size ({k})")]
+    PerplexityTooLarge {
+        /// Set perplexity parameter
+        perplexity: f64,
+        /// Found k-neighbours
+        k: usize,
+    },
+    /// Dimensionality error for tSNE
+    #[error("tSNE only supports n_dim = 2. Chosen dim = {n_dim}")]
+    IncorrectDim {
+        /// Set dimensions for tSNE
+        n_dim: usize,
+    },
+    // -- sparse errors --
+    /// Error if the sparse matrix is not of CSR
+    #[error("The matrix is not of CSR type. Please double check the inputs")]
+    SparseMatrixIsNotCsr,
+    /// Error for sparse multiplication dimension mismatches
+    #[error("The dimensions of the matrix do not support sparse multiplication (matrix a n_col: {n_col_a}; matrix b n_row: {n_row_b})")]
+    SparseMatrixMultiplication {
+        /// Number of columns in matrix a
+        n_col_a: usize,
+        /// Number of rows in matrix b
+        n_row_b: usize,
+    },
+    /// The matrix is not square, but should be.
+    #[error("The sparse matrix must be square")]
+    SparseMatrixMustBeSquare,
+    /// Power value is not positive
+    #[error("The chosen power must be positive, but is {power}.")]
+    PowerMustBePositive {
+        /// Chosen power by the user
+        power: usize,
+    },
+    // -- ann-search-rs --
+    /// Propagate errors from the ann-search-rs crate
+    #[error("Error from the ann-search-rs crate: {0}")]
+    AnnSearchRsError(#[from] ann_search_rs::errors::AnnSearchErrors),
+    // -- mlx --
+    /// An mlx-c call returned a non-zero code. mlx-c prints the underlying
+    /// message to stderr.
+    #[cfg(mlx_available)]
+    #[error("mlx-c call {op} failed with code {code}")]
+    MlxError {
+        /// Name of the failing mlx-c call
+        op: &'static str,
+        /// Its return code (or offending dtype for a dtype check)
+        code: i32,
+    },
+    // -- cubecl-utils-rs --
+    /// Propagate device-limit and allocation errors from the cubecl-utils-rs
+    /// crate
+    #[cfg(feature = "gpu")]
+    #[error("Error from the cubecl-utils-rs crate: {0}")]
+    CubeclUtilsError(#[from] cubecl_utils_rs::CubeclUtilsErrors),
+    // -- math errors --
+    /// Error for SVDs from faer
+    #[error("The faer SVD failed - please verify the data")]
+    FaerSvdError,
+    /// A CholeskyQR pass of a GPU randomised SVD hit a Gram matrix that is not
+    /// positive definite, i.e. the sketch is numerically rank deficient
+    #[error("CholeskyQR failed: the Gram matrix of the sketch is not positive definite")]
+    CholeskyQrFailed,
+    /// Error for Eigen decomposition from faer
+    #[error("The faer Eigen decomposition failed - please verify the data")]
+    FaerEigenError,
+
+    /// Error when Lanczos converges fewer eigenpairs than were requested
+    #[error("only {found} eigenpairs converged out of the {requested} requested; the operator has fewer distinct eigenvalues, which usually means degenerate data (duplicate points or a disconnected landmark set)")]
+    InsufficientEigenpairs {
+        /// Number of eigenpairs actually obtained
+        found: usize,
+        /// Number of eigenpairs requested
+        requested: usize,
+    },
+    /// Error when the diffusion maps kernel leaves points without any edge
+    #[error("{n_isolated} of {n_total} points have no edges left in the diffusion kernel, so their coordinates are undefined; raise k, use graph_symmetry = \"add\" or lower thresh")]
+    IsolatedPoints {
+        /// Number of points with zero degree
+        n_isolated: usize,
+        /// Number of points in the kernel
+        n_total: usize,
+    },
+
+    /// Error when the VNE knee search has too few diffusion times to work with
+    #[error("t_max = {t_max} is too small for the VNE knee search, it needs at least {min}")]
+    TMaxTooSmall {
+        /// Length of the entropy curve, i.e. the provided `t_max`
+        t_max: usize,
+        /// Smallest supported `t_max`
+        min: usize,
+    },
+
+    // -- input errors --
+    /// Error if a square matrix is not square
+    #[error("The matrix needs to be square")]
+    NotSquareMatrix,
+
+    /// Error when a method cannot run with the chosen distance metric
+    #[error("{method} does not support the '{metric}' distance metric")]
+    MetricNotSupported {
+        /// Name of the method
+        method: &'static str,
+        /// The metric asked for
+        metric: String,
+    },
+
+    /// Error if the data is empty
+    #[error("Empty data was parsed through - upstream error?")]
+    NoData,
+
+    /// Error if a graph has more vertices than `u32` indices can address
+    #[error("u32-indexed graphs support at most 2^32 - 1 vertices, got {n}")]
+    TooManyVertices {
+        /// Number of vertices in the graph
+        n: usize,
+    },
+
+    /// Error if a UMAP graph has more edges than its `u32` CSR can address
+    #[error("UMAP supports at most 2^31 - 1 undirected edges, got {n_edges}")]
+    TooManyEdges {
+        /// Number of undirected edges in the graph
+        n_edges: usize,
+    },
+
+    /// Error if the graph to optimise has no edges
+    #[error("UMAP: no edges to optimise - upstream error?")]
+    NoGraphEdges,
+
+    // -- ForceAtlas2 --
+    /// Error if the graph is not symmetric or indexes past its own size
+    #[error("ForceAtlas2 needs a symmetric graph: edge ({row}, {col}) has no reverse edge of equal weight or is out of bounds")]
+    AsymmetricGraph {
+        /// Row index of the offending edge
+        row: usize,
+        /// Column index of the offending edge
+        col: usize,
+    },
+
+    /// Error if the graph and the embedding disagree on the number of nodes
+    #[error("The graph has {n_graph} nodes but the embedding has {n_embd}")]
+    GraphSizeMismatch {
+        /// Number of nodes in the graph
+        n_graph: usize,
+        /// Number of points in the embedding
+        n_embd: usize,
+    },
+
+    /// Error if a ForceAtlas2 parameter is out of range
+    #[error("ForceAtlas2: {param} = {value} is invalid, {requirement}")]
+    Fa2InvalidParam {
+        /// Name of the parameter
+        param: &'static str,
+        /// Supplied value
+        value: f64,
+        /// What the parameter must satisfy
+        requirement: &'static str,
+    },
+
+    /// Error if an NCVis parameter is out of range
+    #[error("NCVis: {param} = {value} is invalid, {requirement}")]
+    NcvisInvalidParam {
+        /// Name of the parameter
+        param: &'static str,
+        /// Supplied value
+        value: f64,
+        /// What the parameter must satisfy
+        requirement: &'static str,
+    },
+
+    /// Error if a synthetic data generator parameter is out of range
+    #[error("Synthetic data: {param} = {value} is invalid, {requirement}")]
+    SyntheticInvalidParam {
+        /// Name of the parameter
+        param: &'static str,
+        /// Supplied value
+        value: f64,
+        /// What the parameter must satisfy
+        requirement: &'static str,
+    },
+
+    /// Error if LocalMAP's `max_distance` is not a positive finite number
+    #[error("LocalMAP: max_distance = {value} is invalid, it must be positive and finite")]
+    LocalMapInvalidMaxDistance {
+        /// Supplied value
+        value: f64,
+    },
+
+    // -- pacmap
+    /// If the pre-computed kNN does not have enough neighbours for the
+    /// parameter settings
+    #[error("PacMAP: Not enough neighbours provided")]
+    NotEnoughNeighbours {
+        /// Provided number of neighbours
+        n_provided: usize,
+        /// Near pairs per point, which the graph must cover
+        n_near: usize,
+    },
+
+    // -- density preservation --
+    /// Error if the original local radii have no spread, which leaves the
+    /// density correlation undefined
+    #[error(
+        "densMAP/den-SNE: the local radii have no spread - the density correlation is undefined"
+    )]
+    DegenerateLocalRadii,
+
+    // -- UMAP --
+    /// Error if two settings that cannot be combined are both requested
+    #[error("{feature} is not supported together with {context}")]
+    UnsupportedCombination {
+        /// The requested feature
+        feature: &'static str,
+        /// The setting it clashes with
+        context: &'static str,
+    },
+
+    // -- DREAMS --
+    /// Error if the DREAMS regularisation strength is outside `[0, 1]`
+    #[error("DREAMS: lambda = {lambda} is invalid, it must lie in [0, 1]")]
+    DreamsInvalidLambda {
+        /// The provided regularisation strength
+        lambda: f64,
+    },
+    /// Error if the DREAMS reference embedding does not match the data
+    #[error("DREAMS: reference embedding is {n_dim} x {n_ref}, expected 2 x {n_samples}")]
+    DreamsReferenceMismatch {
+        /// Number of samples in the data
+        n_samples: usize,
+        /// Number of dimensions (outer length) of the reference
+        n_dim: usize,
+        /// Number of points in the first reference dimension
+        n_ref: usize,
+    },
+    /// Error if the DREAMS reference embedding has zero norm after centring
+    #[error("DREAMS: the reference embedding has no spread after centring")]
+    DreamsDegenerateReference,
+
+    // -- t-SNE optimisers --
+    /// Error when the chosen t-SNE optimiser has no density (den-SNE) term
+    #[cfg(mlx_available)]
+    #[error("tSNE optimiser '{name}' does not support the den-SNE density term")]
+    DensityNotSupported {
+        /// Name of the requested optimiser
+        name: String,
+    },
+    /// Error when a GPU-only t-SNE optimiser is requested from a CPU entry
+    /// point
+    #[error("tSNE optimiser '{name}' runs only through tsne_gpu()")]
+    TsneOptimiserNeedsGpu {
+        /// Name of the requested optimiser
+        name: String,
+    },
+    /// Error when an FFT t-SNE optimiser is requested from a build without the
+    /// `fft_tsne` feature
+    #[error(
+        "tSNE optimiser '{name}' needs the fft_tsne feature; recompile with it or use 'barnes_hut'"
+    )]
+    TsneOptimiserNeedsFft {
+        /// Name of the requested optimiser
+        name: String,
+    },
+    /// Error when the requested GPU FFT size is not supported by the device
+    /// or the kernels
+    #[error("GPU FFT size {n} unsupported: needs a power of two in [{min}, {max}]")]
+    UnsupportedFftSize {
+        /// Requested transform size
+        n: usize,
+        /// Smallest supported size
+        min: usize,
+        /// Largest supported size on this device
+        max: usize,
+    },
+
+    // -- parametric umap serialisation --
+    /// Error when the model bytes cannot be serialised to disk format
+    #[error("Failed to serialise parametric UMAP model: {0}")]
+    ModelSerialisation(String),
+    /// Error when the model bytes cannot be deserialised back into a model
+    #[error("Failed to deserialise parametric UMAP model: {0}")]
+    ModelDeserialisation(String),
+    /// Error when the serialised model has an unsupported schema version
+    #[error("Unsupported parametric UMAP model version: {version} (expected {expected})")]
+    UnsupportedModelVersion {
+        /// Version found in the payload
+        version: u32,
+        /// Version this build of the crate supports
+        expected: u32,
+    },
+}

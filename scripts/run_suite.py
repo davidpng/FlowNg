@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the browser tests of doc/TESTING.md (sections 3 to 13 and 15 to 18) in headless Chrome and print a pass/fail list.
+"""Run the browser tests of doc/TESTING.md (sections 3 to 13 and 15 to 19) in headless Chrome and print a pass/fail list.
 
   /usr/bin/python3 scripts/run_suite.py                 # everything (about 20 minutes)
   /usr/bin/python3 scripts/run_suite.py --only 4,5,17   # chosen sections
@@ -21,9 +21,9 @@ from chrome_run import find_chrome, ROOT
 # page name -> TESTING.md section it covers; order matters (section 8 makes the file the daughters are built from)
 BEFORE_DAUGHTERS = [('3', '3'), ('4', '4 and 7.1'), ('5', '5 and 6'), ('7', '7 and 6 (leftovers)'), ('8', '8')]
 AFTER_DAUGHTERS = [('9', '9'), ('9b', '9.10, 13.9'), ('10', '10'), ('11', '11'), ('12', '12'), ('13', '13'),
-                   ('15', '15'), ('15b', '15.9'), ('16', '16'), ('17', '17.17, 17.18'), ('17b', '17.19'), ('18', '18')]
+                   ('15', '15'), ('15b', '15.9'), ('16', '16'), ('17', '17.17, 17.18'), ('17b', '17.19'), ('18', '18'), ('19', '19'), ('20', '20')]
 SECTION_OF = {'3': '3', '4': '4', '5': '5', '7': '7', '8': '8', '9': '9', '9b': '9', '10': '10', '11': '11', '12': '12', '13': '13',
-              '15': '15', '15b': '15', '16': '16', '17': '17', '17b': '17', '18': '18'}
+              '15': '15', '15b': '15', '16': '16', '17': '17', '17b': '17', '18': '18', '19': '19', '20': '20'}
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--only', help='comma-separated TESTING.md section numbers, e.g. 4,5,17')

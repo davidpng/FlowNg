@@ -2190,8 +2190,8 @@
                         },
                         {
                           "name": "DP",
-                          "color": "#ff9000",
-                          "noColor": false,
+                          "color": "#808080",
+                          "noColor": true,
                           "parentName": "3+ T cells",
                           "xParamName": "CD4 ECD",
                           "yParamName": "CD8 APC-A700",
@@ -2508,8 +2508,8 @@
                         },
                         {
                           "name": "DP/CD2",
-                          "color": "#ff9000",
-                          "noColor": false,
+                          "color": "#808080",
+                          "noColor": true,
                           "parentName": "2+ T cells",
                           "xParamName": "CD4 ECD",
                           "yParamName": "CD8 APC-A700",
@@ -3106,8 +3106,8 @@
                             },
                             {
                               "name": "B cells",
-                              "color": "#ff00ff",
-                              "noColor": false,
+                              "color": "#808080",
+                              "noColor": true,
                               "parentName": "Lymph ex monos",
                               "xParamName": "HLA DR PB",
                               "yParamName": "CD38 APC",
