@@ -15,7 +15,7 @@ The app keeps loaded files in a **Pool** and each loaded template in its own **w
 | Toolbar or layout | + 3, 10 |
 | Cofactors, Global Settings | + 5, 18 |
 | Histograms, 1D range gates, plot colours, axis range dialog | + 4, 19 |
-| ManifoldNG (manifoldng/, the embedded module, its dialog or status bar) | + 4, 8, 9, 15, 19, 20 |
+| ManifoldNG (manifoldng/, the embedded module, its panel or status bar), side panel handles | + 4, 8, 9, 15, 19, 20 |
 | Export FCS, SpikeNG | + 15 |
 | Share dialog options, hostile text from files | + 8, 16, 17 |
 | Check page, manifest, publisher check, offline copy, repository rules | + 17 (and `doc/SECURITY.md`) |
@@ -407,7 +407,8 @@ Automated by `scripts/suite/suite20.html` (`run_suite.py --only 20`), on fixture
 | 20.1 | Module block | `#manifoldng-wasm` holds the module with a 64-hex `data-sha256`; the worker source is present |
 | 20.2 | Calibration | `mngSpeed()` gives a speed factor between 0.2 and 20 |
 | 20.3 | Defaults | t-SNE (Barnes-Hut) < UMAP < FlowSOM; more channels lower FlowSOM's default; predicted time at a default is about 60 s |
-| 20.4 | Right-click a population → **ManifoldNG** | Dialog: UMAP, events = min(population, 60 s default), input limit = min(population, memory limit), fluorescence ticked, a time and memory prediction, Run enabled |
+| 20.4 | Right-click a population → **ManifoldNG** | Panel: UMAP, events = min(population, 60 s default), input limit = min(population, memory limit), fluorescence ticked, a time and memory prediction, Run enabled |
+| 20.4a | The panel | The toolbar button is active, the panel is open on the right with its handle, the tube is the selected file, the population is All events; UMAP shows 2 main settings and 2 more under a closed **More settings** |
 | 20.5 | A slow computer (speed factor 500), all events | Above the default: a warning with predicted time, memory and the 4 GB limit; the button reads **Run anyway** and is enabled |
 | 20.5b | A method needing 400 MB per 1,000 events | "Too many events", the largest count that fits, Run disabled |
 | 20.5c | Normal speed, all events (under the default) | No warning, plain **Run** |
@@ -420,11 +421,15 @@ Automated by `scripts/suite/suite20.html` (`run_suite.py --only 20`), on fixture
 | 20.9 | Re-evaluate the sample population | Same events (its 1D range gate on UMAP_1 selects them) |
 | 20.10 | Same run again | Named `UMAP_All events-2_1`, `-2_2` (new columns; the first run's stay); identical values |
 | 20.11 | Phenograph on the sample | A `Phenograph_UMAP_All events sample` label parameter and one child population per cluster; cluster sizes + unassigned = 3,000; cluster gates re-evaluate to the same events |
+| 20.11a | Clusters and the tree | The clusters are listed under Saved runs, not in the gating tree (the sample population is); ticking **in gating tree** lists them in the tree, unticking hides them again |
 | 20.12 | Cluster plot | Drawn on the newest embedding of the file |
 | 20.13 | FlowSOM on every event (6 × 6 grid, 8 metaclusters) | 8 clusters, 8 populations, no NaN, no sample population |
 | 20.14 | Cancel a t-SNE run from the status bar | Nothing is added; the status bar hides |
 | 20.15 | Recompute compensation | ManifoldNG columns unchanged |
 | 20.16 | Undo after a run | Its populations go; its columns stay |
+| 20.20 | Run from the panel with run name "My map" | Columns `My map_1`, `My map_2`; "My map" is first under Saved runs |
+| 20.21 | **Use settings** on the FlowSOM run | Form: FlowSOM, all events, seed 1, parameters 6, 6, 5, 8 |
+| 20.22 | Side panel handles | Dragging the left handle 80 px right widens the sidebar by 80 px, the right handle 60 px left widens the ManifoldNG panel by 60 px; a click hides the panel, another shows it at the same width |
 | 20.17 | Export all events as FCS, reopen | The file carries `FLOWNG_MANIFOLDS`; reopened, the columns are marked derived again |
 | 20.18 | Locked shared file | No module, worker or ManifoldNG functions in it; params keep `derived`, the file keeps `manifolds` |
 | 20.19 | Reopen the locked file | Columns with the same NaN count, the cluster populations and the run records come back |

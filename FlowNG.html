@@ -129,7 +129,47 @@
     transition: width 0.2s;
     position: relative;
   }
-  /* sidebar collapse removed */
+  /* Side panels: drag the handle to resize, click it to hide or show the panel. */
+  .sidebar.collapsed { width: 0 !important; min-width: 0; border: none; overflow: hidden; }
+  body.side-resizing, body.side-resizing * { cursor: col-resize !important; user-select: none !important; }
+  body.side-resizing .sidebar { transition: none; }
+  .side-handle {
+    width: 7px; flex-shrink: 0; cursor: col-resize; background: var(--surface);
+    display: flex; align-items: center; justify-content: center; color: var(--text2);
+    border-right: 1px solid var(--border); touch-action: none; user-select: none;
+  }
+  .side-handle.right { border-right: none; border-left: 1px solid var(--border); }
+  .side-handle:hover { background: var(--surface2); color: var(--text); }
+  .side-handle.is-collapsed { width: 12px; background: var(--surface2); color: var(--accent); }
+  .side-handle span { font-size: 9px; line-height: 1; pointer-events: none; writing-mode: vertical-rl; letter-spacing: -2px; }
+  .right-panel { border-right: none; border-left: 1px solid var(--border); width: 340px; }
+  .rp-head { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .rp-head h3 { flex: 1; color: var(--text2); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; margin: 0; }
+  .rp-head button { padding: 0 7px; font-size: 12px; line-height: 18px; }
+  .rp-grid { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 6px 8px; align-items: center; font-size: 11px; }
+  .rp-grid > label { color: var(--text2); }
+  .rp-grid select, .rp-grid input[type=number], .rp-grid input[type=text] { width: 100%; min-width: 0; box-sizing: border-box; }
+  .rp-note { font-size: 10px; color: var(--text2); line-height: 1.5; }
+  #mng-adv { font-size: 11px; border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }
+  #mng-adv summary { cursor: pointer; color: var(--text2); padding: 2px 0; user-select: none; }
+  #mng-adv[open] summary { margin-bottom: 6px; }
+  #mng-chans { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; font-size: 11px; max-height: 200px; overflow: auto;
+    border: 1px solid var(--border); border-radius: 4px; padding: 6px; }
+  #mng-chans label { display: flex; gap: 5px; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mng-run { border: 1px solid var(--border); border-radius: 5px; padding: 6px 8px; margin-bottom: 8px; font-size: 11px; }
+  .mng-run-head { display: flex; gap: 6px; align-items: baseline; }
+  .mng-run-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mng-run-head span { color: var(--text2); font-size: 10px; flex-shrink: 0; }
+  .mng-run-sub { color: var(--text2); font-size: 10px; margin: 2px 0 5px; }
+  .mng-run-btns { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .mng-run-btns button { font-size: 10px; padding: 1px 8px; }
+  .mng-run-btns label { display: flex; gap: 4px; align-items: center; font-size: 10px; color: var(--text2); margin-left: auto; cursor: pointer; }
+  .mng-cls { margin-top: 6px; max-height: 220px; overflow: auto; }
+  .mng-cl { display: flex; gap: 6px; align-items: center; padding: 2px 4px; border-radius: 3px; cursor: pointer; }
+  .mng-cl:hover { background: var(--surface2); }
+  .mng-cl .pop-swatch-tree { cursor: pointer; flex-shrink: 0; }
+  .mng-cl .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mng-cl .ct { color: var(--text2); font-size: 10px; flex-shrink: 0; }
   .sidebar-section {
     padding: 12px;
     border-bottom: 1px solid var(--border);
@@ -749,6 +789,7 @@
         <button class="tool-btn" onclick="exportGates()" id="export-btn" style="display:none" title="Save gates, plots and axis settings as a JSON template (no event data)">↓ Export Template</button>
         <button class="tool-btn" onclick="document.getElementById('import-input').click()" id="import-btn" style="display:none" title="Apply a saved JSON template to the loaded file(s)">↑ Import Template</button>
         <button class="tool-btn" onclick="showSpikeDialog()" id="spike-btn" title="SpikeNG: add a spike population (from another file) into a recipient file, after checking their column labels match; download the result as an FCS file or open it directly in FlowNG"><svg class="pipette-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg> SpikeNG</button>
+        <button class="tool-btn" onclick="toggleManifoldPanel()" id="mng-btn" style="display:none" title="ManifoldNG: UMAP, t-SNE and other embeddings (new axes), Phenograph and FlowSOM clustering, run on a population of the tube selected in the gating tree. Opens a panel on the right."><span aria-hidden="true">🧭</span> ManifoldNG</button>
         <button class="tool-btn" onclick="showShareDialog()" id="share-btn" style="display:none" title="Export one self-contained HTML containing the event data, compensation, gates and plots (not the original FCS/LMD file)">🔗 Export Shareable HTML</button>
         <input type="file" id="import-input" accept=".json" style="display:none">
 <!--@lite:end-->
@@ -808,6 +849,7 @@
       <kbd>Esc</kbd> — cancel gate / deselect all<br>
       <kbd>S</kbd> Select · <kbd>G</kbd> Polygon · <kbd>R</kbd> Rect · <kbd>Q</kbd> Quadrant · <kbd>E</kbd> Edit · <kbd>C</kbd> Comp · <kbd>A</kbd> Autocomp · <kbd>D</kbd> 1D range · <kbd>Delete</kbd> Delete mode (when no plot is selected; otherwise it removes the selected plots)<br>
       <kbd>Drag</kbd> ⠿ — reorder plots; drop on a tab to move it<br>
+      <kbd>Drag</kbd> the strip beside a side panel — change its width · <kbd>Click</kbd> it — hide / show the panel<br>
       <kbd>Right-click</kbd> canvas — axis range / cofactor<br>
       <kbd>Right-click</kbd> header — switch source file<br>
       <kbd>Slider</kbd> — density bins per axis (32–1024; high values suit the expanded view)<br>
@@ -843,6 +885,7 @@
       Axis / pop / bin / scale (LOG/LIN/ASINH) changes apply to all selected.
     </div>
   </div>
+  <div class="side-handle" id="sidebar-handle" style="display:none" title="Drag to change the width of the population panel; click to hide or show it"><span>⋮⋮</span></div>
 
   <div class="workspace">
     <div class="ws-strip" id="ws-strip" style="display:none"></div>
@@ -899,6 +942,13 @@
 <!--@lite:end-->
   </div>
   </div><!-- /workspace -->
+<!--@lite:begin-->
+  <div class="side-handle right" id="mng-handle" style="display:none" title="Drag to change the width of the ManifoldNG panel; click to hide or show it"><span>⋮⋮</span></div>
+  <aside class="sidebar right-panel" id="mng-panel" style="display:none">
+    <div class="rp-head"><h3>ManifoldNG</h3><button onclick="closeManifoldPanel()" title="Close the ManifoldNG panel">×</button></div>
+    <div id="mng-panel-body" style="display:flex;flex-direction:column"></div>
+  </aside>
+<!--@lite:end-->
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1035,9 +1085,12 @@ function _syncChrome() {
   const hasWs = !!getActiveWs(), anyFiles = poolFiles.length > 0 || workspaces.length > 0;
   const show = (id, on, disp) => { const e = document.getElementById(id); if (e) e.style.display = on ? (disp || '') : 'none'; };
   show('sidebar', anyFiles, 'flex');
+  show('sidebar-handle', anyFiles, 'flex');
   show('status-bar', anyFiles, 'flex');
   show('global-toolbar', hasWs, 'flex');
   ['add-plot-btn', 'settings-btn', 'export-btn', 'history-btn', 'share-btn'].forEach(id => show(id, hasWs));
+  show('mng-btn', hasWs && typeof mngAvailable === 'function' && mngAvailable(), 'flex');
+  if (typeof mngPanelSync === 'function') mngPanelSync(hasWs);
   show('import-btn', anyFiles);
   show('ws-strip', anyFiles, 'flex');
   show('tab-strip', hasWs && tabs.length > 0, 'flex');
@@ -2618,7 +2671,7 @@ function renderPopList() {
     const rootPop = fileObj.populations.find(p => p._isAll);
     if (rootPop) {
       // Render children of root (the gates)
-      const children = fileObj.populations.filter(p => p.parentId === rootPop.id && isGateLike(p));
+      const children = fileObj.populations.filter(p => p.parentId === rootPop.id && isGateLike(p) && !_treeHidden(p));
       children.forEach((child, ci) => {
         const isLast = ci === children.length - 1;
         buildTreeNode(tree, child.id, [!isLast], false, fileObj);
@@ -2629,7 +2682,44 @@ function renderPopList() {
   // Re-apply active-file highlight after DOM rebuild
   if (_activeFileId != null) setActiveFile(_activeFileId);
   renderPrecedenceList();
+  if (typeof mngPanelRefresh === 'function') mngPanelRefresh();
 }
+// ManifoldNG cluster populations are listed in the ManifoldNG panel, not the gating tree, unless the run says otherwise.
+function _treeHidden(p) { return typeof _mngHideInTree === 'function' && _mngHideInTree(p); }
+
+// Side panels: dragging the handle resizes its panel; a click without a drag hides or shows it.
+function setSideCollapsed(panel, handle, collapsed) {
+  panel.classList.toggle('collapsed', collapsed);
+  handle.classList.toggle('is-collapsed', collapsed);
+  handle.title = handle.title.replace(/; click to (hide or show|show|hide) it$/, collapsed ? '; click to show it' : '; click to hide it');
+  setTimeout(() => window.dispatchEvent(new Event('resize')), 230);
+}
+function initSideHandle(handle, panel, side, min, max) {
+  if (!handle || !panel) return;
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const x0 = e.clientX, w0 = panel.classList.contains('collapsed') ? 0 : panel.getBoundingClientRect().width;
+    let moved = false;
+    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+    const move = ev => {
+      const dx = ev.clientX - x0;
+      if (!moved && Math.abs(dx) < 4) return;
+      if (!moved) { moved = true; document.body.classList.add('side-resizing'); panel.classList.remove('collapsed'); }
+      const hi = Math.min(max, window.innerWidth * 0.6);
+      panel.style.width = Math.round(Math.max(min, Math.min(hi, w0 + (side === 'left' ? dx : -dx)))) + 'px';
+    };
+    const up = () => {
+      handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); handle.removeEventListener('pointercancel', up);
+      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+      document.body.classList.remove('side-resizing');
+      if (moved) { setSideCollapsed(panel, handle, false); }
+      else setSideCollapsed(panel, handle, !panel.classList.contains('collapsed'));
+    };
+    handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', up); handle.addEventListener('pointercancel', up);
+  });
+}
+initSideHandle(document.getElementById('sidebar-handle'), document.getElementById('sidebar'), 'left', 180, 640);
 
 // The Pool: files that are loaded but belong to no workspace yet. Tick some and open them in a
 // blank workspace or generate a starter template; Import Template matches templates against them.
@@ -2821,7 +2911,7 @@ function showPlotFileMenu(plotId, cx, cy) {
 function buildTreeNode(container, popId, prefixLines, isRoot, fileObj) {
   const pop = populations.find(p => p.id === popId); if (!pop) return;
   const fileObjResolved = fileObj || getFileById(pop.fileId) || fcsFiles[0];
-  const children = populations.filter(p => p.parentId === popId && isGateLike(p) && p.fileId === pop.fileId);
+  const children = populations.filter(p => p.parentId === popId && isGateLike(p) && p.fileId === pop.fileId && !_treeHidden(p));
 
   const row = document.createElement('div');
   row.className = 'pop-tree-node';
@@ -8583,34 +8673,44 @@ const MNG_CAP_SECS = 60, MNG_MEM_CAP_MB = 3500, MNG_REF_CALIBRATE_SECS = 0.1834,
 // key: [method id, label, kind, column prefix, time a, time b, channel exponent, MB fixed, MB per 1k events,
 //       share of run before the first optimiser epoch, parameter list]
 // Parameter list entries: [label, default, min, max, step, help]; their order is the module's parameter order.
+const MNG_EPOCHS_HELP = 'Optimiser passes; 0 = the library default. The time estimate assumes the default.';
 const MNG_METHODS = {
   umap:      { id: 1,  label: 'UMAP', kind: 'embed', prefix: 'UMAP', a: 4.756e-5, b: 1.16, beta: 0.09, memC: 32.2, memK: 0.8496, pre: 0.10,
     params: [['Neighbours (k)', 15, 2, 200, 1, 'Size of the local neighbourhood: small values keep fine structure, large values the global layout'],
-             ['Minimum distance', 0.1, 0, 1, 0.05, 'How tightly points may pack together in the embedding']] },
+             ['Minimum distance', 0.1, 0, 1, 0.05, 'How tightly points may pack together in the embedding'],
+             ['Spread', 1, 0.1, 10, 0.1, 'Scale of the embedded points; with the minimum distance it sets how clumped the layout is', true],
+             ['Epochs', 0, 0, 5000, 50, MNG_EPOCHS_HELP, true]] },
   tsne_fft:  { id: 3,  label: 't-SNE (FFT)', kind: 'embed', prefix: 'tSNE', a: 1.585e-3, b: 0.917, beta: 0, memC: 8, memK: 3.7846, pre: 0.04,
-    params: [['Perplexity', 30, 2, 100, 1, 'Effective number of neighbours each event considers']] },
+    params: [['Perplexity', 30, 2, 100, 1, 'Effective number of neighbours each event considers'],
+             ['Iterations', 0, 0, 10000, 50, MNG_EPOCHS_HELP, true]] },
   tsne_bh:   { id: 2,  label: 't-SNE (Barnes-Hut)', kind: 'embed', prefix: 'tSNE', a: 4.554e-4, b: 1.138, beta: 0.05, memC: 1.3, memK: 3.7639, pre: 0.03,
-    params: [['Perplexity', 30, 2, 100, 1, 'Effective number of neighbours each event considers']] },
+    params: [['Perplexity', 30, 2, 100, 1, 'Effective number of neighbours each event considers'],
+             ['Iterations', 0, 0, 10000, 50, MNG_EPOCHS_HELP, true],
+             ['Barnes-Hut θ', 0.5, 0.1, 1, 0.05, 'Accuracy of the approximation: lower is slower and more exact', true]] },
   pacmap:    { id: 4,  label: 'PaCMAP', kind: 'embed', prefix: 'PaCMAP', a: 2.105e-6, b: 1.347, beta: 0.16, memC: 1.9, memK: 2.0637, pre: 0.40,
     params: [['Near neighbours', 10, 2, 100, 1, 'Number of near pairs per event']] },
   densmap:   { id: 6,  label: 'densMAP', kind: 'embed', prefix: 'densMAP', a: 5.199e-5, b: 1.167, beta: 0.09, memC: 32.2, memK: 0.8496, pre: 0.07,
     params: [['Neighbours (k)', 15, 2, 200, 1, 'Size of the local neighbourhood'],
              ['Minimum distance', 0.1, 0, 1, 0.05, 'How tightly points may pack together'],
-             ['Density weight (λ)', 2, 0, 10, 0.1, 'How strongly local density is preserved']] },
+             ['Density weight (λ)', 2, 0, 10, 0.1, 'How strongly local density is preserved', true]] },
   phate:     { id: 5,  label: 'PHATE', kind: 'embed', prefix: 'PHATE', a: 1.363e-2, b: 0.704, beta: 0.02, memC: 14.7, memK: 11.2936, pre: 0.95,
     params: [['Neighbours (k)', 5, 2, 100, 1, 'Neighbours for the diffusion kernel'],
-             ['Landmarks', 2000, 100, 5000, 100, 'Landmarks used to approximate the diffusion operator']] },
+             ['Landmarks', 2000, 100, 5000, 100, 'Landmarks used to approximate the diffusion operator', true]] },
   diffusion: { id: 7,  label: 'Diffusion map', kind: 'embed', prefix: 'DM', a: 4.52e-4, b: 0.983, beta: 0.07, memC: 10.8, memK: 11.184, pre: 1,
     params: [['Neighbours (k)', 15, 2, 100, 1, 'Neighbours for the diffusion kernel'],
-             ['Landmarks', 2000, 100, 5000, 100, 'Landmarks used to approximate the diffusion operator']] },
+             ['Landmarks', 2000, 100, 5000, 100, 'Landmarks used to approximate the diffusion operator', true]] },
   phenograph:{ id: 10, label: 'Phenograph', kind: 'cluster', prefix: 'Phenograph', a: 1.189e-5, b: 1.187, beta: 0.27, memC: 140.6, memK: 1.2833, pre: 0.6,
     params: [['Neighbours (k)', 30, 5, 200, 1, 'Neighbours for the shared-neighbour graph'],
              ['Resolution', 1, 0.05, 10, 0.05, 'Higher values give more, smaller clusters'],
-             ['Smallest cluster', 10, 1, 100000, 1, 'Clusters with fewer events are left unassigned']] },
+             ['Smallest cluster', 10, 1, 100000, 1, 'Clusters with fewer events are left unassigned', true],
+             ['Louvain levels', 20, 1, 50, 1, 'Most levels of the multi-level Louvain merge', true]] },
   flowsom:   { id: 11, label: 'FlowSOM', kind: 'cluster', prefix: 'FlowSOM', a: 3.822e-5, b: 0.996, beta: 0.99, memC: 1.6, memK: 0.084, pre: 0,
     params: [['Grid width', 10, 2, 30, 1, 'SOM grid columns'], ['Grid height', 10, 2, 30, 1, 'SOM grid rows'],
-             ['Training passes (rlen)', 10, 1, 100, 1, 'Passes over the events while training the map'],
-             ['Metaclusters', 10, 2, 60, 1, 'Number of clusters reported']] },
+             ['Training passes (rlen)', 10, 1, 100, 1, 'Passes over the events while training the map', true],
+             ['Metaclusters', 10, 2, 60, 1, 'Number of clusters reported'],
+             ['Learning rate, start', 0.05, 0.001, 1, 0.005, 'SOM learning rate at the first update', true],
+             ['Learning rate, end', 0.01, 0.0001, 1, 0.005, 'SOM learning rate at the last update', true],
+             ['Consensus repeats', 100, 0, 1000, 10, 'Resampling repeats of the consensus metaclustering; 0 = one hierarchical clustering of the codes', true]] },
 };
 const MNG_STAGES = { 1: 'Finding neighbours', 2: 'Building graph', 3: 'Optimising', 4: 'Clustering', 5: 'Assigning events' };
 let _mng = { speed: null, job: null, calibrating: null };
@@ -8671,100 +8771,324 @@ function _mngChannels(f) {
     .sort((a, b) => a.g - b.g || naturalCmp(a.p.longName || a.p.name, b.p.longName || b.p.name));
 }
 
-function showManifoldDialog(popId) {
-  if (_mng.job) { showToast('A ManifoldNG run is already in progress; cancel it in the status bar first', 4000); return; }
+// ─── ManifoldNG panel (right side) ──────────────────────────────────────────
+// The tube is the file selected in the gating tree; the panel offers its populations, the methods and their
+// settings (the less common ones under "More settings"), runs the method, and lists the file's saved runs with
+// their clusters. Runs are saved in the file (f.manifolds), so they travel with the workspace, shared HTML and FCS.
+let _mngUI = { fileId: null, popId: null, nEdited: false };
+
+const _mngPanel = () => document.getElementById('mng-panel');
+function _mngPanelShown() { const p = _mngPanel(); return !!p && p.style.display !== 'none'; }
+function _mngPanelFile() { return fcsFiles.find(f => f.fileId === _activeFileId) || fcsFiles[0] || null; }
+
+function showManifoldPanel(popId) {
   if (!mngAvailable()) { showToast('This copy of FlowNG has no ManifoldNG module', 4000); return; }
-  const pop = populations.find(p => p.id === popId); if (!pop) return;
-  const f = getFileById(pop.fileId); if (!f) return;
-  const nPop = popCount(pop);
-  if (nPop < 10) { showToast(`"${pop.name}" has too few events for ManifoldNG`, 3500); return; }
-  document.getElementById('mng-modal')?.remove();
+  const panel = _mngPanel(), handle = document.getElementById('mng-handle');
+  if (!panel || !getActiveWs()) return;
+  const pop = popId != null ? populations.find(p => p.id === popId) : null;
+  if (pop && pop.fileId !== _activeFileId) setActiveFile(pop.fileId);
+  if (pop) _mngUI.popId = pop.id;
+  panel.style.display = 'flex'; handle.style.display = 'flex';
+  setSideCollapsed(panel, handle, false);
+  document.getElementById('mng-btn')?.classList.add('active');
+  mngPanelRefresh();
+  if (pop) { const sel = document.getElementById('mng-pop'); if (sel) { sel.value = String(pop.id); _mngFormUpdate(); } }
+  mngSpeed().then(() => _mngFormUpdate(), err => { const el = document.getElementById('mng-predict'); if (el) el.textContent = 'ManifoldNG could not start: ' + err.message; });
+}
+// Menus in the gating tree call this name.
+function showManifoldDialog(popId) { showManifoldPanel(popId); }
+function closeManifoldPanel() {
+  const panel = _mngPanel(); if (!panel) return;
+  panel.style.display = 'none'; document.getElementById('mng-handle').style.display = 'none';
+  document.getElementById('mng-btn')?.classList.remove('active');
+  setTimeout(() => window.dispatchEvent(new Event('resize')), 30);
+}
+function toggleManifoldPanel() {
+  const panel = _mngPanel();
+  if (_mngPanelShown() && !panel.classList.contains('collapsed')) closeManifoldPanel(); else showManifoldPanel();
+}
+function mngPanelSync(hasWs) { if (!hasWs && _mngPanelShown()) closeManifoldPanel(); }
+initSideHandle(document.getElementById('mng-handle'), _mngPanel(), 'right', 260, 720);
+
+// Re-draws the parts that follow the data (populations, saved runs); the form is rebuilt only for another tube.
+function mngPanelRefresh() {
+  if (!_mngPanelShown()) return;
+  const body = document.getElementById('mng-panel-body'); if (!body) return;
+  const f = _mngPanelFile();
+  if (!f) { body.innerHTML = '<div class="sidebar-section rp-note">Open a workspace to use ManifoldNG.</div>'; _mngUI.fileId = null; return; }
+  if (_mngUI.fileId !== f.fileId || !document.getElementById('mng-run')) _mngRenderForm(f);
+  _mngRenderPops(f);
+  _mngRenderRuns(f);
+  _mngFormUpdate();
+}
+
+function _mngRenderForm(f) {
+  const body = document.getElementById('mng-panel-body');
+  _mngUI.fileId = f.fileId; _mngUI.nEdited = false;
+  if (!f.populations.some(p => p.id === _mngUI.popId)) _mngUI.popId = (f.populations.find(p => p._isAll) || {}).id;
   const chans = _mngChannels(f);
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay'; overlay.id = 'mng-modal';
-  const methodOpts = (kind) => Object.entries(MNG_METHODS).filter(([, M]) => M.kind === kind)
+  const methodOpts = kind => Object.entries(MNG_METHODS).filter(([, M]) => M.kind === kind)
     .map(([k, M]) => `<option value="${k}">${_h(M.label)}</option>`).join('');
-  overlay.innerHTML = `
-    <div class="modal-box" style="width:560px;gap:10px;max-height:90vh;overflow:auto">
-      <h2>ManifoldNG: ${_h(pop.name)} <span style="font-weight:400;color:var(--text2);font-size:11px">(${nPop.toLocaleString()} events)</span></h2>
-      <div style="display:grid;grid-template-columns:130px 1fr;gap:6px 10px;align-items:center;font-size:11px">
-        <label>Method</label>
+  body.innerHTML = `
+    <div class="sidebar-section" style="display:flex;flex-direction:column;gap:8px">
+      <div class="rp-grid">
+        <label>Tube</label><div id="mng-file" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600" title="${_h(f.filename)} · click a file in the gating tree to change">${_h(shortFilename(f.filename || 'file', 40))}</div>
+        <label>Population</label><select id="mng-pop" title="The events to run on"></select>
+        <label>Algorithm</label>
         <select id="mng-method" title="Embeddings add two new axes; clusterings add a label parameter and one population per cluster">
           <optgroup label="Embedding (new axes)">${methodOpts('embed')}</optgroup>
           <optgroup label="Clustering (new populations)">${methodOpts('cluster')}</optgroup>
         </select>
+      </div>
+      <div id="mng-params" class="rp-grid"></div>
+      <div class="rp-grid">
         <label>Events</label>
-        <div style="display:flex;gap:6px;align-items:center">
-          <input id="mng-n" type="number" min="10" step="1000" style="width:110px" class="range-modal-input">
-          <span id="mng-n-note" style="color:var(--text2)"></span>
+        <input id="mng-n" type="number" min="10" step="1000" class="range-modal-input" title="How many events of the population to run; above the default you are warned about time and memory">
+      </div>
+      <div id="mng-n-note" class="rp-note"></div>
+      <div id="mng-predict" class="rp-note">Measuring this computer's speed…</div>
+      <div id="mng-chan-sum" class="rp-note"></div>
+      <details id="mng-adv">
+        <summary>More settings</summary>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div id="mng-params-adv" class="rp-grid"></div>
+          <div class="rp-grid">
+            <label title="The same seed, events and settings give the same result">Seed</label>
+            <input id="mng-seed" type="number" value="42" min="0" step="1" class="range-modal-input" title="The same seed, events and settings give the same result">
+            <label title="Scale every channel to mean 0, SD 1 before the run">Standardise</label>
+            <label style="display:flex;gap:6px;align-items:center;color:var(--text)"><input id="mng-z" type="checkbox"> mean 0, SD 1 per channel</label>
+            <label title="Name of the run and of its new columns; empty = method and population">Run name</label>
+            <input id="mng-name" type="text" maxlength="60" placeholder="automatic" class="range-modal-input" title="Name of the run and of its new columns; empty = method and population">
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;color:var(--text2)">Channels
+            <a href="#" id="mng-all" style="color:var(--accent)">all</a><a href="#" id="mng-fl" style="color:var(--accent)">fluorescence</a><a href="#" id="mng-none" style="color:var(--accent)">none</a></div>
+          <div id="mng-chans">
+            ${chans.map(c => `<label title="${_h(c.p.name)}${c.p.longName && c.p.longName !== c.p.name ? ' · ' + _h(c.p.longName) : ''}">
+              <input type="checkbox" value="${c.i}" data-g="${c.g}" ${c.g === 2 ? 'checked' : ''}>${_h(c.p.longName && c.p.longName !== c.p.name ? c.p.longName : c.p.name)}</label>`).join('')}
+          </div>
+          <div class="rp-note">Values as displayed: arcsinh with each channel's cofactor, scatter log.</div>
         </div>
-        <label></label><div id="mng-predict" style="color:var(--text2)">Measuring this computer's speed…</div>
-        <label>Seed</label><input id="mng-seed" type="number" value="42" min="0" step="1" style="width:110px" class="range-modal-input" title="The same seed, events and settings give the same result">
-        <label title="Scale every channel to mean 0, SD 1 before the run">Standardise</label>
-        <label style="justify-content:flex-start;display:flex;gap:6px;align-items:center"><input id="mng-z" type="checkbox"> scale each channel to mean 0, SD 1 (otherwise the channels' display values are used as they are)</label>
+      </details>
+      <button class="primary" id="mng-run">Run</button>
+      <div id="mng-panel-status" class="rp-note" style="display:none">
+        <div class="t"></div>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+          <span style="flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden"><span class="b" style="display:block;height:100%;width:0%;background:var(--accent);transition:width 0.25s"></span></span>
+          <button onclick="cancelManifold()" style="font-size:10px;padding:0 8px" title="Stop this run; nothing is added">Cancel</button>
+        </div>
       </div>
-      <div id="mng-params" style="display:grid;grid-template-columns:130px 1fr;gap:6px 10px;align-items:center;font-size:11px"></div>
-      <div style="font-size:11px;color:var(--text2);display:flex;gap:10px;align-items:center">Channels
-        <a href="#" id="mng-all" style="color:var(--accent)">all</a><a href="#" id="mng-fl" style="color:var(--accent)">fluorescence</a><a href="#" id="mng-none" style="color:var(--accent)">none</a>
-        <span style="margin-left:auto">Values as displayed (arcsinh with each channel's cofactor, scatter log)</span></div>
-      <div id="mng-chans" style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px 10px;font-size:11px;max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:4px;padding:6px">
-        ${chans.map(c => `<label style="display:flex;gap:5px;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${_h(c.p.name)}${c.p.longName && c.p.longName !== c.p.name ? ' · ' + _h(c.p.longName) : ''}">
-          <input type="checkbox" value="${c.i}" data-g="${c.g}" ${c.g === 2 ? 'checked' : ''}>${_h(c.p.longName && c.p.longName !== c.p.name ? c.p.longName : c.p.name)}</label>`).join('')}
-      </div>
-      <div class="modal-actions">
-        <button class="primary" id="mng-run">Run</button>
-        <button onclick="document.getElementById('mng-modal').remove()">Cancel</button>
-      </div>
+    </div>
+    <div class="sidebar-section">
+      <h3>Saved runs</h3>
+      <div id="mng-runs"></div>
     </div>`;
-  document.body.appendChild(overlay);
-  const $ = id => overlay.querySelector('#' + id);
-  let nEdited = false, capNow = 0, memNow = 0;
-  const nChans = () => overlay.querySelectorAll('#mng-chans input:checked').length;
-  const renderParams = () => {
-    const M = MNG_METHODS[$('mng-method').value];
-    $('mng-params').innerHTML = M.params.map(([lab, def, mn, mx, st, help], i) =>
-      `<label title="${_h(help)}">${_h(lab)}</label><input data-pi="${i}" type="number" value="${def}" min="${mn}" max="${mx}" step="${st}" style="width:110px" class="range-modal-input" title="${_h(help)}">`).join('');
-  };
-  const update = () => {
-    const key = $('mng-method').value, d = Math.max(1, nChans());
-    capNow = mngCap(key, d); memNow = mngMemCap(key, d);
-    if (!nEdited) $('mng-n').value = Math.min(nPop, capNow);
-    $('mng-n').max = Math.min(nPop, memNow);
-    let n = Math.max(10, Math.min(+$('mng-n').value || 0, nPop));
-    const over = n > capNow, overMem = n > memNow;
-    const pr = mngPredict(key, n, d);
-    const M = MNG_METHODS[key];
-    $('mng-n-note').textContent = n < nPop ? `random sample of ${nPop.toLocaleString()}; the rest get no value` : 'all events of the population';
-    $('mng-predict').innerHTML = !_mng.speed ? "Measuring this computer's speed…" :
-      `About ${_mngFmtSecs(pr.secs)} on this computer, ${Math.round(pr.mb).toLocaleString()} MB. ` +
-      `Default for ${_h(M.label)} with ${d} channels: ${Math.min(capNow, nPop).toLocaleString()} events` +
-      (capNow < nPop ? ` (about ${MNG_CAP_SECS} s)` : ' (all of them)') +
-      (overMem ? `<div style="color:var(--danger,#e06c75);margin-top:4px">✖ Too many events: ${_h(M.label)} needs about ${Math.round(pr.mb).toLocaleString()} MB, ` +
-                 `over the module's 4 GB limit. At most ${memNow.toLocaleString()} events with ${d} channels.</div>`
-       : over ? `<div style="color:var(--warning);margin-top:4px">⚠ Above the default: predicted ${_mngFmtSecs(pr.secs)} and ${Math.round(pr.mb).toLocaleString()} MB ` +
-                 `(the module's limit is 4 GB, at most ${memNow.toLocaleString()} events). The browser tab may slow down while it runs; you can cancel from the status bar. ` +
-                 `Predictions are approximate, so allow longer on a busy computer.</div>` : '');
-    $('mng-run').textContent = over && !overMem ? 'Run anyway' : 'Run';
-    $('mng-run').disabled = !_mng.speed || overMem || nChans() < 2;
-  };
-  $('mng-method').addEventListener('change', () => { nEdited = false; renderParams(); update(); });
-  $('mng-n').addEventListener('input', () => { nEdited = true; update(); });
-  $('mng-chans').addEventListener('change', update);
-  const tick = pred => { overlay.querySelectorAll('#mng-chans input').forEach(c => c.checked = pred(+c.dataset.g)); update(); };
+  const $ = id => document.getElementById(id);
+  $('mng-method').addEventListener('change', () => { _mngUI.nEdited = false; _mngRenderParams(); _mngFormUpdate(); });
+  $('mng-pop').addEventListener('change', () => { _mngUI.popId = +$('mng-pop').value; _mngUI.nEdited = false; _mngFormUpdate(); });
+  $('mng-n').addEventListener('input', () => { _mngUI.nEdited = true; _mngFormUpdate(); });
+  $('mng-chans').addEventListener('change', _mngFormUpdate);
+  const tick = pred => { document.querySelectorAll('#mng-chans input').forEach(c => c.checked = pred(+c.dataset.g)); _mngFormUpdate(); };
   $('mng-all').onclick = e => { e.preventDefault(); tick(() => true); };
   $('mng-fl').onclick = e => { e.preventDefault(); tick(g => g === 2); };
   $('mng-none').onclick = e => { e.preventDefault(); tick(() => false); };
-  $('mng-run').onclick = () => {
-    const key = $('mng-method').value;
-    const channels = [...overlay.querySelectorAll('#mng-chans input:checked')].map(c => +c.value);
-    const n = Math.max(10, Math.min(Math.round(+$('mng-n').value || 0), nPop, memNow));
-    const params = [...overlay.querySelectorAll('#mng-params input')].map(inp => +inp.value);
-    const seed = Math.max(0, Math.round(+$('mng-seed').value || 0)) >>> 0;
-    overlay.remove();
-    runManifold({ popId, key, channels, n, params, seed, zscore: $('mng-z').checked });
+  $('mng-run').onclick = _mngRunFromPanel;
+  $('mng-runs').addEventListener('click', _mngRunsClick);
+  $('mng-runs').addEventListener('change', _mngRunsClick);
+  $('mng-runs').addEventListener('contextmenu', e => {
+    const row = e.target.closest('.mng-cl'); if (!row) return;
+    e.preventDefault(); showGateMenu(+row.dataset.pop, e.clientX, e.clientY);
+  });
+  _mngRenderParams();
+}
+
+function _mngRenderParams(values) {
+  const M = MNG_METHODS[document.getElementById('mng-method').value];
+  const row = ([lab, def, mn, mx, st, help], i) => {
+    const v = values && Number.isFinite(values[i]) ? values[i] : def;
+    return `<label title="${_h(help)}">${_h(lab)}</label><input data-pi="${i}" type="number" value="${v}" min="${mn}" max="${mx}" step="${st}" class="range-modal-input" title="${_h(help)}">`;
   };
-  renderParams(); update();
-  mngSpeed().then(update, err => { $('mng-predict').textContent = 'ManifoldNG could not start: ' + err.message; });
+  document.getElementById('mng-params').innerHTML = M.params.map((p, i) => p[6] ? '' : row(p, i)).join('');
+  const adv = M.params.map((p, i) => p[6] ? row(p, i) : '').join('');
+  document.getElementById('mng-params-adv').innerHTML = adv || '';
+  document.getElementById('mng-params-adv').style.display = adv ? '' : 'none';
+}
+
+// Populations of the tube in tree order (clusters included: they can be run on again).
+function _mngRenderPops(f) {
+  const sel = document.getElementById('mng-pop'); if (!sel) return;
+  const root = f.populations.find(p => p._isAll); if (!root) return;
+  const out = [];
+  const walk = (p, depth) => { out.push([p, depth]); f.populations.filter(c => c.parentId === p.id && isGateLike(c)).forEach(c => walk(c, depth + 1)); };
+  walk(root, 0);
+  f.populations.filter(p => isGateLike(p) && !out.some(o => o[0] === p)).forEach(p => out.push([p, 1]));
+  const sig = out.map(([p, d]) => `${p.id}:${d}:${p.name}:${popCount(p)}`).join('|');
+  if (!out.some(([p]) => p.id === _mngUI.popId)) _mngUI.popId = root.id;
+  if (sel.dataset.sig !== sig) {
+    sel.innerHTML = out.map(([p, d]) => `<option value="${p.id}">${'  '.repeat(d)}${_h(p._isAll ? 'All events' : p.name)} (${popCount(p).toLocaleString()})</option>`).join('');
+    sel.dataset.sig = sig;
+  }
+  sel.value = String(_mngUI.popId);
+}
+
+function _mngFormUpdate() {
+  const $ = id => document.getElementById(id);
+  if (!$('mng-run')) return;
+  const pop = populations.find(p => p.id === +$('mng-pop').value);
+  const key = $('mng-method').value, M = MNG_METHODS[key];
+  const boxes = [...document.querySelectorAll('#mng-chans input')], ticked = boxes.filter(c => c.checked);
+  const d = Math.max(1, ticked.length), nPop = pop ? popCount(pop) : 0;
+  const capNow = mngCap(key, d), memNow = mngMemCap(key, d);
+  if (!_mngUI.nEdited) $('mng-n').value = Math.min(nPop, capNow);
+  $('mng-n').max = Math.min(nPop, memNow);
+  const n = Math.max(10, Math.min(+$('mng-n').value || 0, nPop));
+  const over = n > capNow, overMem = n > memNow;
+  const pr = mngPredict(key, n, d);
+  $('mng-n-note').textContent = !pop ? '' : n < nPop ? `Random sample of ${nPop.toLocaleString()} events; the rest get no value.` : 'All events of the population.';
+  const fl = ticked.length && ticked.every(c => c.dataset.g === '2') && boxes.filter(c => c.dataset.g === '2').length === ticked.length;
+  $('mng-chan-sum').textContent = `Channels: ${ticked.length} of ${boxes.length}${fl ? ' (fluorescence)' : ''}; change them under More settings.`;
+  $('mng-predict').innerHTML = !_mng.speed ? "Measuring this computer's speed…" :
+    `About ${_mngFmtSecs(pr.secs)} on this computer, ${Math.round(pr.mb).toLocaleString()} MB. ` +
+    `Default for ${_h(M.label)} with ${d} channels: ${Math.min(capNow, nPop).toLocaleString()} events` +
+    (capNow < nPop ? ` (about ${MNG_CAP_SECS} s)` : ' (all of them)') + '.' +
+    (overMem ? `<div style="color:var(--danger,#e06c75);margin-top:4px">✖ Too many events: ${_h(M.label)} needs about ${Math.round(pr.mb).toLocaleString()} MB, ` +
+               `over the module's 4 GB limit. At most ${memNow.toLocaleString()} events with ${d} channels.</div>`
+     : over ? `<div style="color:var(--warning);margin-top:4px">⚠ Above the default: predicted ${_mngFmtSecs(pr.secs)} and ${Math.round(pr.mb).toLocaleString()} MB ` +
+               `(the module's limit is 4 GB, at most ${memNow.toLocaleString()} events). The browser tab may slow down while it runs; you can cancel it. ` +
+               `Predictions are approximate, so allow longer on a busy computer.</div>` : '');
+  const busy = !!_mng.job;
+  $('mng-run').textContent = busy ? 'Running…' : over && !overMem ? 'Run anyway' : 'Run';
+  $('mng-run').disabled = busy || !_mng.speed || overMem || ticked.length < 2 || !pop || nPop < 10;
+  $('mng-run').title = busy ? 'A run is in progress' : nPop < 10 ? 'This population has too few events' : ticked.length < 2 ? 'Tick at least two channels (More settings)' : '';
+
+}
+
+function _mngRunFromPanel() {
+  const $ = id => document.getElementById(id);
+  if (_mng.job) { showToast('A ManifoldNG run is already in progress', 3000); return; }
+  const pop = populations.find(p => p.id === +$('mng-pop').value); if (!pop) return;
+  const key = $('mng-method').value, nPop = popCount(pop);
+  const channels = [...document.querySelectorAll('#mng-chans input:checked')].map(c => +c.value);
+  const memNow = mngMemCap(key, Math.max(1, channels.length));
+  const n = Math.max(10, Math.min(Math.round(+$('mng-n').value || 0), nPop, memNow));
+  const params = MNG_METHODS[key].params.map((p, i) => { const inp = document.querySelector(`#mng-panel-body input[data-pi="${i}"]`); return inp ? +inp.value : p[1]; });
+  const seed = Math.max(0, Math.round(+$('mng-seed').value || 0)) >>> 0;
+  runManifold({ popId: pop.id, key, channels, n, params, seed, zscore: $('mng-z').checked, name: $('mng-name').value.trim() || undefined });
+  $('mng-name').value = '';
+}
+
+// Cluster populations of a saved run, in label order.
+function _mngRunClusters(f, spec) {
+  const col = f.params.findIndex(p => p.name === (spec.columns || [])[0]);
+  if (col < 0) return [];
+  return f.populations.filter(p => p.gateInfo && p.gateInfo.xParam === col && _mngIsClusterGate(p))
+    .sort((a, b) => a.gateInfo.range.x1 - b.gateInfo.range.x1);
+}
+function _mngIsClusterGate(p) {
+  const r = p.gateInfo && p.gateInfo.range;
+  return !!r && Math.abs(r.x2 - r.x1 - 1) < 1e-6 && Math.abs((r.x1 + r.x2) / 2 - Math.round((r.x1 + r.x2) / 2)) < 1e-6;
+}
+// Cluster gates of a ManifoldNG label column stay out of the gating tree unless their run is set to show them.
+function _mngHideInTree(p) {
+  if (!p.gateInfo || !_mngIsClusterGate(p)) return false;
+  const f = getFileById(p.fileId), par = f && f.params[p.gateInfo.xParam];
+  if (!par || !par.derived || par.derived.kind !== 'cluster') return false;
+  const spec = (f.manifolds || []).find(s => s.id === par.derived.run);
+  return !(spec && spec.inTree);
+}
+
+function _mngRenderRuns(f) {
+  const el = document.getElementById('mng-runs'); if (!el) return;
+  const specs = (f.manifolds || []).slice().reverse();
+  if (!specs.length) { el.innerHTML = '<div class="rp-note">No runs on this tube yet. Runs are saved with the workspace, shared HTML files and FCS exports.</div>'; return; }
+  const open = new Set([...el.querySelectorAll('details[open]')].map(d => d.dataset.run));
+  el.innerHTML = specs.map(spec => {
+    const M = MNG_METHODS[spec.method] || { label: spec.label || spec.method, kind: 'embed' };
+    const missing = (spec.columns || []).some(nm => !f.params.some(p => p.name === nm));
+    let clusters = '';
+    if (M.kind === 'cluster') {
+      const pops = _mngRunClusters(f, spec);
+      const sum = pops.reduce((s, p) => s + popCount(p), 0), tot = spec.events || sum || 1;
+      clusters = `<details class="mng-cls-wrap" data-run="${_h(spec.id)}" ${open.has(spec.id) || spec === specs[0] ? 'open' : ''}>
+        <summary class="rp-note" style="cursor:pointer;margin-top:4px">${pops.length} clusters${spec.events > sum ? `, ${(spec.events - sum).toLocaleString()} events unassigned` : ''}</summary>
+        <div class="mng-cls">${pops.map(p => `<div class="mng-cl" data-pop="${p.id}" title="Click the swatch to colour or uncolour the cluster on plots; click the name to run on this cluster; right-click to rename, recolour, copy or delete">
+          <span class="pop-swatch-tree${p.noColor ? ' no-color' : ''}" data-act="colour" style="${p.noColor ? '' : `background:${_h(p.color)}`}"></span>
+          <span class="nm">${_h(p.name)}</span><span class="ct">${popCount(p).toLocaleString()} · ${(100 * popCount(p) / tot).toFixed(1)}%</span></div>`).join('')}</div>
+      </details>`;
+    }
+    return `<div class="mng-run" data-run="${_h(spec.id)}">
+      <div class="mng-run-head"><b title="${_h(spec.id)}">${_h(spec.id)}</b><span>${_h(M.label)}</span></div>
+      <div class="mng-run-sub">${_h(spec.population)} · ${(spec.events || 0).toLocaleString()} events · ${(spec.channels || []).length} channels · seed ${spec.seed}${spec.secs != null ? ` · ${_mngFmtSecs(spec.secs)}` : ''}${missing ? ' · <span style="color:var(--warning)">columns missing</span>' : ''}</div>
+      <div class="mng-run-btns">
+        <button data-act="plot" ${missing ? 'disabled' : ''} title="Open a plot of this run (the embedding, or the newest embedding coloured by these clusters)">Plot</button>
+        <button data-act="settings" title="Put this run's population, method, channels and settings into the form above">Use settings</button>
+        ${M.kind === 'cluster' ? `<label title="Also list this run's clusters in the gating tree"><input type="checkbox" data-act="tree" ${spec.inTree ? 'checked' : ''}> in gating tree</label>` : ''}
+      </div>${clusters}</div>`;
+  }).join('');
+}
+
+function _mngRunsClick(e) {
+  const f = getFileById(_mngUI.fileId); if (!f) return;
+  const card = e.target.closest('.mng-run'); if (!card) return;
+  const spec = (f.manifolds || []).find(s => s.id === card.dataset.run); if (!spec) return;
+  const act = e.target.dataset.act;
+  if (e.type === 'change') {
+    if (act !== 'tree') return;
+    spec.inTree = e.target.checked;
+    markAllDirty(); renderPopList();
+    return;
+  }
+  const row = e.target.closest('.mng-cl');
+  if (row) {
+    const p = populations.find(q => q.id === +row.dataset.pop); if (!p) return;
+    if (act === 'colour') {
+      pushUndo(`${p.noColor ? 'Coloured' : 'Uncoloured'} "${p.name}"`);
+      if (p.noColor && !p.color) p.color = GATE_COLORS[0];
+      p.noColor = !p.noColor;
+      markAllDirty(); refreshAfterGateChange();
+    } else {
+      _mngUI.popId = p.id; _mngUI.nEdited = false;
+      document.getElementById('mng-pop').value = String(p.id); _mngFormUpdate();
+      showToast(`Population set to "${p.name}"`, 1800);
+    }
+    return;
+  }
+  if (act === 'plot') {
+    const sample = f.populations.find(p => p.name === `${spec.id} sample`);
+    const src = sample || f.populations.find(p => p.name === spec.population && !p._isAll) || f.populations.find(p => p._isAll);
+    _mngOpenPlot(f, spec, src);
+    refreshAfterGateChange();
+  } else if (act === 'settings') _mngUseSettings(f, spec);
+}
+
+function _mngUseSettings(f, spec) {
+  const $ = id => document.getElementById(id);
+  if (!MNG_METHODS[spec.method]) return;
+  $('mng-method').value = spec.method;
+  _mngRenderParams(spec.params || []);
+  const src = spec.population === 'All events' ? f.populations.find(p => p._isAll) : f.populations.find(p => p.name === spec.population && !p._isAll);
+  if (src) { _mngUI.popId = src.id; $('mng-pop').value = String(src.id); }
+  const want = new Set(spec.channels || []);
+  document.querySelectorAll('#mng-chans input').forEach(c => c.checked = want.has(f.params[+c.value].name));
+  $('mng-seed').value = spec.seed; $('mng-z').checked = !!spec.zscore;
+  _mngUI.nEdited = true; $('mng-n').value = spec.events;
+  _mngFormUpdate();
+  showToast(src ? `Settings of ${spec.id} loaded` : `Settings of ${spec.id} loaded; its population "${spec.population}" is not in this tube`, 2500);
+}
+
+// Opens a plot for a run: its two axes, or for clusters the newest embedding of the file (else two of its channels).
+function _mngOpenPlot(f, spec, inputPop) {
+  const M = MNG_METHODS[spec.method] || {};
+  const cols = (spec.columns || []).map(nm => f.params.findIndex(p => p.name === nm));
+  let xp, yp;
+  if (M.kind === 'embed' && cols[0] >= 0 && cols[1] >= 0) [xp, yp] = cols;
+  else {
+    const emb = f.params.map((p, i) => ({ p, i })).filter(o => o.p.derived && o.p.derived.kind === 'embed');
+    if (emb.length >= 2) { xp = emb[emb.length - 2].i; yp = emb[emb.length - 1].i; }
+    else { const ch = (spec.channels || []).map(nm => f.params.findIndex(p => p.name === nm)).filter(i => i >= 0); xp = ch[0] ?? 0; yp = ch[1] ?? 1; }
+  }
+  addPlot(xp, yp, f.fileId);
+  const plot = plots[plots.length - 1];
+  if (plot && plot.fileId === f.fileId && inputPop) { plot.inputPop = inputPop.id; renderPlot(plot); }
 }
 
 // Seeded sample of k of the population's events, returned in ascending event order.
@@ -8796,17 +9120,17 @@ function _mngMatrix(f, events, channels, zscore) {
   return { X, scales };
 }
 
-async function runManifold({ popId, key, channels, n, params, seed, zscore }) {
+async function runManifold({ popId, key, channels, n, params, seed, zscore, name }) {
   const M = MNG_METHODS[key];
   const pop = populations.find(p => p.id === popId); if (!pop) return;
   const f = getFileById(pop.fileId); if (!f) return;
   const events = _mngSample(popIndicesArray(pop), n, seed);
   const { X, scales } = _mngMatrix(f, events, channels, zscore);
   const d = channels.length;
-  const job = { key, M, pop, f, events, channels, scales, params, seed, zscore, n: events.length, d,
+  const job = { key, M, pop, f, events, channels, scales, params, seed, zscore, name, n: events.length, d,
                 t0: performance.now(), predicted: mngPredict(key, events.length, d).secs, stage: 1, done: 0, total: 0, worker: null, cancelled: false };
   _mng.job = job;
-  _mngStatus();
+  _mngStatus(); _mngFormUpdate();
   job.timer = setInterval(_mngStatus, 250);
   try {
     const { worker } = await _mngSpawn(false);
@@ -8835,7 +9159,7 @@ async function runManifold({ popId, key, channels, n, params, seed, zscore }) {
     if (job.worker) job.worker.terminate();
     clearInterval(job.timer);
     if (_mng.job === job) _mng.job = null;
-    _mngStatus();
+    _mngStatus(); _mngFormUpdate();
   }
 }
 
@@ -8867,7 +9191,8 @@ function _mngFraction(job, elapsed) {
 function _mngStatus() {
   const el = document.getElementById('mng-status'); if (!el) return;
   const job = _mng.job;
-  if (!job) { el.style.display = 'none'; return; }
+  const ps = document.getElementById('mng-panel-status');
+  if (!job) { el.style.display = 'none'; if (ps) ps.style.display = 'none'; return; }
   el.style.display = 'flex';
   const elapsed = (performance.now() - job.t0) / 1000;
   const fr = job.worker ? Math.max(0, Math.min(0.99, _mngFraction(job, elapsed))) : 0;
@@ -8879,6 +9204,11 @@ function _mngStatus() {
     `${job.M.label} on "${job.pop.name}" (${job.n.toLocaleString()} events, ${job.d} channels): ${stageText}` +
     (job.stage === 3 && job.total > 0 && job.M.kind === 'embed' ? ` ${job.done + 1}/${job.total}` : '') +
     ` · ${_mngFmtSecs(elapsed)}` + (left != null ? ` · about ${_mngFmtSecs(Math.max(left, 1))} left` : '');
+  if (ps) {
+    ps.style.display = 'block';
+    ps.querySelector('.t').textContent = document.getElementById('mng-status-text').textContent;
+    ps.querySelector('.b').style.width = (fr * 100).toFixed(1) + '%';
+  }
 }
 
 // Unique column names from the method and the population run: UMAP_CD19+_1 / UMAP_CD19+_2, then
@@ -8888,9 +9218,10 @@ function _mngGateLabel(pop) {
   const nm = pop._isAll ? 'All events' : String(pop.name || 'gate');
   return nm.replace(/\s+/g, ' ').replace(/\|/g, '_').trim().slice(0, 40) || 'gate';
 }
-function _mngNames(f, M, pop) {
+const _mngClean = (s, max) => String(s).replace(/\s+/g, ' ').replace(/\|/g, '_').trim().slice(0, max);
+function _mngNames(f, M, pop, name) {
   const taken = new Set(f.params.map(p => p.name));
-  const stem = `${M.prefix}_${_mngGateLabel(pop)}`;
+  const stem = (name && _mngClean(name, 60)) || `${M.prefix}_${_mngGateLabel(pop)}`;
   for (let r = 1; ; r++) {
     const base = r === 1 ? stem : `${stem}-${r}`;
     const names = M.kind === 'embed' ? [`${base}_1`, `${base}_2`] : [base];
@@ -8933,11 +9264,11 @@ function addDerivedParams(f, cols, defs) {
 function _mngApply(job, result, secs) {
   const { M, f, pop, events, n } = job;
   if (!getFileById(f.fileId) || !populations.includes(pop)) { showToast(`${M.label} finished, but its population is gone`, 4000); return; }
-  const { base, names } = _mngNames(f, M, pop);
+  const { base, names } = _mngNames(f, M, pop, job.name);
   const runId = `${base}`;
   const chanNames = job.channels.map(c => f.params[c].name);
   const spec = { id: runId, method: job.key, label: M.label, params: job.params, channels: chanNames, scales: job.scales,
-    zscore: job.zscore, population: pop.name, seed: job.seed, events: n, populationEvents: popCount(pop), columns: names,
+    zscore: job.zscore, population: pop._isAll ? 'All events' : pop.name, seed: job.seed, events: n, populationEvents: popCount(pop), columns: names,
     secs: +secs.toFixed(1), module: _mngWasmBlock().dataset.sha256.slice(0, 16), when: new Date().toISOString() };
   const N = f.nEvents, k = names.length;
   const cols = names.map(() => new Float32Array(N).fill(NaN));
@@ -8987,16 +9318,7 @@ function _mngApply(job, result, secs) {
   }
   rebuildPopulationsView();
   _syncPrecedenceFromTree(f);
-  // A plot to look at: the embedding, or for clusters the newest embedding of this file (else the first two channels).
-  let xp, yp;
-  if (M.kind === 'embed') { xp = c0; yp = c0 + 1; }
-  else {
-    const emb = f.params.map((p, i) => ({ p, i })).filter(o => o.p.derived && o.p.derived.kind === 'embed');
-    if (emb.length >= 2) { xp = emb[emb.length - 2].i; yp = emb[emb.length - 1].i; } else { xp = job.channels[0]; yp = job.channels[1]; }
-  }
-  addPlot(xp, yp, f.fileId);
-  const plot = plots[plots.length - 1];
-  if (plot && plot.fileId === f.fileId) { plot.inputPop = parent.id; renderPlot(plot); }
+  _mngOpenPlot(f, spec, parent);
   refreshAfterGateChange();
   const what = M.kind === 'embed' ? `new axes ${names.join(', ')}` :
     `${nClusters} clusters (parameter ${names[0]})` + (colouredClusters < nClusters ? `; clusters above ${colouredClusters} are not coloured` : '');

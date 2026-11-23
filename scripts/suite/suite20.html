@@ -30,13 +30,20 @@
     R('20.3', 'Per-method caps: t-SNE BH < UMAP < FlowSOM; more channels lower FlowSOM\'s cap; predicted time at the cap is about 60 s',
       caps.tsne_bh < caps.umap && caps.umap < caps.flowsom && caps.flowsom40 < caps.flowsom && caps.at > 45 && caps.at <= 61, caps);
 
-    // ── the dialog ──
+    // ── the panel ──
     E(`showManifoldDialog(${rootId})`); await sleep(400);
-    const dlg = E(`(() => { const m = document.getElementById('mng-modal'); return m && { method: m.querySelector('#mng-method').value, n: +m.querySelector('#mng-n').value,
+    const dlg = E(`(() => { const m = document.getElementById('mng-panel'); return m && { method: m.querySelector('#mng-method').value, n: +m.querySelector('#mng-n').value,
       max: +m.querySelector('#mng-n').max, chans: m.querySelectorAll('#mng-chans input').length, checked: m.querySelectorAll('#mng-chans input:checked').length,
       runOk: !m.querySelector('#mng-run').disabled, predict: m.querySelector('#mng-predict').textContent }; })()`);
     R('20.4', 'Dialog opens on a population with UMAP, the event count at min(events, default), the input limit at the memory limit, fluorescence ticked, a time prediction, Run enabled',
       dlg && dlg.method === 'umap' && dlg.n === Math.min(N, E(`mngCap('umap', ${dlg.checked})`)) && dlg.max === Math.min(N, E(`mngMemCap('umap', ${dlg.checked})`)) && dlg.checked > 1 && dlg.checked <= dlg.chans && /About .* on this computer/.test(dlg.predict) && dlg.runOk, dlg);
+    const pan = E(`(() => { const b = document.getElementById('mng-btn'), p = document.getElementById('mng-panel'), adv = document.getElementById('mng-adv');
+      return { btn: b && b.style.display !== 'none' && b.classList.contains('active'), shown: p.style.display === 'flex' && !p.classList.contains('collapsed'), w: p.getBoundingClientRect().width,
+        pop: +document.getElementById('mng-pop').value, tube: document.getElementById('mng-file').title.startsWith(T.f().filename),
+        main: document.querySelectorAll('#mng-params input').length, adv: document.querySelectorAll('#mng-params-adv input').length, advOpen: adv.open,
+        handle: document.getElementById('mng-handle').style.display }; })()`);
+    R('20.4a', 'The ManifoldNG button opens a right panel on the tube selected in the tree: population, algorithm, main settings shown, the rest under a closed "More settings"',
+      pan.btn && pan.shown && pan.w > 200 && pan.pop === rootId && pan.tube && pan.main === 2 && pan.adv === 2 && !pan.advOpen && pan.handle === 'flex', pan);
     const setN = v => E(`(() => { const i = document.querySelector('#mng-n'); i.value = ${v}; i.dispatchEvent(new Event('input')); })()`);
     const dlgState = () => E(`({ run: document.querySelector('#mng-run').textContent, disabled: document.querySelector('#mng-run').disabled, text: document.querySelector('#mng-predict').textContent })`);
     E('window.__sp = _mng.speed; _mng.speed = 500'); setN(N);
@@ -49,8 +56,8 @@
       big.disabled && /Too many events/.test(big.text) && /At most [\d,]+ events/.test(big.text), big);
     E('MNG_METHODS.umap.memK = __mk; _mng.speed = __sp'); setN(N);
     R('20.5c', 'Back at normal speed with all events (under the default): no warning, plain Run', (s => !s.disabled && s.run === 'Run' && !/Above the default|Too many/.test(s.text))(dlgState()), dlgState());
-    E(`(() => { const m = document.getElementById('mng-modal'); const i = m.querySelector('#mng-n'); i.value = 3000; i.dispatchEvent(new Event('input')); })()`);
-    E(`(() => { const m = document.getElementById('mng-modal'); m.querySelector('#mng-method').value = 'tsne_bh'; m.querySelector('#mng-method').dispatchEvent(new Event('change')); m.querySelector('#mng-method').value = 'umap'; m.querySelector('#mng-method').dispatchEvent(new Event('change')); const i = m.querySelector('#mng-n'); i.value = 3000; i.dispatchEvent(new Event('input')); })()`);
+    E(`(() => { const m = document.getElementById('mng-panel'); const i = m.querySelector('#mng-n'); i.value = 3000; i.dispatchEvent(new Event('input')); })()`);
+    E(`(() => { const m = document.getElementById('mng-panel'); m.querySelector('#mng-method').value = 'tsne_bh'; m.querySelector('#mng-method').dispatchEvent(new Event('change')); m.querySelector('#mng-method').value = 'umap'; m.querySelector('#mng-method').dispatchEvent(new Event('change')); const i = m.querySelector('#mng-n'); i.value = 3000; i.dispatchEvent(new Event('input')); })()`);
     const statusSeen = [];
     E(`document.querySelector('#mng-run').click()`);
     for (let i = 0; i < 600 && E('!!_mng.job'); i++) {
@@ -103,6 +110,19 @@
         plot: (() => { const p = plots[plots.length - 1]; return [f.params[p.xParam].name, f.params[p.yParam].name]; })() }; })()`);
     R('20.11', 'Phenograph adds a label parameter and one child population per cluster; cluster sizes plus unassigned = 3,000; gates re-evaluate to the same events',
       ph.c > 0 && ph.k >= 2 && ph.sum === ph.labelled && ph.sum + ph.unassigned === 3000 && ph.parent && ph.derived && ph.derived.kind === 'cluster' && ph.evalSame, ph);
+    const tree = () => E(`(() => { const ids = T.f().populations.filter(p => /^Phenograph_UMAP_All events sample \\d+$/.test(p.name)).map(p => p.id);
+      return { k: ids.length, inTree: ids.filter(id => document.querySelector('#pop-list .pop-tree-node[data-popid="' + id + '"]')).length,
+        inPanel: ids.filter(id => document.querySelector('#mng-runs .mng-cl[data-pop="' + id + '"]')).length,
+        sample: !!document.querySelector('#pop-list .pop-tree-node[data-popid="${sampleId}"]') }; })()`);
+    const t0 = tree();
+    E(`(() => { const c = document.querySelector('#mng-runs .mng-run[data-run="Phenograph_UMAP_All events sample"] input[data-act=tree]'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await sleep(200);
+    const t1 = tree();
+    E(`(() => { const c = document.querySelector('#mng-runs .mng-run[data-run="Phenograph_UMAP_All events sample"] input[data-act=tree]'); c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await sleep(200);
+    const t2 = tree();
+    R('20.11a', 'Phenograph clusters are listed in the ManifoldNG panel, not the gating tree (the sample population stays in the tree); "in gating tree" shows and hides them',
+      t0.k >= 2 && t0.inTree === 0 && t0.inPanel === t0.k && t0.sample && t1.inTree === t0.k && t2.inTree === 0, { t0, t1, t2 });
     R('20.12', 'The cluster plot uses the newest embedding of the file', ph.plot.join() === 'UMAP_All events-2_1,UMAP_All events-2_2', ph.plot);
 
     E(`runManifold({ popId: ${rootId}, key: 'flowsom', channels: T.f().manifolds[0].channels.map(T.pi), n: ${N}, params: [6, 6, 5, 8], seed: 1, zscore: false })`);
@@ -130,6 +150,46 @@
     E('undo()'); await sleep(500);
     R('20.16', 'Undo removes the last run\'s populations (its columns stay)', kBefore === 8 && E(`T.f().populations.filter(p => /^FlowSOM_All events \\d+$/.test(p.name)).length`) === 0 && E(`T.pi('FlowSOM_All events')`) > 0, '');
     E('redo()'); await sleep(500);
+
+    // ── a named run from the panel, and "Use settings" ──
+    E(`(() => { const sel = document.getElementById('mng-method'); sel.value = 'umap'; sel.dispatchEvent(new Event('change'));
+      document.getElementById('mng-pop').value = '${rootId}'; document.getElementById('mng-pop').dispatchEvent(new Event('change'));
+      const i = document.getElementById('mng-n'); i.value = 2000; i.dispatchEvent(new Event('input'));
+      document.getElementById('mng-name').value = 'My map'; document.getElementById('mng-run').click(); })()`);
+    await E('T.wait()');
+    const named = E(`(() => { const f = T.f(); return { cols: f.params.slice(-2).map(p => p.name), spec: f.manifolds[f.manifolds.length - 1].id,
+      card: !!document.querySelector('#mng-runs .mng-run[data-run="My map"]'), first: document.querySelector('#mng-runs .mng-run').dataset.run }; })()`);
+    R('20.20', 'A run named in the panel names its columns (My map_1, My map_2) and appears first under Saved runs',
+      named.cols.join() === 'My map_1,My map_2' && named.spec === 'My map' && named.card && named.first === 'My map', named);
+    E(`document.querySelector('#mng-runs .mng-run[data-run="FlowSOM_All events"] button[data-act=settings]').click()`);
+    const us = E(`({ m: document.getElementById('mng-method').value, n: +document.getElementById('mng-n').value, seed: +document.getElementById('mng-seed').value,
+      p: [...document.querySelectorAll('#mng-panel-body input[data-pi]')].sort((a, b) => a.dataset.pi - b.dataset.pi).map(i => +i.value).slice(0, 4) })`);
+    R('20.21', '"Use settings" puts a saved run back into the form (method, events, seed, parameters)',
+      us.m === 'flowsom' && us.n === N && us.seed === 1 && us.p.join() === '6,6,5,8', us);
+
+    // ── side panels: drag to resize, click to hide or show ──
+    const side = E(`(async () => {
+      const h = document.getElementById('sidebar-handle'), sb = document.getElementById('sidebar'), sl = ms => new Promise(r => setTimeout(r, ms));
+      const ev = (type, x) => h.dispatchEvent(new (h.ownerDocument.defaultView.PointerEvent || MouseEvent)(type, { bubbles: true, button: 0, clientX: x, pointerId: 1 }));
+      const x = h.getBoundingClientRect().left + 3, w0 = sb.getBoundingClientRect().width;
+      ev('pointerdown', x); ev('pointermove', x + 80); ev('pointerup', x + 80); await sl(300);
+      const w1 = sb.getBoundingClientRect().width;
+      ev('pointerdown', x + 80); ev('pointerup', x + 80); await sl(300);
+      const c1 = sb.classList.contains('collapsed'), w2 = sb.getBoundingClientRect().width;
+      ev('pointerdown', 3); ev('pointerup', 3); await sl(300);
+      const c2 = sb.classList.contains('collapsed'), w3 = sb.getBoundingClientRect().width;
+      const rh = document.getElementById('mng-handle'), rp = document.getElementById('mng-panel'), r0 = rp.getBoundingClientRect().width, rx = rh.getBoundingClientRect().left + 3;
+      const rev = (type, x) => rh.dispatchEvent(new (rh.ownerDocument.defaultView.PointerEvent || MouseEvent)(type, { bubbles: true, button: 0, clientX: x, pointerId: 1 }));
+      rev('pointerdown', rx); rev('pointermove', rx - 60); rev('pointerup', rx - 60); await sl(300);
+      const r1 = rp.getBoundingClientRect().width;
+      rev('pointerdown', rx - 60); rev('pointerup', rx - 60); await sl(300);
+      const rc = rp.classList.contains('collapsed');
+      rev('pointerdown', window.innerWidth - 4); rev('pointerup', window.innerWidth - 4); await sl(300);
+      return { w0, w1, c1, w2, c2, w3, r0, r1, rc, rOpen: !rp.classList.contains('collapsed') };
+    })()`);
+    const sd = await side;
+    R('20.22', 'Side panels: dragging a handle widens the panel (left by 80 px, right by 60 px); a click on the handle hides it, another click shows it again at its width',
+      Math.abs(sd.w1 - sd.w0 - 80) <= 2 && sd.c1 && sd.w2 < 1 && !sd.c2 && Math.abs(sd.w3 - sd.w1) <= 2 && Math.abs(sd.r1 - sd.r0 - 60) <= 2 && sd.rc && sd.rOpen, sd);
 
     // ── FCS export round trip ──
     const fcs = E(`(() => { let got; const o = _downloadBytes; _downloadBytes = b => { got = b; }; exportPopulationFCS(T.root().id); _downloadBytes = o;
